@@ -1,0 +1,139 @@
+.info_page {
+  padding: 1rem;
+  overflow-y: auto;
+}
+
+.info_title {
+  font-size: 1.8rem;
+  font-weight: bold;
+  margin-bottom: 1.2rem;
+}
+
+.info_section_title {
+  font-size: 1.5rem;
+  font-weight: bold;
+  margin-bottom: 1rem;
+}
+
+.info_box {
+  background: white;
+  border-radius: 0.7rem;
+  padding-top: 1rem;
+  padding-left: 2rem;
+  padding-right: 3rem;
+  padding-bottom: 1.3rem;
+  margin-bottom: 1.2rem;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+}
+
+.info_box h2 {
+  font-size: 1rem;
+  margin-bottom: 0.6rem;
+}
+
+.info_table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.info_table th {
+  text-align: left;
+  width: 90px;
+  font-weight: 500;
+  padding: 0.4rem 0;
+  vertical-align: top;
+  font-size: 0.9rem;
+  color: #444;
+}
+
+.info_table td {
+  padding: 0.4rem 0;
+  font-size: 0.9rem;
+  color: #333;
+}
+
+.tech_stack div {
+  margin-bottom: 0.4rem;
+  font-size: 0.9rem;
+  padding-right: 1.5rem;
+}
+
+.tag {
+  display: inline-block;
+  background-color: #e8f0fe;
+  color: #1f2937;
+  padding: 0.2rem 0.5rem;
+  border-radius: 0.4rem;
+  font-size: 0.75rem;
+  margin-right: 1rem;
+}
+
+
+
+.info_page.dark-mode {
+  background: #0f172a;
+  color: #f1f5f9;
+}
+
+.info_title.dark-mode {
+  color: #f1f5f9;
+}
+
+.info_box.dark-mode {
+  background: #23293a;
+  border: 1px solid #2c3446;
+  color: #cbd5e1;
+}
+
+.info_section_title.dark-mode {
+  color: #f1f5f9;
+}
+
+.info_table.dark-mode {
+  color: #cbd5e1;
+}
+
+.info_table.dark-mode th,
+.info_table.dark-mode td {
+  border-bottom: 1px solid #334155;
+  color: #f1f5f9;
+}
+
+.info_table.dark-mode th {
+  background: #23293a;
+}
+
+.info_table.dark-mode td {
+  background: #23293a;
+}
+
+a.dark-mode {
+  color: #60a5fa;
+}
+
+.tech_stack.dark-mode {
+  color: #cbd5e1;
+}
+
+.tech_stack.dark-mode .tag {
+  background: #334155;
+  color: #cbd5e1;
+}
+
+
+a {
+  color: #1e80ff;
+  text-decoration: none;
+}
+
+a:hover {
+  color: #1F2937;
+  text-decoration: underline;
+}
+
+
+.info_table tr.stack-divider {
+  border-bottom: 1px solid #ddd;
+  margin-top: 2rem;
+  margin-bottom: 2rem;
+}
