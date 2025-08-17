@@ -1,0 +1,25 @@
+.container {
+  display: flex;
+  height: 90vh;
+}
+
+.app_main {
+  flex-grow: 1;
+  background-color: #ECF2F8;
+}
+
+/* ++ 다크모드 ++ */
+
+.container.dark-mode {
+  background-color: #0f172a;
+}
+
+.container.dark-mode .app_main {
+  background-color: #0f172a;
+  color: #f1f5f9;
+}
+
+.container.dark-mode .sidebar {
+  background-color: #1e293b;
+  color: #cbd5e1;
+}

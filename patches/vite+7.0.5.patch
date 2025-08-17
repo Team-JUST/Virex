@@ -1,0 +1,12 @@
+diff --git a/node_modules/vite/dist/node/chunks/dep-Bg4HVnP5.js b/node_modules/vite/dist/node/chunks/dep-Bg4HVnP5.js
+index 6ecd34c..98c0d62 100644
+--- a/node_modules/vite/dist/node/chunks/dep-Bg4HVnP5.js
++++ b/node_modules/vite/dist/node/chunks/dep-Bg4HVnP5.js
+@@ -6,7 +6,8 @@ import { parseAst, parseAstAsync } from "rollup/parseAst";
+ import * as fs$1 from "node:fs";
+ import fs, { existsSync, promises, readFileSync } from "node:fs";
+ import path, { basename, dirname, extname, isAbsolute, join, normalize, posix, relative, resolve } from "node:path";
+ import fsp, { constants } from "node:fs/promises";
+ import { URL as URL$1, fileURLToPath, pathToFileURL } from "node:url";
+ import { format, inspect, promisify, stripVTControlCharacters } from "node:util";
+ import { performance as performance$1 } from "node:perf_hooks";

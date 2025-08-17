@@ -1,0 +1,316 @@
+:root {
+  --white: #ffffff;
+  --card-border: #ccc;
+  --menu-black: #1f2937;
+  --bar-gray: #e0e0e0;
+  --bar-blue: #3b82f6;
+  --inner-shadow: rgba(255, 255, 255, 0.6);
+  --outer-shadow: rgba(0, 0, 0, 0.05);
+}
+
+/* Home Page Wrapper */
+.main_content {
+  padding-top: 1rem;
+  padding-left: 17px;
+  /* 사이드바와 일관된 간격 */
+  padding-right: 10px;
+  padding-bottom: 30px;
+  background-color: #ecf2f8;
+  flex: 1;
+}
+
+h1 {
+  font-size: 1.8rem;
+  font-weight: bold;
+  margin-bottom: 1.5rem;
+}
+
+/* Drive */
+.drive_wrapper {
+  max-height: 600px;
+  overflow-y: auto;
+  /* 좌측 패딩 제거 */
+  padding: 0px 17px 17px 0px;
+  box-sizing: border-box;
+}
+
+.drive_category {
+  max-height: 540px;
+  background: var(--white);
+  border-radius: 12px;
+  /* 좌측 패딩을 10px에서 20px로 증가 */
+  padding: 10px 10px 10px 20px;
+  box-shadow:
+    inset -4px -4px 4px var(--inner-shadow),
+    0 5px 20px var(--outer-shadow);
+  box-sizing: border-box;
+  margin-top: 20px;
+}
+
+.drive_category h2 {
+  padding: 5px;
+  font-size: 17px;
+  font-weight: bold;
+  display: flex;
+  text-align: center;
+}
+
+.drive_list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+}
+
+.drive_card {
+  width: 350px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  background: var(--white);
+  border-radius: 10px;
+  border: 1px solid var(--card-border);
+  padding: 10px 16px;
+  margin-bottom: 12px;
+  cursor: pointer;
+}
+
+.drive_card:hover {
+  border: 1px solid var(--menu-black);
+}
+
+.drive_card .info {
+  flex-grow: 1;
+}
+
+.drive_title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 5px;
+}
+
+.drive_icon {
+  vertical-align: middle;
+}
+
+.drive_card .bar {
+  width: 200px;
+  height: 10px;
+  border-radius: 5px;
+  background: var(--bar-gray);
+  overflow: hidden;
+  margin-top: 4px;
+}
+
+.drive_card .bar_fill {
+  height: 100%;
+  background: var(--bar-blue);
+  transition: width 0.6s ease;
+}
+
+/* folder */
+.explorer_container {
+  margin-top: 2rem;
+}
+
+.explorer_container h3 {
+  margin-bottom: 10px;
+}
+
+.explorer_item {
+  margin: 4px 0;
+  padding-left: 10px;
+}
+
+#explorer div {
+  margin: 4px 0;
+  padding-left: 10px;
+}
+
+#explorer h3 {
+  margin-bottom: 10px;
+}
+
+.explorer_container {
+  margin-top: 2rem;
+}
+
+/* 다시 스타일링: 헤더 박스 */
+.drive_header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #f6f6f6;
+  padding: 5px 20px;
+  border-radius: 12px;
+  margin-bottom: 16px;
+  font-size: 16px;
+}
+
+.drive_header_left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.drive_path_text {
+  color: var(--black);
+}
+
+.drive_controls {
+  display: flex;
+  gap: 10px;
+  margin-left: auto;
+}
+
+.drive_path {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: bold;
+  font-size: 16px;
+  margin-bottom: 10px;
+}
+
+.folder_list {
+  padding-top: 10px;
+}
+
+.folder_item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+}
+
+.folder_wrapper {
+  max-height: 450px;
+  overflow-y: auto;
+  padding: 0px 17px 20px 17px;
+  box-sizing: border-box;
+  margin-top: 20px;
+}
+
+/* 추가: 선택 박스 */
+.selected_box {
+  margin-top: 24px;
+  padding: 16px 20px;
+  background: rgba(59, 130, 246, 0.1);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  border-radius: 10px;
+}
+
+.selected_box h4 {
+  margin-top: 0;
+  margin-bottom: 12px;
+}
+
+/* 버튼 기본화 (이미 프로젝트에 있으면 생략) */
+.button {
+  padding: 6px 14px;
+  border-radius: 8px;
+  border: none;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.button.gray {
+  background: rgba(217, 217, 217, 0.5);
+  color: #1F2937;
+}
+
+.button.gray:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.button.blue {
+  background: rgba(59, 130, 246, 0.18);
+  color: #3B82F6;
+  ;
+}
+
+.button.black {
+  background: #1F2937;
+  color: #fff;
+  margin-top: 8px;
+}
+
+/* 아이콘 */
+.entry_icon {
+  width: 20px;
+  height: 20px;
+}
+
+.file_size {
+  font-size: 13px;
+  color: #6b7280;
+}
+
+/* ++ 다크모드 ++ */
+
+.main_content.dark-mode {
+  background-color: #0f172a;
+  color: #f1f5f9;
+}
+
+.main_content.dark-mode .folder_item {
+  background-color: #1e293b;
+  color: #e2e8f0;
+}
+
+.main_content.dark-mode .folder_item:hover {
+  background-color: #334155;
+}
+
+.main_content.dark-mode .selected_box {
+  background-color: #1e293b;
+  border: 1px solid #475569;
+  color: #f8fafc;
+}
+
+.main_content.dark-mode h1 {
+  color: #f8fafc;
+}
+
+.main_content.dark-mode .drive_category {
+  background-color: #1e293b;
+  box-shadow: inset -4px -4px 4px rgba(255, 255, 255, 0.02),
+    0 5px 20px rgba(0, 0, 0, 0.3);
+}
+
+.main_content.dark-mode .drive_card {
+  background-color: #1e293b;
+  border-color: #334155;
+  color: #e2e8f0;
+}
+
+.main_content.dark-mode .drive_card:hover {
+  border-color: #94a3b8;
+}
+
+.main_content.dark-mode .drive_header {
+  background-color: #1e293b;
+  color: #f1f5f9;
+}
+
+.main_content.dark-mode .bar {
+  background-color: #334155;
+}
+
+.main_content.dark-mode .bar_fill {
+  background-color: #3b82f6;
+}
+
+.main_content.dark-mode .file_size,
+.main_content.dark-mode .drive_path_text,
+.main_content.dark-mode .drive_path,
+.main_content.dark-mode .drive_title {
+  color: #cbd5e1;
+}
+
+.main_content.dark-mode button {
+  background-color: #f1f5f9;
+  color: #1e293b;
+  font-weight: 600;
+}

@@ -1,0 +1,27 @@
+.juggle-wrapper {
+  width: 200px;
+  height: 200px;
+  position: relative;
+}
+
+.ball {
+  transform-origin: 100px 100px;
+  animation: rotateBall 3s linear infinite;
+}
+
+.ball2 {
+  animation-delay: 0.2s;
+}
+
+.ball3 {
+  animation-delay: 0.4s;
+}
+
+@keyframes rotateBall {
+  0% {
+    transform: rotate(0deg) translateX(60px) rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg) translateX(60px) rotate(-360deg);
+  }
+}
