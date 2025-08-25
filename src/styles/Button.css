@@ -1,15 +1,18 @@
 .button {
-  display: inline-flex;
+  display: flex;
+  justify-content: center;
   align-items: center;
   gap: 0.5rem;
   padding: 0.75rem 1.5rem;
-  font-size: 1.1rem;
+  font-size: 1.5rem;
   font-weight: 700;
   border: none;
   border-radius: 1rem;
   cursor: pointer;
   box-shadow: 0 5px 20px rgba(0, 0, 0, 0.08);
   transition: background-color 0.2s ease, transform 0.1s ease;
+  width: 120px;
+  height: 45px;
 }
 
 .button.dark {
@@ -24,11 +27,11 @@
 
 .button.gray {
   background-color: #d1d5db;
-  color: #747474;
+  color: #818181;
 }
 
 .button.gray:hover {
-  background-color: #1f2937;
+  background-color: #5e5e5e;
   color: white;
   transform: translateY(-1px);
 }

@@ -23,7 +23,7 @@ const Settings = ({ isDarkMode, setIsDarkMode }) => {
   return (
     <div className={`settings_page ${isDarkMode ? 'dark-mode' : ''}`}>
       <h1 className="settings_title">Setting</h1>
-      <p className="settings_desc">RETATO 애플리케이션의 설정을 관리하세요</p>
+      <p className="settings_desc">Virex 애플리케이션의 설정을 관리하세요</p>
 
       {/* 테마 설정 */}
       <div className="settings_box setting-row">
