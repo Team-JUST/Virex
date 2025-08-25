@@ -12,7 +12,7 @@ const Information = ({ isDarkMode }) => {
           <tbody>
             <tr className="stack-divider">
               <th>제품명</th>
-              <td>RETATO</td>
+              <td>Virex</td>
             </tr>
             <tr className="stack-divider">
               <th>버전</th>
@@ -41,7 +41,7 @@ const Information = ({ isDarkMode }) => {
             </tr>
             <tr>
               <th>GitHub</th>
-              <td><a href="https://github.com/WHS3-Retato/Retato" target="_blank" rel="noreferrer" className={isDarkMode ? 'dark-mode' : ''}>https://github.com/WHS3-Retato/Retato</a></td>
+              <td><a href="https://github.com/Team-JUST/Virex" target="_blank" rel="noreferrer" className={isDarkMode ? 'dark-mode' : ''}>https://github.com/Team-JUST/Virex</a></td>
             </tr>
           </tbody>
         </table>

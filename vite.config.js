@@ -6,6 +6,7 @@ export default defineConfig({
   plugins: [react()],
   base: './',
   build: {
+    sourcemap: true,
     rollupOptions: {
       external: ['electron'],
     },

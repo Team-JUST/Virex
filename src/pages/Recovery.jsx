@@ -20,18 +20,49 @@ import basicIcon from '../images/information_t.svg';
 import integrityIcon from '../images/integrity.svg';
 import slackIcon from '../images/slack.svg';
 import structureIcon from '../images/struc.svg';
+import recoveryPauseIcon from '../images/recoveryPauseIcon.svg';
 import replayIcon from '../images/view_replay.svg';
 import pauseIcon from '../images/view_pause.svg';
 import fullscreenIcon from '../images/view_fullscreen.svg';
 import integrityGreen from '../images/integrity_g.svg';
 import integrityRed from '../images/integrity_r.svg';
-import integrityYellow from '../images/integrity_y.svg';
 import completeIcon from '../images/complete.svg';
 import { useNavigate } from 'react-router-dom';
 
 const Recovery = () => {
+
+// 1) 복원 진행/탭 가드 등 화면 제어 상태
+  const [showTabGuardPopup, setShowTabGuardPopup] = useState(false);
+  const [isRecovering, setIsRecovering] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const prevIsRecovering = useRef(isRecovering);
   const navigate = useNavigate();
+
+// 2) 복원 진행률 관련 이펙트
+  useEffect(() => {
+    window.__recoverGuard = { isRecovering, progress };
+    console.log("[Debug] export from Recovery : ", { isRecovering, progress });
+  }, [isRecovering, progress]);
+
+  useEffect(() => {
+    if (!isRecovering) return;
+
+    if (progress >= 100) {
+      setIsRecovering(false);
+      setRecoveryDone(true); 
+    }
+  }, [isRecovering, progress]);
+
+  useEffect(() => {
+    return () => {
+      setShowTabGuardPopup(false);
+    };
+  }, []);
+
+// 3) 입력/팝업/선택 파일/카운트 등 입력·파일·다운로드 상태
   const inputRef = useRef(null);
+  const [showStopRecoverPopup, setShowStopRecoverPopup] = useState(false);
+  const [pendingTab, setPendingTab] = useState(null);
 
   const [showAlert, setShowAlert] = useState(false);
   const [recoveryDone, setRecoveryDone] = useState(false);
@@ -41,8 +72,6 @@ const Recovery = () => {
   const [saveFrames, setSaveFrames] = useState(false);
   const [selectedPath, setSelectedPath] = useState("");
 
-  const [isRecovering, setIsRecovering] = useState(false);
-  const [progress, setProgress] = useState(0);
   const [currentCount, setCurrentCount] = useState(0);
   const [totalFiles, setTotalFiles] = useState(0);
 
@@ -53,6 +82,7 @@ const Recovery = () => {
 
   const [tempOutputDir, setTempOutputDir] = useState(null);
 
+// 4) 결과 목록 → 카테고리 그룹핑 유틸/파생값
   function groupByCategory(list) {
     return list.reduce((acc, file) => {
       const cat = file.path.split(/[/\\]/)[1] || 'unknown'
@@ -63,26 +93,29 @@ const Recovery = () => {
   }
   const groupedResults = useMemo(() => groupByCategory(results), [results])
 
+// 5) 분석 선택/탭/다운로드 완료 등 결과 뷰 상태
   const [selectedAnalysisFile, setSelectedAnalysisFile] = useState(null);
   const [activeTab, setActiveTab] = useState('basic');
   const [showComplete, setShowComplete] = useState(false);
   const [showDownloadAlert, setShowDownloadAlert] = useState(false);
 
+// 6) 라우팅/초기파일 자동시작 상태
   const location = useLocation();
   const initialFile = location.state?.e01File || null;
   const autoStart = location.state?.autoStart || false;
 
+// 7) 슬랙 영상 소스 등 슬랙 관련 상태
   const [slackVideoSrc, setSlackVideoSrc] = useState('');
 
-  // 바이트 → MB 변환
+// 8) 공통 유틸 (단위/코덱 포맷)
   const bytesToMB = (bytes) => (bytes / 1024 / 1024).toFixed(1) + ' MB';
 
-  // ex: "h264" → "H.264"
   const formatCodec = (codec) =>
     codec
       .toUpperCase()
       .replace(/^([HE]\d{3,4})$/, (m) => m[0] + '.' + m.slice(1));
 
+// 9) 결과/분석 파일 파생값 및 슬랙 지표
   const analysis = useMemo(
     () => results.find(f => f.name === selectedAnalysisFile)?.analysis,
     [results, selectedAnalysisFile]
@@ -96,13 +129,13 @@ const Recovery = () => {
   const slack_info = selectedResultFile?.slack_info ?? { slack_rate: 0 };
   const safeSlackRate = slack_info.slack_rate ?? 0;
 
-  // slackRatePercent와 동일한 계산 로직 사용
   const slackPercent = safeSlackRate <= 1
     ? (safeSlackRate * 100).toFixed(0)
     : safeSlackRate.toFixed(0);
 
   const validPercent = (100 - safeSlackRate * 100).toFixed(1);
 
+// 10) 진행률 변화 시 뷰 전환 로직
   useEffect(() => {
     if (progress >= 100) {
       setIsRecovering(false);
@@ -114,6 +147,7 @@ const Recovery = () => {
 
   }, [progress]);
 
+// 11) 카테고리 아이콘 매핑 및 아이콘 선택 헬퍼
   const categoryIcons = {
     driving: drivingIcon,
     parking: parkingIcon,
@@ -122,39 +156,33 @@ const Recovery = () => {
     deleted: deletedIcon,
   };
 
-  // special override: 'shock' 인 경우 event 아이콘
   const specialCategoryMap = {
     shock: 'event',
-    // 필요시 더 추가…
   };
 
-  // 아이콘 결정 헬퍼
   const getCategoryIcon = (category) => {
     const cat = category.toLowerCase();
-    // special first
     for (const [match, iconKey] of Object.entries(specialCategoryMap)) {
       if (cat.includes(match)) {
         return categoryIcons[iconKey];
       }
     }
-    // prefix 기본 매핑
     const prefix = Object.keys(categoryIcons).find((k) =>
       cat.startsWith(k)
-
     );
     return prefix ? categoryIcons[prefix] : slackIcon;
   };
 
-  // 메인에서 progress/done 이벤트 받아오기
+  // 12) 메인 IPC: 진행률/완료 리스너 등록
   useEffect(() => {
-    console.log('📡 onProgress useEffect mounted');
+    console.log("[Debug] onProgress useEffect : mounted");
     const offProg = window.api.onProgress(({ processed, total }) => {
-      console.log('📈 progress event', processed, total);
+      console.log("[Debug] progress event : processed " + processed + " of " + total);
       setTotalFiles(total);
       setProgress(Math.floor((processed / total) * 100));
     });
     const offDone = window.api.onDone(() => {
-      console.log('✅ recovery done event');
+      console.log("[Debug] recovery done event : completed");
       setProgress(100);
       setIsRecovering(false);
       setRecoveryDone(true);
@@ -162,19 +190,21 @@ const Recovery = () => {
     return () => { offProg(); offDone(); };
   }, []);
 
+// 13) 결과 수신 리스너
   useEffect(() => {
-    console.log('📡 onResults listener registered')
+    console.log("[Debug] onResults listener : registered");
     const off = window.api.onResults(data => {
-      console.log('📥 [Debug] onResults data:', data)
+      console.log("[Debug] onResults data : ", data);
       if (data.error) setResultError(data.error);
       else setResults(data);
     });
     return off;
   }, []);
 
+// 14) 분석 경로/다운로드 로그·에러 리스너
   useEffect(() => {
     const offPath = window.api.onAnalysisPath(path => {
-      console.log('analysisPath:', path);
+      console.log("[Debug] analysis path : ", path);
       setTempOutputDir(path);
     });
     return () => offPath();
@@ -182,10 +212,10 @@ const Recovery = () => {
 
   useEffect(() => {
     const offLog = window.api.onDownloadLog(line => {
-      console.log('다운로드 로그:', line);
+      console.log("[Debug] download log : ", line);
     });
     const offErr = window.api.onDownloadError(err => {
-      console.error('다운로드 에러:', err);
+      console.error("[Debug] download error : ", err);
     });
     return () => {
       offLog();
@@ -193,7 +223,7 @@ const Recovery = () => {
     };
   }, []);
 
-  // isRecovering가 true가 되면 startRecovery 호출
+// 15) 복원 자동 시작 트리거
   useEffect(() => {
     if (isRecovering && selectedFile) {
       window.api.startRecovery(selectedFile.path);
@@ -206,18 +236,19 @@ const Recovery = () => {
     }
   }, [autoStart, initialFile]);
 
-  const handleFile = file => {
-    if (!file.name.toLowerCase().endsWith('.e01')) {
-      setShowAlert(true);
-      return;
-    }
-    setSelectedFile(file);
-    setShowAlert(false);
-    setIsRecovering(true);
-    setRecoveryDone(false);
-    setProgress(0);
-    setTotalFiles(0);
-  };
+// 16) 파일/다운로드 등 핸들러
+  const handleFile = (file) => {
+  if (!file.name.toLowerCase().endsWith('.e01')) {
+    setShowAlert(true);
+    return;
+  }
+  setSelectedFile(file);
+  setShowAlert(false);
+  setIsRecovering(true);     // ← 시작
+  setRecoveryDone(false);
+  setProgress(0);            // ← 0으로 리셋
+  setTotalFiles(0);
+};
 
   const handleDrop = (e) => {
     e.preventDefault();
@@ -252,7 +283,7 @@ const Recovery = () => {
     setOpenGroups(prev => ({ ...prev, [cat]: !prev[cat] }))
 
   const confirmDownload = () => {
-    console.log("최종 저장 경로:", selectedPath);
+    console.log("[Debug] final save path : ", selectedPath);
   };
 
   const handleDownload = () => {
@@ -260,7 +291,7 @@ const Recovery = () => {
   };
 
   const closeDownloadPopup = () => {
-    setShowDownloadPopup(false); // 팝업 닫기
+    setShowDownloadPopup(false); 
   };
 
   const handleInvalidFile = () => {
@@ -296,7 +327,7 @@ const Recovery = () => {
 
       setShowComplete(true);
     } catch (err) {
-      console.error('다운로드 실패:', err);
+      console.error("[Debug] download failed : ", err);
     } finally {
       setShowDownloadPopup(false);
     }
@@ -316,12 +347,12 @@ const Recovery = () => {
   const handlePathSelect = async () => {
     const dir = await window.api.selectFolder();
     if (dir) {
-      console.log('선택된 폴더:', dir);
+      console.log("[Debug] selected folder : ", dir);
       setSelectedPath(dir);
     }
   };
 
-  // Stepbar currentStep
+// 17) 스텝바 계산
   let currentStep = 0;
 
   if (recoveryDone) {
@@ -334,7 +365,7 @@ const Recovery = () => {
     currentStep = 0;
   }
 
-  // view
+// 18) 파서 뷰어 DOM 세팅(useEffect)
   useEffect(() => {
     if (!selectedAnalysisFile) return;
 
@@ -348,18 +379,17 @@ const Recovery = () => {
       const timeText = document.getElementById('timeText');
 
       if (!video || !playPauseBtn || !replayBtn || !fullscreenBtn || !progressBar || !timeText || !playPauseIcon) {
-        console.warn('🎥 video 또는 컨트롤 요소가 아직 없음, 재시도');
+        console.warn("[Debug] video or control element : not ready, retrying");
         requestAnimationFrame(waitForDOMAndSetup);
         return;
       }
 
-      // 전체화면 기능 개선
       fullscreenBtn.onclick = () => {
         if (!document.fullscreenElement) {
-          // 전체화면으로 진입
+          // 전체화면 진입
           if (video.requestFullscreen) {
             video.requestFullscreen().catch(err => {
-              console.error('전체화면 진입 실패:', err);
+              console.error("[Debug] fullscreen enter failed : ", err);
             });
           } else if (video.webkitRequestFullscreen) {
             video.webkitRequestFullscreen();
@@ -434,52 +464,70 @@ const Recovery = () => {
     requestAnimationFrame(waitForDOMAndSetup);
   }, [selectedAnalysisFile]); // selectedAnalysisFile이 변경될 때마다 실행
 
-  const startRecoveryFromDownload = () => {
-    setShowDownloadPopup(false);
-    setShowComplete(false);
-    setIsRecovering(true);
-    setCurrentCount(0);
-    setProgress(0);
-    setTotalFiles(300);
-  };
+// 19) 다운로드 완료 후 복원 재시작 핸들러
+    const startRecoveryFromDownload = () => {
+      setShowDownloadPopup(false);
+      setShowComplete(false);
+      setIsRecovering(true);
+      setCurrentCount(0);
+      setProgress(0);
+      setTotalFiles(300);
+    };
 
-  // closeButton -> Result 뒤로가기
-  const [view, setView] = useState('upload');
-  const [history, setHistory] = useState(['upload']);
+// 20) 화면 전환/탭 가드 네비게이션
+    const [view, setView] = useState('upload');
+    const [history, setHistory] = useState(['upload']);
 
-  const handleBack = () => {
-    console.log('뒤로가기 실행됨');
-    if (history.length > 1) {
-      const newHistory = [...history];
-      newHistory.pop();
-      const prevView = newHistory[newHistory.length - 1];
-      console.log('이전 화면:', prevView);
-      setHistory(newHistory);
-      setView(prevView);
+    const handleBack = () => {
+      if (history.length > 1) {
+        const newHistory = [...history];
+        newHistory.pop();
+        const prevView = newHistory[newHistory.length - 1];
+        setHistory(newHistory);
+        setView(prevView);
 
-      if (prevView === 'upload') {
-        setIsRecovering(false);
-        setRecoveryDone(false);
-        setShowComplete(false);
-        setSelectedAnalysisFile(null);
-      } else if (prevView === 'recovering') {
-        setIsRecovering(true);
-        setRecoveryDone(false);
-        setShowComplete(false);
-        setSelectedAnalysisFile(null);
-      } else if (prevView === 'result') {
-        setIsRecovering(false);
-        setRecoveryDone(true);
-        setShowComplete(false);
-        setSelectedAnalysisFile(null);
-      } else if (prevView === 'parser') {
-        setIsRecovering(false);
-        setRecoveryDone(true);
-        setShowComplete(false);
+        if (prevView === 'upload') {
+          setIsRecovering(false);
+          setRecoveryDone(false);
+          setShowComplete(false);
+          setSelectedAnalysisFile(null);
+        } else if (prevView === 'recovering') {
+          setIsRecovering(true);
+          setRecoveryDone(false);
+          setShowComplete(false);
+          setSelectedAnalysisFile(null);
+        } else if (prevView === 'result') {
+          setIsRecovering(false);
+          setRecoveryDone(true);
+          setShowComplete(false);
+          setSelectedAnalysisFile(null);
+        } else if (prevView === 'parser') {
+          setIsRecovering(false);
+          setRecoveryDone(true);
+          setShowComplete(false);
+        }
       }
-    }
-  };
 
+    const handleTabClick = (tab) => {
+      if (isRecovering && progress < 100) {
+        setPendingTab(tab);
+        setShowTabGuardPopup(true);
+        return;
+      }
+      setActiveTab(tab);
+    };
+
+    const confirmTabMove = () => {
+      if (pendingTab) setActiveTab(pendingTab);
+      setPendingTab(null);
+      setShowTabGuardPopup(false);
+    };
+
+    const cancelTabMove = () => {
+      setShowTabGuardPopup(false);
+      setPendingTab(null);
+    };
+}
 
   return (
     <>
@@ -487,6 +535,7 @@ const Recovery = () => {
       <Box>
         {showComplete ? (
           <>
+          {/* 결과 화면 */}
             <h1 className="upload-title">Result</h1>
             <div className="recovery-complete-area">
               <div style={{
@@ -507,6 +556,7 @@ const Recovery = () => {
           </>
         ) : isRecovering ? (
           <>
+          {/* 분석 진행 화면 */}
             <h1 className="upload-title">File Recovery</h1>
             <p className="recovery-desc-left">잠시만 기다려 주세요… 영상을 복원하고 있어요</p>
 
@@ -532,10 +582,12 @@ const Recovery = () => {
               <div className="progress-bar-text">
                 {progress}%
               </div>
+              
             </div>
           </>
         ) : !isRecovering && !recoveryDone ? (
           <>
+          {/* 파일 업로드 후 복원 중 화면 */}
             <h1 className="upload-title">File Upload</h1>
             <p className="upload-subtitle">E01 파일을 업로드 해주세요</p>
             <div
@@ -560,12 +612,12 @@ const Recovery = () => {
                 hidden
               />
               <Button variant="gray">
-                ⭱ <span>{selectedFile ? selectedFile.name : '업로드'}</span>
+                ⭱ <span>업로드</span>
               </Button>
             </div>
           </>
 
-          // 여기부터 Result Parser
+        
         ) : recoveryDone ? (
           selectedAnalysisFile ? (
             <>
@@ -576,8 +628,8 @@ const Recovery = () => {
                 <div className="recovery-file-controls">
                   {selectedAnalysisFile.toLowerCase().endsWith('.avi') && (
                     <>
-                      <Badge label="전방" onClick={() => console.log('전방 선택')} />
-                      <Badge label="후방" onClick={() => console.log('후방 클릭')} />
+                      <Badge label="전방" onClick={() => {}} />
+                      <Badge label="후방" onClick={() => {}} />
                     </>
                   )}
                   <button className="close-btn" onClick={handleBack}>✕</button>
@@ -585,7 +637,7 @@ const Recovery = () => {
               </div>
 
               <div className="result-scroll-area">
-                {/* 뷰위치 */}
+                {/* 뷰 */}
                 <div className="video-container">
                   <video
                     id="parser-video"
@@ -621,7 +673,7 @@ const Recovery = () => {
                         style={{
                           width: '30px',
                           transition: 'filter 0.2s',
-                          filter: 'none', // 초기값: 원래색
+                          filter: 'none', 
                         }}
                       />
                     </button>
@@ -634,39 +686,39 @@ const Recovery = () => {
                   </div>
                 </div>
 
-                {/* Parser */}
+                {/* 분석 화면 */}
                 <div className="parser-tabs">
                   <button
                     className={`parser-tab-button ${activeTab === 'basic' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('basic')}
+                    onClick={() => handleTabClick('basic')}
                   >
                     <img src={basicIcon} alt="기본 정보" />
                     <span>기본 정보</span>
                   </button>
                   <button
                     className={`parser-tab-button ${activeTab === 'integrity' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('integrity')}
+                    onClick={() => handleTabClick('integrity')}
                   >
                     <img src={integrityIcon} alt="무결성 검사" />
                     <span>무결성 검사</span>
                   </button>
                   <button
                     className={`parser-tab-button ${activeTab === 'slack' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('slack')}
+                    onClick={() => handleTabClick('slack')}
                   >
                     <img src={slackIcon} alt="슬랙 정보" />
                     <span>슬랙 정보</span>
                   </button>
                   <button
                     className={`parser-tab-button ${activeTab === 'structure' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('structure')}
+                    onClick={() => handleTabClick('structure')}
                   >
                     <img src={structureIcon} alt="구조 정보" />
                     <span>구조 정보</span>
                   </button>
                 </div>
 
-                {/* 기본 정보 */}
+              {/* 분석 파서 */}
                 <div className={`parser-tab-content ${activeTab === 'basic' ? 'active' : ''}`}>
                   <div className="parser-info-table">
                     <div className="parser-info-row">
@@ -674,7 +726,6 @@ const Recovery = () => {
                       <span className="parser-info-value">{analysis.basic.format}</span>
                     </div>
 
-                    {/* 파일시스템에서 시간 파싱하지 말고 복구 시간만 표시하기 */}
                     <div className="parser-info-row">
                       <span className="parser-info-label">복구 시간</span>
                       <span className="parser-info-value">{analysis.basic.timestamps.created}</span>
@@ -775,13 +826,13 @@ const Recovery = () => {
             </>
           ) : (
             <>
-              {/* 분석 후 바로 나오는 화면 */}
+              {/* 복원 결과 리스트 */}
               <h1 className="upload-title">Result</h1>
               <div className="recovery-file-box">
                 <span className="result-recovery-text">복원된 파일 목록</span>
               </div>
               <div className="result-wrapper">
-                {/* 요약: 개수 + 전체 용량 */}
+
                 <p className="result-summary">
                   총 {results.length}개의 파일, 용량{' '}
                   {bytesToMB(
@@ -792,7 +843,7 @@ const Recovery = () => {
                 <div className="result-scroll-area" style={{ position: 'relative' }}>
                   {Object.entries(groupedResults).map(([category, files]) => (
                     <div className="result-group" key={category}>
-                      {/* 그룹 헤더 */}
+
                       <div
                         className={`result-group-header ${openGroups[category] ? 'open' : ''}`}
                         onClick={() => toggleGroup(category)}
@@ -806,7 +857,6 @@ const Recovery = () => {
                         {category} ({files.length})
                       </div>
 
-                      {/* 그룹 열려있을 때만 리스트 */}
                       {openGroups[category] && (
                         <div className="result-file-list">
                           {files.map((file) => {
@@ -837,10 +887,10 @@ const Recovery = () => {
                                           }
 
                                           const formatted = `file:///${slackPath.replace(/\\/g, '/')}`;
-                                          console.log('🎯 슬랙 영상 경로:', formatted);
+                                          console.log("[Debug] slack video path : ", formatted);
 
-                                          setSlackVideoSrc(formatted);  // ✅ 슬랙 영상 경로 저장
-                                          setShowSlackPopup(true);      // ✅ 팝업 열기
+                                          setSlackVideoSrc(formatted);  // 슬랙 영상 경로 저장
+                                          setShowSlackPopup(true);   
                                         }}
                                         style={{ cursor: 'pointer' }}
                                       />
@@ -878,6 +928,7 @@ const Recovery = () => {
         }
       </Box>
 
+    {/* Alert 조건문 */}
       {showAlert && (
         <Alert
           icon={alertIcon}
@@ -891,6 +942,28 @@ const Recovery = () => {
           }
         >
           <Button variant="dark" onClick={() => setShowAlert(false)}>다시 선택</Button>
+        </Alert>
+      )}
+
+      {showTabGuardPopup && (
+        <Alert
+          icon={recoveryPauseIcon}
+          title="탭 전환 경고"
+          description={
+            <>
+              영상 복원이 아직 완료되지 않았습니다.<br />
+              이 상태에서 탭을 이동하면 복구가 중단됩니다.<br />
+              계속 이동하시겠습니까?
+            </>
+          }
+        >
+          <div
+            className="alert-buttons"
+            style={{ marginTop: '1rem', display: 'flex', gap: '10px' }}
+          >
+            <Button variant="gray" onClick={cancelTabMove}>취소</Button>
+            <Button variant="dark" onClick={confirmTabMove}>이동하기</Button>
+          </div>
         </Alert>
       )}
 
@@ -923,7 +996,7 @@ const Recovery = () => {
               backgroundColor: 'black',
               borderRadius: '12px',
             }}
-            src={slackVideoSrc}  // ✅ 핵심 수정
+            src={slackVideoSrc} 
           />
         </div>
       )}
@@ -987,5 +1060,4 @@ const Recovery = () => {
     </>
   );
 }
-
 export default Recovery;

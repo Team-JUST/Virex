@@ -77,7 +77,7 @@ function broadcastDrives() {
       mainWindow.webContents.send('drives-updated', info);
     })
     .catch((err) => {
-      console.error('Failed to broadcast drives:', err);
+      console.error('[Debug] Failed to broadcast drives:', err);
       mainWindow.webContents.send('drives-updated', []);
     });
 }
@@ -112,15 +112,13 @@ function createWindow() {
 
 // view
 app.whenReady().then(() => {
-  // ✅ stream 프로토콜 등록
   protocol.interceptFileProtocol('stream', (request, callback) => {
     const url = request.url.substr(9); // 'stream://' 제거
     const decodedPath = decodeURIComponent(url);
-    console.log('📦 stream 요청:', decodedPath);
+    console.log('[Debug]: stream request:', decodedPath);
     callback({ path: decodedPath });
   });
 
-  // 기존 창 생성
   createWindow();
 });
 
@@ -128,12 +126,10 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
-// IPC: get-drives
 ipcMain.handle('get-drives', async () => {
   return await getDrivesWithInfo();
 });
 
-// IPC: read-folder
 ipcMain.handle('read-folder', async (_event, folderPath) => {
   try {
     const dirents = await fs.readdir(folderPath, { withFileTypes: true });
@@ -160,17 +156,17 @@ ipcMain.handle('read-folder', async (_event, folderPath) => {
     }
     return items;
   } catch (err) {
-    console.error('read-folder error:', err);
+    console.error('[Debug]: read-folder error:', err);
     return [];
   }
 });
 
 ipcMain.on('file-selected', (_event, filePath) => {
-  console.log('선택된 E01 파일 경로:', filePath);
+  console.log("[Debug] selected E01 file path : ", filePath);
 });
 
 ipcMain.handle('start-recovery', (_event, e01FilePath) => {
-  console.log('▶ start-recovery called with', e01FilePath);
+  console.log("[Debug] start-recovery called with : ", e01FilePath);
 
   return new Promise((resolve, reject) => {
     const scriptPath = path.join(__dirname, 'python_engine', 'main.py');
@@ -181,11 +177,9 @@ ipcMain.handle('start-recovery', (_event, e01FilePath) => {
       env,
     });
 
-    console.log('--- Python spawned, waiting for stdout lines ---');
 
     const rl = readline.createInterface({ input: python.stdout });
     rl.on('line', async line => {
-      console.log('⭸ raw line:', line);
       try {
         const data = JSON.parse(line);
 
@@ -200,36 +194,37 @@ ipcMain.handle('start-recovery', (_event, e01FilePath) => {
 
         // 2) analysisPath 이벤트
         if (data.analysisPath) {
-          console.log('✔ got analysisPath:', data.analysisPath);
+          console.log("[Debug] got analysisPath : ", data.analysisPath);
           const tempDir = path.dirname(data.analysisPath);
           mainWindow.webContents.send('analysis-path', tempDir);
           try {
             const raw = await fs.readFile(data.analysisPath, 'utf8');
             const results = JSON.parse(raw);
-            console.log('📤 [MAIN.JS] 프론트엔드로 전송할 결과 개수:', results.length);
+            console.log("[Debug] results to frontend count : ", results.length);
+
             results.forEach((result, index) => {
-              console.log(`📤 [MAIN.JS] 결과 ${index}: name=${result.name}, slack_info=`, result.slack_info);
+              console.log(`[Debug] result ${index} : name=${result.name}, slack_info = `, result.slack_info);
             });
             mainWindow.webContents.send('recovery-results', results);
           } catch (err) {
-            console.error('Failed to read analysis.json:', err);
+            console.error("[Debug] failed to read analysis.json : ", err);
             mainWindow.webContents.send('recovery-results', { error: err.message });
           }
           return;
         }
 
       } catch (e) {
-        console.log('⚠️ not JSON:', line);
+        console.log("[Debug] not JSON : ", line);
       }
     });
 
     python.stderr.on('data', buf => {
-      console.error('Python stderr:', buf.toString());
+      console.error("[Debug] python stderr : ", buf.toString());
       mainWindow.webContents.send('recovery-error', buf.toString());
     });
 
     python.on('close', code => {
-      console.log('🔚 python exited with code', code);
+      console.log("[Debug] python exited with code : ", code);
       rl.close();
       mainWindow.webContents.send('recovery-done');
       code === 0 ? resolve() : reject(new Error(`exit ${code}`));
@@ -239,9 +234,7 @@ ipcMain.handle('start-recovery', (_event, e01FilePath) => {
 
 ipcMain.handle('run-download', (_event, { e01Path, choice, downloadDir }) => {
   // 1) 호출된 인자 찍기
-  console.log('▶ run-download called with', {
-    e01Path, choice, downloadDir
-  });
+  console.log("[Debug] run-download called with : ", { e01Path, choice, downloadDir });
 
   // 2) 인자 유효성 검사
   if (
@@ -252,10 +245,9 @@ ipcMain.handle('run-download', (_event, { e01Path, choice, downloadDir }) => {
     !choice.trim() ||
     !downloadDir.trim()
   ) {
-    console.error('❌ run-download invalid args:', {
-      e01Path, choice, downloadDir
-    });
-    // 에러 전송 시에도 어떤 인자가 잘못됐는지 명확히
+
+    console.error("[Debug] run-download invalid args : ", { e01Path, choice, downloadDir });
+
     mainWindow.webContents.send(
       'download-error',
       `Invalid args for run-download: ${JSON.stringify({ e01Path, choice, downloadDir })}`
@@ -268,7 +260,7 @@ ipcMain.handle('run-download', (_event, { e01Path, choice, downloadDir }) => {
     const env = { ...process.env, PYTHONPATH: __dirname };
     const args = [scriptPath, e01Path, choice, downloadDir];
 
-    console.log('▶ spawning python with args:', args);
+    console.log("[Debug] spawning python with args : ", args);
 
     const python = spawn('python', args, {
       cwd: path.join(__dirname, 'python_engine'),
@@ -278,18 +270,18 @@ ipcMain.handle('run-download', (_event, { e01Path, choice, downloadDir }) => {
 
     const rl = readline.createInterface({ input: python.stdout });
     rl.on('line', line => {
-      console.log('⭸ download line:', line);
+      console.log("[Debug] download line : ", line);
       mainWindow.webContents.send('download-log', line);
     });
 
     python.stderr.on('data', buf => {
       const msg = buf.toString();
-      console.error('Python stderr (download):', msg);
+      console.error("[Debug] python stderr (download) : ", msg);
       mainWindow.webContents.send('download-error', msg);
     });
 
     python.on('close', code => {
-      console.log('🔚 download python exited with code', code);
+      console.log("[Debug] download python exited with code : ", code);
       rl.close();
       if (code === 0) {
         resolve();
