@@ -68,7 +68,7 @@
   margin-right: 1rem;
 }
 
-
+/* ++ 다크모드 ++ */
 
 .info_page.dark-mode {
   background: #0f172a;
@@ -80,8 +80,7 @@
 }
 
 .info_box.dark-mode {
-  background: #23293a;
-  border: 1px solid #2c3446;
+  background: #1e293b; 
   color: #cbd5e1;
 }
 
@@ -100,11 +99,11 @@
 }
 
 .info_table.dark-mode th {
-  background: #23293a;
+  background: #1e293b;
 }
 
 .info_table.dark-mode td {
-  background: #23293a;
+  background: #1e293b;
 }
 
 a.dark-mode {
@@ -120,7 +119,6 @@ a.dark-mode {
   color: #cbd5e1;
 }
 
-
 a {
   color: #1e80ff;
   text-decoration: none;
@@ -130,7 +128,6 @@ a:hover {
   color: #1F2937;
   text-decoration: underline;
 }
-
 
 .info_table tr.stack-divider {
   border-bottom: 1px solid #ddd;

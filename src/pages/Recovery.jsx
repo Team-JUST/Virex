@@ -30,7 +30,7 @@ import completeIcon from '../images/complete.svg';
 import storageFullIcon from '../images/storageFullIcon.svg';
 import { useNavigate } from 'react-router-dom';
 
-const Recovery = () => {
+const Recovery = ({ isDarkMode }) => {
 
 // 1) 화면 제어 상태 정의
   const [showTabGuardPopup, setShowTabGuardPopup] = useState(false);
@@ -536,6 +536,7 @@ const Recovery = () => {
           setShowComplete(false);
         }
       }
+    };
 
     const handleTabClick = (tab) => {
       if (isRecovering && progress < 100) {
@@ -553,7 +554,7 @@ const Recovery = () => {
     };
 
     const cancelTabMove = () => {
-      setShowTabFGuardPopup(false);
+      setShowTabGuardPopup(false);
       setPendingTab(null);
     };
 
@@ -578,13 +579,10 @@ const Recovery = () => {
       }
     }, [isRecovering, selectedFile]);
 
-  
-}
-
   return (
-    <>
-      <Stepbar currentStep={currentStep} />
-      <Box>
+    <div className={`recovery-page ${isDarkMode ? 'dark-mode' : ''}`}>
+      <Stepbar currentStep={currentStep} isDarkMode={isDarkMode} />
+      <Box isDarkMode={isDarkMode}>
         {showComplete ? (
           <>
           {/* 결과 화면 */}
@@ -984,6 +982,7 @@ const Recovery = () => {
         <Alert
           icon={alertIcon}
           title="파일 형식 오류"
+          isDarkMode={isDarkMode}
           description={
             <>
               선택한 파일은 E01 이미지 형식이 아닙니다<br />
@@ -1000,6 +999,7 @@ const Recovery = () => {
         <Alert
           icon={recoveryPauseIcon}
           title="탭 전환 경고"
+          isDarkMode={isDarkMode}
           description={
             <>
               영상 복원이 아직 완료되지 않았습니다.<br />
@@ -1056,6 +1056,7 @@ const Recovery = () => {
         <Alert
           icon={storageFullIcon}
           title="용량 부족 알림"
+          isDarkMode={isDarkMode}
           description={
             <>
               복원 영상을 저장할 드라이브에 용량이 부족합니다<br />
@@ -1073,8 +1074,9 @@ const Recovery = () => {
         <Alert
           icon={downloadIcon}
           title="다운로드 옵션"
+          isDarkMode={isDarkMode}
           description={
-            <div className="download-popup-wide">
+            <div className={`download-popup-wide ${isDarkMode ? 'dark-mode' : ''}`}>
               <p>
                 영상과 함께 각 프레임 이미지를 ZIP으로 다운받으시겠습니까?
               </p>
@@ -1104,7 +1106,7 @@ const Recovery = () => {
                   type="text"
                   value={selectedPath}
                   readOnly
-                  className="custom-path-input"
+                  className={`custom-path-input ${isDarkMode ? 'dark-mode' : ''}`}
                   style={{ flex: 1 }}
                   placeholder="경로를 지정해주세요"
                 />
@@ -1124,7 +1126,7 @@ const Recovery = () => {
           </div>
         </Alert>
       )}
-    </>
+    </div>
   );
 }
 export default Recovery;

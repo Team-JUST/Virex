@@ -274,7 +274,6 @@ body {
   background-color: #f9f9f9;
 }
 
-
 .result-scroll-area {
   max-height: 400px;
   /* 원하는 높이로 조정 (예: 400~500px) */
@@ -502,4 +501,176 @@ body {
   list-style: none;
   margin: 0;
   padding: 0;
+}
+
+/* ++ 다크모드 ++ */
+
+.recovery-page.dark-mode .upload-title {
+  color: #f1f5f9;
+}
+
+.recovery-page.dark-mode .upload-subtitle {
+  color: #cbd5e1;
+}
+
+.recovery-page.dark-mode .result-recovery-text {
+  color: #f1f5f9;
+}
+
+.recovery-page.dark-mode .dropzone {
+  border-color: #475569;
+  background-color: #1e293b;
+  color: #e2e8f0;
+}
+
+.recovery-page.dark-mode .dropzone:hover {
+  border-color: #3b82f6;
+  background-color: #334155;
+}
+
+.recovery-page.dark-mode .dropzone-title {
+  color: #cbd5e1;
+}
+
+.recovery-page.dark-mode .dropzone-desc {
+  color: #94a3b8;
+}
+
+.recovery-page.dark-mode .recovery-desc-left,
+.recovery-page.dark-mode .recovery-desc-right,
+.recovery-page.dark-mode .recovery-desc-center {
+  color: #cbd5e1;
+}
+
+.recovery-page.dark-mode .recovery-file-box {
+  background-color: #1e293b;
+  border-color: #475569;
+}
+
+.recovery-page.dark-mode .file-name {
+  color: #f1f5f9;
+}
+
+.recovery-page.dark-mode .close-btn {
+  background-color: #1e293b;
+  color: #f9fafb;
+}
+
+.recovery-page.dark-mode .close-btn:hover {
+  background-color: #4b5563;
+}
+
+.recovery-page.dark-mode .parser-info-table {
+  background-color: #1e293b;
+  color: #e2e8f0;
+}
+
+.recovery-page.dark-mode .parser-info-row {
+  border-bottom-color: #475569;
+}
+
+.recovery-page.dark-mode .parser-info-label {
+  color: #cbd5e1;
+}
+
+.recovery-page.dark-mode .parser-info-value {
+  color: #f1f5f9;
+}
+
+.recovery-page.dark-mode .data-bar-wrapper {
+  background-color: #374151;
+}
+
+.recovery-page.dark-mode .parser-structure {
+  background-color: #1e293b;
+  color: #e2e8f0;
+}
+
+.recovery-page.dark-mode .parser-structure h4 {
+  color: #f1f5f9;
+}
+
+.recovery-page.dark-mode .potato-container {
+  background-color: #1e293b;
+}
+
+.recovery-page.dark-mode .recovery-complete-area {
+  color: #f1f5f9;
+}
+
+.recovery-page.dark-mode .status-icon {
+  filter: invert(1) brightness(1);
+}
+
+.recovery-page.dark-mode img {
+  filter: brightness(0.9);
+}
+
+.recovery-page.dark-mode .progress-bar-text {
+  color: #f1f5f9;
+}
+
+/* 아이콘 색상 반전 */
+.recovery-page.dark-mode .parser-tab-button img,
+.recovery-page.dark-mode .result-group-icon,
+.recovery-page.dark-mode #playPauseIcon,
+.recovery-page.dark-mode .recovery-file-box img {
+  filter: invert(1) brightness(1);
+}
+
+/* parser-tabs 다크모드 스타일 */
+.recovery-page.dark-mode .parser-tabs {
+  background-color: #1e293b;
+  border-bottom-color: #475569;
+}
+
+.recovery-page.dark-mode .parser-tab-button {
+  color: #cbd5e1;
+}
+
+.recovery-page.dark-mode .parser-tab-button.active {
+  color: #3b82f6;
+  border-bottom-color: #3b82f6;
+}
+
+.recovery-page.dark-mode .parser-tab-content {
+  background-color: #1e293b;
+  color: #e2e8f0;
+}
+
+/* text-button 다크모드 스타일 */
+.recovery-page.dark-mode .text-button {
+  color: #f1f5f9;
+}
+
+.recovery-page.dark-mode .text-button:hover {
+  color: #3b82f6;
+}
+
+/* 다운로드 */
+
+.download-popup-wide.dark-mode {
+  background-color: #1e293b;
+  color: #e2e8f0;
+}
+
+.download-popup-wide.dark-mode p {
+  color: #e2e8f0;
+}
+
+.download-popup-wide.dark-mode .download-options label {
+  color: #e2e8f0;
+}
+
+.download-popup-wide.dark-mode .path-box input,
+.custom-path-input.dark-mode {
+  background-color: #374151;
+  color: #e2e8f0;
+  border: 1px solid #475569;
+}
+
+.download-popup-wide.dark-mode 
+.path-box input::placeholder,
+.custom-path-input.dark-mode::placeholder {
+  color: #9ca3af;
 }

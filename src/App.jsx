@@ -70,6 +70,7 @@ function App() {
       <Alert
         icon={recoveryPauseIcon}
         title="복구 중단 알림"
+        isDarkMode={isDarkMode}
         description={
           <>
             영상 복원이 아직 완료되지 않았습니다.<br />

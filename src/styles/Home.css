@@ -19,7 +19,7 @@
   flex: 1;
 }
 
-h1 {
+.home_title {
   font-size: 1.8rem;
   font-weight: bold;
   margin-bottom: 1.5rem;
@@ -269,7 +269,7 @@ h1 {
   color: #f8fafc;
 }
 
-.main_content.dark-mode h1 {
+.main_content.dark-mode .home_title {
   color: #f8fafc;
 }
 
@@ -313,4 +313,14 @@ h1 {
   background-color: #f1f5f9;
   color: #1e293b;
   font-weight: 600;
+}
+
+/* 아이콘 색상 반전 */
+
+.main_content.dark-mode .drive_icon {
+  filter: invert(1) brightness(1);
+}
+
+.main_content.dark-mode .entry_icon {
+  filter: invert(1) brightness(1);
 }
