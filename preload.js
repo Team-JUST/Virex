@@ -63,4 +63,9 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.on('download-error', l);
     return () => ipcRenderer.removeListener('download-error', l);
   },
+  onDownloadComplete: (cb) => {
+    const l = () => cb();
+    ipcRenderer.on('download-complete', l);
+    return () => ipcRenderer.removeListener('download-complete', l);
+  },
 });

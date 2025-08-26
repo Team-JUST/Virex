@@ -8,7 +8,8 @@ const Loading = ({
   speed = 1.6,      
   color = "#2F6BFF",   
   baseAlpha = 0.25,   
-  peakAlpha = 1.0,     
+  peakAlpha = 1.0,
+  text = "Recovering...",
 }) => {
 
   const perStepDelay = speed / segments;
@@ -50,7 +51,7 @@ const Loading = ({
         })}
       </svg>
 
-      <div style={{ marginTop: 8, fontWeight: 600 }}>Recovering...</div>
+      <div style={{ marginTop: 8, fontWeight: 600 }}>{text}</div>
 
       <style>{`
         @keyframes sweep {

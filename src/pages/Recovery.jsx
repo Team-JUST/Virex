@@ -85,6 +85,7 @@ const Recovery = ({ isDarkMode }) => {
   const [showAlert, setShowAlert] = useState(false);
   const [recoveryDone, setRecoveryDone] = useState(false);
   const [showDownloadPopup, setShowDownloadPopup] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
 
   const [selectedFile, setSelectedFile] = useState(null);
   const [saveFrames, setSaveFrames] = useState(false);
@@ -236,9 +237,15 @@ const Recovery = ({ isDarkMode }) => {
     const offErr = window.api.onDownloadError(err => {
       console.error("[Debug] download error : ", err);
     });
+    const offDownloadComplete = window.api.onDownloadComplete(() => {
+      console.log("[Debug] download completed");
+      setIsDownloading(false);
+      setShowComplete(true);
+    });
     return () => {
       offLog();
       offErr();
+      offDownloadComplete();
     };
   }, []);
 
@@ -348,17 +355,19 @@ const Recovery = ({ isDarkMode }) => {
     const choice = saveFrames ? 'both' : 'video';
 
     try {
+      setShowDownloadPopup(false);
+      setIsDownloading(true);
+      
       await window.api.runDownload({
         e01Path: tempOutputDir,
         choice,
         downloadDir: selectedPath
       });
 
-      setShowComplete(true);
+      // 다운로드 완료는 onDownloadComplete 이벤트에서 처리
     } catch (err) {
       console.error("[Debug] download failed : ", err);
-    } finally {
-      setShowDownloadPopup(false);
+      setIsDownloading(false);
     }
   };
 
@@ -602,6 +611,22 @@ const Recovery = ({ isDarkMode }) => {
               <div style={{ display: 'flex', justifyContent: 'center', marginTop: '1.5rem' }}>
                 <Button variant="dark" onClick={() => navigate('/')}>홈으로</Button>
               </div>
+            </div>
+          </>
+        ) : isDownloading ? (
+          <>
+          {/* 다운로드 진행 화면 */}
+            <h1 className="upload-title">Download</h1>
+            <p className="recovery-desc-left">잠시만 기다려 주세요… 영상을 다운로드하고 있어요</p>
+
+            <div className="recovery-file-box">
+              <div className="recovery-file-left">
+                <Badge label="다운로드 중" />
+                <span className="file-name">{selectedFile?.name}</span>
+              </div>
+            </div>
+            <div style={{ display: "flex", justifyContent: "center" }}>
+              <Loading text="Downloading..." />
             </div>
           </>
         ) : isRecovering ? (
