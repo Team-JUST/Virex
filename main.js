@@ -115,7 +115,7 @@ app.whenReady().then(() => {
   protocol.interceptFileProtocol('stream', (request, callback) => {
     const url = request.url.substr(9); // 'stream://' 제거
     const decodedPath = decodeURIComponent(url);
-    console.log('[Debug]: stream request:', decodedPath);
+    console.log('[Debug] stream request:', decodedPath);
     callback({ path: decodedPath });
   });
 
@@ -156,7 +156,7 @@ ipcMain.handle('read-folder', async (_event, folderPath) => {
     }
     return items;
   } catch (err) {
-    console.error('[Debug]: read-folder error:', err);
+    console.error('[Debug] read-folder error:', err);
     return [];
   }
 });

@@ -56,7 +56,7 @@ function App() {
 
   return (
     <div className={`container${isDarkMode ? ' dark-mode' : ''}`}>
-      <Sidebar isDarkMode={isDarkMode} />
+      <Sidebar />
       <main className="app_main">
         <Routes>
           <Route path="/" element={<Home isDarkMode={isDarkMode} />} />

@@ -20,7 +20,7 @@ const Information = ({ isDarkMode }) => {
             </tr>
             <tr>
               <th>출시일</th>
-              <td>2024년 7월 20일</td>
+              <td>2025년 8월 20일</td>
             </tr>
           </tbody>
         </table>
@@ -33,11 +33,11 @@ const Information = ({ isDarkMode }) => {
           <tbody>
             <tr className="stack-divider">
               <th>팀</th>
-              <td>복원하는 감자입니다만...?</td>
+              <td>JUST</td>
             </tr>
             <tr className="stack-divider">
-              <th>소속</th>
-              <td>화이트햇 스쿨 3기</td>
+              <th>문의</th> 
+              <td>seyeon680895@gmail.com</td>
             </tr>
             <tr>
               <th>GitHub</th>
