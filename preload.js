@@ -10,6 +10,15 @@ contextBridge.exposeInMainWorld('api', {
   startRecovery: (e01Path) => ipcRenderer.invoke('start-recovery', e01Path),
   clearCache: () => ipcRenderer.invoke('clear-cache'),
 
+  onDiskFull: (cb) => {
+    if (typeof cb !== 'function') return () => {};
+    const handler = (_event, payload) => cb(payload);
+    ipcRenderer.on('recovery-disk-full', handler);
+
+    // 컴포넌트 unmount 시 호출하면 리스너 제거됨
+    return () => ipcRenderer.removeListener('recovery-disk-full', handler);
+  },
+
   onDrivesUpdated: (callback) => {
     const listener = (_event, data) => callback(data);
     ipcRenderer.on('drives-updated', listener);
