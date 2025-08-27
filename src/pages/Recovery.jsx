@@ -5,7 +5,7 @@ import Box from '../components/Box.jsx';
 import Button from '../components/Button.jsx';
 import Alert from '../components/Alert.jsx';
 import Badge from '../components/Badge.jsx';
-import Potato from '../components/Potato.jsx';
+import Loading from '../components/Loading.jsx';
 import '../styles/Stepbar.css';
 import '../styles/Recovery.css';
 import '../styles/Button.css';
@@ -27,16 +27,34 @@ import fullscreenIcon from '../images/view_fullscreen.svg';
 import integrityGreen from '../images/integrity_g.svg';
 import integrityRed from '../images/integrity_r.svg';
 import completeIcon from '../images/complete.svg';
+import storageFullIcon from '../images/storageFullIcon.svg';
 import { useNavigate } from 'react-router-dom';
 
 const Recovery = () => {
 
-// 1) 복원 진행/탭 가드 등 화면 제어 상태
+// 1) 화면 제어 상태 정의
   const [showTabGuardPopup, setShowTabGuardPopup] = useState(false);
   const [isRecovering, setIsRecovering] = useState(false);
   const [progress, setProgress] = useState(0);
   const prevIsRecovering = useRef(isRecovering);
+  const [showDiskFullAlert, setShowDiskFullAlert] = useState(false);
   const navigate = useNavigate();
+  const rollbackRef = useRef(() => {});
+
+  rollbackRef.current = () => {
+    setIsRecovering(false);
+    setProgress(0);
+    setRecoveredFiles?.([]);
+    setRecoveryDone?.(false);
+    setSelectedAnalysisFile?.(null);
+    setSlackVideoSrc?.(null);
+    setShowDiskFullAlert?.(false);
+    navigate('/recovery'); // 또는 setView('upload')
+  };
+
+  function rollbackToFirst() {
+    rollbackRef.current();
+  }
 
 // 2) 복원 진행률 관련 이펙트
   useEffect(() => {
@@ -81,6 +99,7 @@ const Recovery = () => {
   const [openGroups, setOpenGroups] = useState({});
 
   const [tempOutputDir, setTempOutputDir] = useState(null);
+
 
 // 4) 결과 목록 → 카테고리 그룹핑 유틸/파생값
   function groupByCategory(list) {
@@ -226,7 +245,17 @@ const Recovery = () => {
 // 15) 복원 자동 시작 트리거
   useEffect(() => {
     if (isRecovering && selectedFile) {
-      window.api.startRecovery(selectedFile.path);
+      window.api.startRecovery(selectedFile.path).catch((err) => {
+        const msg = String(err?.message || err);
+        console.warn("[Recovery] startRecovery failed:", msg);
+
+        if (msg.includes("disk_full")) {
+          setShowDiskFullAlert(true);   // ✅ 팝업 띄우기
+          rollbackToFirst();          // ✅ 초기화
+        } else {
+          // TODO: 그 외 에러 처리 (원하면 일반 에러 팝업 따로)
+        }
+      });
     }
   }, [isRecovering, selectedFile]);
 
@@ -524,9 +553,32 @@ const Recovery = () => {
     };
 
     const cancelTabMove = () => {
-      setShowTabGuardPopup(false);
+      setShowTabFGuardPopup(false);
       setPendingTab(null);
     };
+
+  // 21) 디스크 용량 부족 이벤트 수신 → Alert 띄우고 롤백
+  useEffect(() => {
+      if (!window.api?.onDiskFull) return;
+      const off = window.api.onDiskFull(() => {
+        setShowDiskFullAlert(true);
+        rollbackToFirst();  
+      });
+      return () => { try { off && off(); } catch {} };
+    }, []);
+
+    useEffect(() => {
+      if (isRecovering && selectedFile) {
+        window.api.startRecovery(selectedFile.path).catch((err) => {
+          if (String(err?.message || err).includes("disk_full")) {
+            setShowDiskFullAlert(true);
+            rollbackToFirst();   
+          }
+        });
+      }
+    }, [isRecovering, selectedFile]);
+
+  
 }
 
   return (
@@ -568,10 +620,8 @@ const Recovery = () => {
               <button className="close-btn" onClick={() => setIsRecovering(false)}>✕</button>
             </div>
             <div style={{ display: "flex", justifyContent: "center" }}>
-              <Potato />
+              <Loading />
             </div>
-            <div className="recovery-desc-center">Recovering...</div>
-
             <div className="progress-bar-wrapper">
               <div className="progress-bar-track">
                 <div
@@ -630,6 +680,7 @@ const Recovery = () => {
                     <>
                       <Badge label="전방" onClick={() => {}} />
                       <Badge label="후방" onClick={() => {}} />
+                      <Badge label="사이드" onClick={() => {}} />
                     </>
                   )}
                   <button className="close-btn" onClick={handleBack}>✕</button>
@@ -999,6 +1050,22 @@ const Recovery = () => {
             src={slackVideoSrc} 
           />
         </div>
+      )}
+
+      {showDiskFullAlert && (
+        <Alert
+          icon={storageFullIcon}
+          title="용량 부족 알림"
+          description={
+            <>
+              복원 영상을 저장할 드라이브에 용량이 부족합니다<br />
+              용량을 비우고 다시 시도해주세요
+            </>
+          }
+        >
+          <Button variant="dark" onClick={() => setShowDiskFullAlert(false)}>확인</Button>
+
+        </Alert>
       )}
 
 

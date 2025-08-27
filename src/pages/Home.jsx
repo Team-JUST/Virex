@@ -12,6 +12,11 @@ function bytesToGB(n) {
   return `${(n / (1024 ** 3)).toFixed(1)} GB`;
 }
 
+function normalizePath(p) {
+  if (!p) return '';
+  return p.replace(/\\+$/, '').toLowerCase();
+}
+
 function formatDrivePath(folderPath, mountPath) {
   if (!folderPath) return '';
   if (mountPath && folderPath.startsWith(mountPath)) {
@@ -70,7 +75,7 @@ function ExplorerView({
   isDarkMode,
 }) {
   const displayPath = formatDrivePath(currentPath, mountPath);
-  const canBack = currentPath !== mountPath;
+  const canBack = normalizePath(currentPath) !== normalizePath(mountPath);
 
   const navigate = useNavigate();
 
@@ -92,9 +97,11 @@ function ExplorerView({
             <span className="drive_path_text">{displayPath}</span>
           </div>
           <div className="drive_controls">
-            <Button variant="gray" disabled={!canBack} onClick={canBack ? onBack : undefined}>
-              뒤로 가기
-            </Button>
+            {canBack && (
+              <Button variant="gray" onClick={onBack}>
+                뒤로 가기
+              </Button>
+            )}
 
             <Button variant="dark" onClick={onSelectDrive}>
               드라이브 선택
@@ -245,6 +252,7 @@ const Home = ({ isDarkMode }) => {
           onSelectDrive={handleSelectDrive}
           onOpenDir={handleOpenDir}
           onSelectE01={handleSelectE01}
+          isDarkMode={isDarkMode}   // ← 추가
         />
       )}
     </div>

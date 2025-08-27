@@ -169,8 +169,10 @@ ipcMain.handle('start-recovery', (_event, e01FilePath) => {
   console.log("[Debug] start-recovery called with : ", e01FilePath);
 
   return new Promise((resolve, reject) => {
+    let abortedByDiskFull = false;
     const scriptPath = path.join(__dirname, 'python_engine', 'main.py');
-    const env = { ...process.env, PYTHONPATH: __dirname };
+    const env = { ...process.env, PYTHONPATH: __dirname};
+    
     const python = spawn('python', [scriptPath, e01FilePath], {
       cwd: path.join(__dirname, 'python_engine'),
       shell: true,
@@ -182,6 +184,24 @@ ipcMain.handle('start-recovery', (_event, e01FilePath) => {
     rl.on('line', async line => {
       try {
         const data = JSON.parse(line);
+
+        // 용량 부족 이벤트 처리
+        if (data.event === 'disk_full') {
+          abortedByDiskFull = true;
+          console.warn('[Debug] disk_full:', data);
+
+          // 렌더러로 알림 전송 (프론트에서 Alert 띄우고 롤백)
+          console.warn('[Main] sending recovery-disk-full to renderer');
+          mainWindow.webContents.send('recovery-disk-full', {
+            free: data.free ?? null,
+            needed: data.needed ?? null,
+          });
+
+          // 파이썬 프로세스 종료
+          try { python.kill(); } catch (_) {}
+
+          return; // 진행률/분석 처리 안 함
+        }
 
         // 1) 진행률 이벤트
         if (data.processed !== undefined && data.total !== undefined) {
@@ -224,11 +244,17 @@ ipcMain.handle('start-recovery', (_event, e01FilePath) => {
     });
 
     python.on('close', code => {
-      console.log("[Debug] python exited with code : ", code);
-      rl.close();
-      mainWindow.webContents.send('recovery-done');
-      code === 0 ? resolve() : reject(new Error(`exit ${code}`));
-    });
+    console.log("[Debug] python exited with code : ", code);
+    rl.close();
+
+    if (abortedByDiskFull) {
+      // 용량 부족으로 중단된 케이스: done 신호 보내지 않음
+      return reject(new Error('aborted: disk_full'));
+    }
+
+    mainWindow.webContents.send('recovery-done');
+    code === 0 ? resolve() : reject(new Error(`exit ${code}`));
+  });
   });
 });
 
@@ -330,3 +356,4 @@ ipcMain.handle('dialog:openE01File', async () => {
   if (canceled) return null;
   return filePaths[0];  // 선택된 파일 경로 하나 반환
 });
+

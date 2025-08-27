@@ -247,8 +247,18 @@ def extract_videos_from_e01(e01_path):
         logger.error(f"이미지 열기 실패: {e}")
         return [], None, 0
 
-    # 작업 결과를 저장할 임시 폴더 생성
-    output_dir = tempfile.mkdtemp(prefix="retato_")
+    temp_base = tempfile.gettempdir()                 # 예: C:\Users\user\AppData\Local\Temp
+    e01_size  = os.stat(img_path).st_size
+    needed    = int(e01_size * 1.2) + 1_000_000_000   # 1.2배 + 1GB 버퍼 (원하면 조정)
+    free      = shutil.disk_usage(temp_base).free
+
+    if free < needed:
+        # 렌더러로 보낼 신호(JSON 한 줄)
+        print(json.dumps({"event": "disk_full", "free": free, "needed": needed}), flush=True)
+        return [], None, 0
+
+    # 충분하면 임시 폴더 생성
+    output_dir = tempfile.mkdtemp(prefix="retato_", dir=temp_base)
 
     for part in volume:
         # 사용 불가 파티션 건너뛰기
