@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import '../styles/Sidebar.css';
 
 import LogoIcon from '../images/logo.svg';
@@ -10,14 +10,25 @@ import InfoIcon from '../images/information.svg';
 
 const Sidebar = ({ isDarkMode }) => {
   const location = useLocation();
+  const navigate = useNavigate();
 
-  // body에 dark-mode 클래스 동기화
+  const handleNav = (e, to) => {
+  e.preventDefault();
+  const g = window.__recoverGuard;
+  const isOnRecovery =
+  location.pathname === '/recovery' || location.pathname === '/fileUpload';
+
+  if (isOnRecovery && g?.isRecovering && Number(g.progress) < 100) {
+    window.dispatchEvent(new CustomEvent('show-stop-recover', { detail: { to } }));
+    return;
+  }
+  navigate(to);
+  };
+
+  // 다크모드 동기화
   useEffect(() => {
-    if (isDarkMode) {
-      document.body.classList.add('dark-mode');
-    } else {
-      document.body.classList.remove('dark-mode');
-    }
+    if (isDarkMode) document.body.classList.add('dark-mode');
+    else document.body.classList.remove('dark-mode');
   }, [isDarkMode]);
 
   const navItems = [
@@ -32,7 +43,7 @@ const Sidebar = ({ isDarkMode }) => {
       <div className="menu_box">
         <div className="logo_section">
           <img src={LogoIcon} alt="앱로고" className="logo_icon" />
-          <span className="logo_text">RETATO</span>
+          <span className="logo_text">Virex</span>
         </div>
         <div className="menu_title_section">
           <div className="menu_title">MENU</div>
@@ -43,6 +54,7 @@ const Sidebar = ({ isDarkMode }) => {
             <li key={path}>
               <Link
                 to={path}
+                onClick={(e) => handleNav(e, path)}  
                 className={`menu_item${location.pathname === path ? ' active' : ''}`}
               >
                 <img src={icon} alt={alt} className="menu_icon" />

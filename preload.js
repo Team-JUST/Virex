@@ -40,8 +40,7 @@ contextBridge.exposeInMainWorld('api', {
   onResults: (callback) => {
     const listener = (_e, data) => callback(data);
     ipcRenderer.on('recovery-results', listener);
-    return () => ipcRenderer.removeListener('results', listener);
-  },
+    return () => ipcRenderer.removeListener('recovery-results', listener);},
 
   // 다운로드 기능 추가
   runDownload: (args) => ipcRenderer.invoke('run-download', args),
