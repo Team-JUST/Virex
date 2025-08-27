@@ -90,6 +90,8 @@ function startDrivePolling() {
 
 // Create the main window
 function createWindow() {
+  const iconPath = path.join(__dirname, app.isPackaged ? 'dist' : 'public', 'titleIcon.ico');
+
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -97,6 +99,8 @@ function createWindow() {
     fullscreenable: false,
     autoHideMenuBar: true,
     backgroundColor: '#ecf2f8',
+    title: 'Virex',
+    icon: iconPath,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -104,11 +108,10 @@ function createWindow() {
     },
   });
 
-
-
-  mainWindow.loadFile(path.join(__dirname, 'dist/index.html'));
-  startDrivePolling();
+  mainWindow.loadFile(path.join(__dirname, 'dist', 'index.html')); // ✅
 }
+
+
 
 // view
 app.whenReady().then(() => {
