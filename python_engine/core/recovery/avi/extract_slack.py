@@ -1,11 +1,10 @@
 import os
 import logging
-from io import BytesIO
+import shutil
 from python_engine.core.recovery.avi.avi_split_channel import (
     split_channel_bytes,
     extract_full_channel_bytes,
-    CHUNK_SIG,
-    detect_codec)
+    CHUNK_SIG)
 from python_engine.core.recovery.utils.ffmpeg_wrapper import convert_video
 
 logger = logging.getLogger(__name__)
@@ -99,102 +98,93 @@ def extract_frames_from_raw(raw, sps_pps, codec, out_fn):
             pos = nal_start
     return count
 
-def recover_avi_slack(input_avi, raw_out_dir, slack_out_dir, channels_out_dir, target_format='mp4'):
+def recover_avi_slack(input_avi, base_dir, target_format='mp4'):
+    os.makedirs(base_dir, exist_ok=True)
     with open(input_avi, "rb") as f:
         data = f.read()
-    
-    orig_codec = detect_codec(data)
-    
-    # 1) pre-check: front/rear/side 중 하나라도 프레임 있나?
-    counts = [ split_channel_bytes(data, lbl)[1] for lbl in ("front","rear","side") ]
-    if max(counts) == 0:
-        logger.info(f"{os.path.basename(input_avi)} → 실제 슬랙 프레임 없음, 복원 스킵")
-        return {}
 
-    os.makedirs(raw_out_dir, exist_ok=True)         # h264 슬랙 원본
-    os.makedirs(slack_out_dir, exist_ok=True)       # 슬랙만 MP4
-    os.makedirs(channels_out_dir, exist_ok=True)    # 전체 채널 MP4
+    # 0 bytes 파일 예외 처리
+    if len(data) == 0:
+        logger.error(f"{input_avi} 파일 크기가 0입니다. 손상된 파일로 건너뜁니다.")
+        try:
+            shutil.rmtree(base_dir)
+        except Exception as e:
+            logger.warning(f"{base_dir} 폴더 삭제 실패: {e}")
+        return None
 
-    basename = os.path.splitext(os.path.basename(input_avi))[0]
+    # AVI 헤더 검사 (RIFF로 시작하고 AVI 포함)
+    if not (data[:4] == b'RIFF' and b'AVI' in data[:12]):
+        logger.error(f"{input_avi} AVI 헤더가 올바르지 않습니다. 건너뜁니다. 헤더: {data[:16]!r}")
+        try:
+            shutil.rmtree(base_dir)
+        except Exception as e:
+            logger.warning(f"{base_dir} 폴더 삭제 실패: {e}")
+        return None
+
+    origin_filename = os.path.basename(input_avi)
+    basename = os.path.splitext(origin_filename)[0]
+    origin_path = os.path.join(base_dir, origin_filename)
+    if os.path.abspath(input_avi) != os.path.abspath(origin_path):
+        shutil.copy2(input_avi, origin_path)
+
     results = {}
-
-    # 2) 슬랙 hidden MP4 생성
-    for label in ("front","rear","side"):
-        logger.info(f"[SLP][{label}] 채널 분리 시작: {basename}")
-        channel_data, frame_count, codec = split_channel_bytes(data, label)
-        logger.info(f"[BACKEND] AVI 슬랙 정보: {basename}_{label}, frame_count={frame_count}, codec={codec}")
-        logger.info(f"[BACKEND] AVI 슬랙 데이터 크기: channel_data_size={len(channel_data)}, total_file_size={len(data)}")
+    common_args = [
+        '-fflags', '+genpts',
+        '-vf', 'fps=30',
+        '-c:v', 'libx264',
+        '-preset', 'ultrafast',
+        '-crf', '30'
+    ]
+    
+    # 1) 슬랙 채널 분리 및 슬랙 영상 생성
+    for label in("front", "rear", "side"):
+        ch_dir = os.path.join(base_dir, label)
+        os.makedirs(ch_dir, exist_ok=True)
+        has_output = False
         
-        if frame_count == 0:
-            logger.info(f"[SLP][{label}] 프레임 없음 → 건너뜀")
-            continue
+        channel_data, frame_count, codec = split_channel_bytes(data, label)
+        if frame_count > 0:
+            sps_pps = extract_sps_pps_from_raw(channel_data, codec, label)
+            if sps_pps:
+                slack_h264 = os.path.join(ch_dir, f"{basename}_{label}_slack.h264")
+                slack_count = extract_frames_from_raw(channel_data, sps_pps, codec, slack_h264)
+                if slack_count > 0:
+                    slack_mp4 = os.path.join(ch_dir, f"{basename}_{label}_slack.{target_format}")
+                    convert_video(slack_h264, slack_mp4, extra_args=common_args)
+                    results[label] = {
+                        'recovered': True,
+                        'slack_path': slack_mp4,
+                        'frame_count': slack_count,
+                        'slack_rate': float(len(channel_data) / len(data) * 100)  # 채널 데이터 크기 / 전체 파일 크기
+                    }
+                    has_output = True
 
-        # SPS/PPS 추출
-        sps_pps = extract_sps_pps_from_raw(channel_data, codec, label)
-        if not sps_pps:
-            logger.warning(f"[{label}] SPS/PPS 실패 → 건너뜀")
-            continue
-
-        slack_h264 = os.path.join(raw_out_dir, f"{basename}_{label}_slack.h264")
-        slack_count = extract_frames_from_raw(channel_data, sps_pps, codec, slack_h264)
-        logger.info(f"[BACKEND] AVI 슬랙 프레임 추출 결과: {basename}_{label}, slack_count={slack_count}")
-        if slack_count == 0:
-            logger.info(f"[SLP][{label}] 슬랙 프레임 없음 → 삭제 및 건너뜀")
-            os.remove(slack_h264)
-            continue
-        logger.info(f"[SLP][{label}] 슬랙 프레임 추출 완료: {slack_count}개")
-
-        # hidden(slack) MP4 생성
-        hidden_mp4 = os.path.join(slack_out_dir, f"{basename}_{label}_hidden.mp4")
-        fmt = 'hevc' if any(x in orig_codec.lower() for x in ('265','hev1','hevc','hvc1')) else 'h264'
-        convert_video(
-            slack_h264, hidden_mp4,
-            extra_args=[
-                '-f', fmt,
-                '-c:v', 'copy',
-                '-movflags', 'faststart'
-            ]
-        )
-        logger.info(f"[RST][{label}] hidden MP4 생성: {hidden_mp4}")
-
-        results[label] = {
-            'recovered': True,
-            'hidden_path': hidden_mp4,
-            'frame_count': slack_count,
-            'slack_rate': float(len(channel_data) / len(data) * 100)  # 채널 데이터 크기 / 전체 파일 크기
-        }
-        logger.info(f"[BACKEND] AVI 슬랙 비율 계산: {basename}_{label}, channel_size={len(channel_data)}, total_size={len(data)}, slack_rate={results[label]['slack_rate']:.2f}%")
-
-    # 3) 원본 채널 MP4 생성
-    for label in ("front","rear","side"):
-        # 전체 채널 raw 데이터 획득
+        # 2) 원본 채널 분리
         full_raw = extract_full_channel_bytes(data, label)
         full_count = full_raw.count(CHUNK_SIG[label])
-        if full_count == 0:
-            logger.info(f"[FULL][{label}] 채널 없음 → 건너뜀")
-            continue
+        if full_count > 0:
+            raw_fn = os.path.join(ch_dir, f"{label}_full.raw")
+            with open(raw_fn, 'wb') as rf:
+                rf.write(full_raw)
 
-        # raw 저장
-        raw_fn = os.path.join(raw_out_dir, f"{basename}_{label}.raw")
-        with open(raw_fn, 'wb') as rf:
-            rf.write(channel_data)
-        logger.info(f"[FULL][{label}] raw 저장: {raw_fn}")
+            full_mp4 = os.path.join(ch_dir, f"{basename}_{label}.{target_format}")
+            convert_video(raw_fn, full_mp4, extra_args=common_args)
 
-        # 포맷 결정
-        fmt = 'hevc' if any(x in codec.lower() for x in ('265','hev1','hevc','hvc1')) else 'h264'
+            if label not in results:
+                results[label] = {
+                    'recovered': False,
+                    'slack_path': None,
+                    'frame_count': 0,
+                    'slack_rate': 0.0
+                }
+            results[label]['full_path'] = full_mp4
+            has_output = True
+        
+        if not has_output:
+            try:
+                shutil.rmtree(ch_dir)
+            except Exception as e:
+                logger.warning(f"[{label}] 폴더 삭제 실패: {e}")
 
-        full_mp4 = os.path.join(channels_out_dir, f"{basename}_{label}.{target_format}")
-        convert_video(
-            raw_fn, full_mp4,
-            extra_args=[
-                '-f', fmt,
-                '-c:v', 'copy',
-                '-movflags', 'faststart'
-            ]
-        )
-        logger.info(f"[FULL][{label}] 변환 완료: {full_mp4}")
-
-        # 결과에도 기록
-        results[label].update(full_path=full_mp4)
-
+    results['origin_path'] = origin_path
     return results
