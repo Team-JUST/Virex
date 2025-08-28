@@ -36,3 +36,23 @@
   margin-top: 1rem;
   justify-content: flex-end;
 }
+
+/* ++ 다크모드 ++ */
+
+.alert-box.dark-mode {
+  background: #1e293b;
+  color: #e2e8f0;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+}
+
+.alert-box.dark-mode .alert-title {
+  color: #f1f5f9;
+}
+
+.alert-box.dark-mode .alert-desc {
+  color: #cbd5e1;
+}
+
+.alert-box.dark-mode img {
+  filter: brightness(1.2);
+}
