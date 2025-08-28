@@ -313,6 +313,7 @@ ipcMain.handle('run-download', (_event, { e01Path, choice, downloadDir }) => {
       console.log("[Debug] download python exited with code : ", code);
       rl.close();
       if (code === 0) {
+        mainWindow.webContents.send('download-complete');
         resolve();
       } else {
 
