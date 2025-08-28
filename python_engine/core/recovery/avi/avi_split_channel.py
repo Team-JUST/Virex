@@ -1,7 +1,5 @@
-import os
 import re
 import struct
-from python_engine.core.recovery.utils.ffmpeg_wrapper import convert_video
 
 MAX_CHUNK = 10 * 1024 * 1024
 CHUNK_SIG = {
@@ -77,13 +75,8 @@ def split_channel_bytes(data, label):
 
 def extract_full_channel_bytes(data, label):
     sig = CHUNK_SIG[label]
-
     offset = 0
-    if data.startswith(b'RIFF'):
-        total_size = struct.unpack('<I', data[4:8])[0]
-        file_end = 8 + total_size
-    else:
-        file_end = len(data)
+    file_end = len(data)
 
     out = bytearray()
 
@@ -91,14 +84,16 @@ def extract_full_channel_bytes(data, label):
         idx = data.find(sig, offset)
         if idx < 0 or idx + 8 > file_end:
             break
+
         size = struct.unpack('<I', data[idx + 4:idx + 8])[0]
         start = idx + 8
         end = start + size
 
-        if end > file_end:
-            break
+        if size > MAX_CHUNK or end > file_end:
+            offset = idx + 1
+            continue
 
         out += data[start:end]
         offset = end
-    
+
     return bytes(out)
