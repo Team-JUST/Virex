@@ -157,7 +157,8 @@ def recover_avi_slack(input_avi, base_dir, target_format='mp4'):
                         'recovered': True,
                         'video_path': slack_mp4,
                         'frame_count': slack_count,
-                        'slack_rate': float(recovered_bytes / len(data) * 100)
+                        'slack_rate': float(recovered_bytes / len(data) * 100),
+                        'slack_size_bytes': recovered_bytes
                     }
 
         # 2) 원본 채널 분리
@@ -188,5 +189,4 @@ def recover_avi_slack(input_avi, base_dir, target_format='mp4'):
                 logger.warning(f"[{label}] 폴더 삭제 실패: {e}")
 
     results['source_path'] = origin_path
-    results['file_size_bytes'] = len(data)
     return results
