@@ -5,7 +5,7 @@ import json
 from fractions import Fraction
 
 # FFprobe 실행 파일 경로 (프로젝트 bin 폴더 기준)
-FFPROBE_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../../bin/ffprobe.exe'))
+FFPROBE_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../bin/ffprobe.exe'))
 
 def file_format(file_path):
     with open(file_path, 'rb') as f:
@@ -79,14 +79,9 @@ def video_metadata(file_path):
             'frame_rate': 0.0
         }
 
-def file_size(file_path):
-    # 파일 크기 (bytes 단위) 반환
-    return os.path.getsize(file_path)
-
 def get_basic_info(file_path):
     return {
         "format": file_format(file_path),
-        "file_size": file_size(file_path),
         "timestamps": file_creation_time(file_path),
         "video_metadata": video_metadata(file_path)
     }
