@@ -67,9 +67,9 @@ def extract_sps_pps_from_raw(raw, codec, label):
 
 def extract_frames_from_raw(raw, sps_pps, codec, out_fn):
     if not sps_pps:
-        return 0
+        return 0, 0
     count = 0
-    # raw 앞에 SPS/PPS 헤더 붙이기
+    recovered_bytes = 0
     stream = sps_pps + raw
 
     def find_start(buf, pos):
@@ -84,6 +84,7 @@ def extract_frames_from_raw(raw, sps_pps, codec, out_fn):
 
     with open(out_fn, 'wb') as wf:
         wf.write(sps_pps)
+        recovered_bytes += len(sps_pps)
         pos = 0
         while True:
             idx, prefix = find_start(stream, pos)
@@ -94,9 +95,10 @@ def extract_frames_from_raw(raw, sps_pps, codec, out_fn):
             nal = stream[nal_start : next_idx if next_idx > 0 else len(stream)]
             # 모든 NAL unit 저장
             wf.write((b'\x00\x00\x00\x01' if prefix == 4 else b'\x00\x00\x01') + nal)
+            recovered_bytes += len(nal) + (4 if prefix == 4 else 3)
             count += 1
             pos = nal_start
-    return count
+    return count, recovered_bytes
 
 def recover_avi_slack(input_avi, base_dir, target_format='mp4'):
     os.makedirs(base_dir, exist_ok=True)
@@ -147,17 +149,16 @@ def recover_avi_slack(input_avi, base_dir, target_format='mp4'):
             sps_pps = extract_sps_pps_from_raw(channel_data, codec, label)
             if sps_pps:
                 slack_h264 = os.path.join(ch_dir, f"{basename}_{label}_slack.h264")
-                slack_count = extract_frames_from_raw(channel_data, sps_pps, codec, slack_h264)
+                slack_count, recovered_bytes = extract_frames_from_raw(channel_data, sps_pps, codec, slack_h264)
                 if slack_count > 0:
                     slack_mp4 = os.path.join(ch_dir, f"{basename}_{label}_slack.{target_format}")
                     convert_video(slack_h264, slack_mp4, extra_args=common_args)
                     results[label] = {
                         'recovered': True,
-                        'slack_path': slack_mp4,
+                        'video_path': slack_mp4,
                         'frame_count': slack_count,
-                        'slack_rate': float(len(channel_data) / len(data) * 100)  # 채널 데이터 크기 / 전체 파일 크기
+                        'slack_rate': float(recovered_bytes / len(data) * 100)
                     }
-                    has_output = True
 
         # 2) 원본 채널 분리
         full_raw = extract_full_channel_bytes(data, label)
@@ -173,11 +174,11 @@ def recover_avi_slack(input_avi, base_dir, target_format='mp4'):
             if label not in results:
                 results[label] = {
                     'recovered': False,
-                    'slack_path': None,
+                    'video_path': None,
                     'frame_count': 0,
                     'slack_rate': 0.0
                 }
-            results[label]['full_path'] = full_mp4
+            results[label]['full_video_path'] = full_mp4
             has_output = True
         
         if not has_output:
@@ -186,5 +187,6 @@ def recover_avi_slack(input_avi, base_dir, target_format='mp4'):
             except Exception as e:
                 logger.warning(f"[{label}] 폴더 삭제 실패: {e}")
 
-    results['origin_path'] = origin_path
+    results['source_path'] = origin_path
+    results['file_size_bytes'] = len(data)
     return results
