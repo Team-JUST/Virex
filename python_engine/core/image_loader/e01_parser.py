@@ -134,7 +134,7 @@ def extract_video_files(fs_info, output_dir, path="/", total_count=None, progres
             with open(orig_path, 'wb') as wf:
                 wf.write(data)
 
-            # 2) 슬랙 히든 복원 (raw + slack)
+            # 2) Slack 복원 (raw + slack)
             raw_dir = os.path.join(orig_dir, 'raw')
             slack_dir = os.path.join(orig_dir, 'slack')
             os.makedirs(raw_dir, exist_ok=True)
@@ -148,16 +148,18 @@ def extract_video_files(fs_info, output_dir, path="/", total_count=None, progres
             )
 
             # 3) 결과 기록
+            origin_video = slack_info.get('source_path', orig_path)
+
             analysis = {
-                'basic': get_basic_info(orig_path),
-                'integrity': get_integrity_info(orig_path),
-                'structure': get_structure_info(orig_path)
+                'basic': get_basic_info(origin_video),
+                'integrity': get_integrity_info(origin_video),
+                'structure': get_structure_info(origin_video),
             }
             results.append({
                 'name': name,
                 'path': filepath,
                 'size': size,
-                'origin_video': orig_path,
+                'origin_video': origin_video,
                 'slack_info': slack_info,
                 'analysis': analysis
             })
@@ -178,24 +180,18 @@ def extract_video_files(fs_info, output_dir, path="/", total_count=None, progres
             target_format='mp4'
         )
 
+        # 손상된 파일이거나 AVI 헤더가 올바르지 않은 경우
         if avi_info is None:
-            # 손상된 파일이거나 AVI 헤더가 올바르지 않은 경우 건너뜁니다.
             continue
-        origin_video = avi_info.get('origin_video', temp_avi)
 
-        slack_rates = [info.get('slack_rate', 0) for info in avi_info.values() if 'slack_rate' in info]
-        overall_slack_rate = max(slack_rates) if slack_rates else 0.0
+        origin_video = avi_info.get('source_path', avi_info.get('origin_path', temp_avi))
 
-        slack_info = {
-            'slack_rate': overall_slack_rate,
-            'channels': avi_info
-        }
+        channels_only = {k: v for k, v in avi_info.items() if isinstance(v, dict)}
 
         analysis = {
             'basic': get_basic_info(origin_video),
             'integrity': get_integrity_info(origin_video),
             'structure': get_structure_info(origin_video),
-            'slack_info': slack_info
         }
 
         results.append({
@@ -203,8 +199,7 @@ def extract_video_files(fs_info, output_dir, path="/", total_count=None, progres
             'path': filepath,
             'size': size,
             'origin_video': origin_video,
-            'slack_info': slack_info,
-            'channels': avi_info,
+            'channels': channels_only,
             'analysis': analysis
         })
 
