@@ -1,7 +1,7 @@
 import subprocess
 import os
 
-# FFmpeg 실행 파일 경로 (프로젝트 bin 폴더 기준)
+# FFmpeg 실행 파일 경로
 FFMPEG_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../../bin/ffmpeg.exe'))
 
 def convert_video(input_path, output_path, extra_args=None):
@@ -19,7 +19,6 @@ def convert_video(input_path, output_path, extra_args=None):
             cmd += extra_args
     cmd += [output_path]
 
-    # stdout/stderr 모두 버리기
     subprocess.run(
         cmd,
         check=True,
