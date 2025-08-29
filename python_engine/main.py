@@ -54,7 +54,7 @@ def main(e01_path, choice=None, download_dir=None):
                     dst = os.path.join(DOWNLOAD_DIR, "recovery", rel)
                     os.makedirs(os.path.dirname(dst), exist_ok=True)
                     shutil.copy2(src, dst)
-        # 슬랙 히든 MP4
+        # Slack MP4
         for category in os.listdir(output_dir):
             slack_dir = os.path.join(output_dir, category, "slack")
             if os.path.isdir(slack_dir):
@@ -62,7 +62,7 @@ def main(e01_path, choice=None, download_dir=None):
                     for fn in files:
                         if fn.lower().endswith(".mp4"):
                             src = os.path.join(root, fn)
-                            dst = os.path.join(DOWNLOAD_DIR, "recovery_hidden", fn)
+                            dst = os.path.join(DOWNLOAD_DIR, "recovery_slack", fn)
                             os.makedirs(os.path.dirname(dst), exist_ok=True)
                             shutil.copy2(src, dst)
         print("▶ 영상 저장 완료.", file=sys.stderr)
@@ -81,7 +81,7 @@ def main(e01_path, choice=None, download_dir=None):
             if output_path and os.path.exists(output_path):
                 items.append({
                     "output_path": output_path,
-                    "filename": f"{os.path.splitext(info['name'])[0]}_hidden.mp4"
+                    "filename": f"{os.path.splitext(info['name'])[0]}_slack.mp4"
                 })
         print(f"[DEBUG] items: {items}")
         download_frames(items, download_dir=DOWNLOAD_DIR)
