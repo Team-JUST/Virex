@@ -128,9 +128,9 @@ def recover_avi_slack(input_avi, base_dir, target_format='mp4'):
         shutil.copy2(input_avi, origin_path)
 
     results = {}
+
     common_args = [
         '-fflags', '+genpts',
-        '-vf', 'fps=30',
         '-c:v', 'libx264',
         '-preset', 'ultrafast',
         '-crf', '30'

@@ -9,6 +9,7 @@ def convert_video(input_path, output_path, extra_args=None):
         FFMPEG_PATH,
         '-hide_banner',
         '-loglevel', 'error',
+        '-framerate', '30',
         '-i', input_path
     ]
     if extra_args:
