@@ -7,7 +7,7 @@ def find_box(data, box_type):
     while offset < len(data) - 8:
         try:
             size = struct.unpack('>I', data[offset:offset + 4])[0]
-            typ = data[offset + 4: offset + 8]
+            typ = data[offset + 4:offset + 8]
             if typ == box_type.encode():
                 return offset, size
             offset += size if size > 0 else 8
