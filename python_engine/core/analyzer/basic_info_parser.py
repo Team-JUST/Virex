@@ -4,7 +4,8 @@ import subprocess
 import json
 from fractions import Fraction
 
-FFPROBE_PATH = r"E:\Retato\bin\ffprobe.exe"
+# FFprobe 실행 파일 경로 (프로젝트 bin 폴더 기준)
+FFPROBE_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../../bin/ffprobe.exe'))
 
 def file_format(file_path):
     with open(file_path, 'rb') as f:
