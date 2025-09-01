@@ -145,7 +145,6 @@ def recover_mp4_slack(filepath, output_h264_dir, output_video_dir, target_format
         return {
             "recovered": True,
             "file_size_bytes": int(final_size),
-            "frame_count": frame_count,
             "video_path": mp4_path,
             "slack_rate": slack_rate
             }
@@ -159,7 +158,6 @@ def _fail_result():
     return {
         "recovered": False,
         "file_size_bytes": 0,
-        "frame_count": 0,
         "video_path": None,
         "slack_rate": 0.0,
     }

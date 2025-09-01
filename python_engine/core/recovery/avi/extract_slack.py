@@ -141,7 +141,6 @@ def recover_avi_slack(input_avi, base_dir, target_format='mp4'):
                     results[label] = {
                         'recovered': True,
                         'video_path': slack_mp4,
-                        'frame_count': slack_count,
                         'slack_rate': float(recovered_bytes / len(data) * 100),
                         'slack_size_bytes': recovered_bytes
                     }
@@ -160,7 +159,6 @@ def recover_avi_slack(input_avi, base_dir, target_format='mp4'):
                 results[label] = {
                     'recovered': False,
                     'video_path': None,
-                    'frame_count': 0,
                     'slack_rate': 0.0
                 }
             results[label]['full_video_path'] = full_mp4
