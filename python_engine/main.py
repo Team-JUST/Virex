@@ -7,7 +7,15 @@ from python_engine.core.output.download_frame import download_frames
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-def main(e01_path, choice=None, download_dir=None):
+def _load_selected_names(json_path: str):
+    import json
+    with open(json_path, "r", encoding="utf-8") as f:
+        arr = json.load(f)
+    # 파일명 비교는 소문자 기준
+    return {str(x).strip().lower() for x in arr if str(x).strip()}
+
+
+def main(e01_path, choice=None, download_dir=None, selected_json=None):
     # ─── 0) 다운로드 모드 & 기존 temp 폴더 재사용 분기 ───
     if choice and download_dir and os.path.isdir(e01_path) and os.path.isfile(os.path.join(e01_path, "analysis.json")):
         # e01_path가 temp 디렉터리인 경우, 분석 단계 건너뛰기
@@ -40,6 +48,15 @@ def main(e01_path, choice=None, download_dir=None):
     DOWNLOAD_DIR = download_dir
     os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
+    # 선택 파일명 집합(없으면 None → 전체)
+    selected = None
+    if selected_json and os.path.isfile(selected_json):
+       try:
+           selected = _load_selected_names(selected_json)   # {'a.mp4','b.avi',...}
+       except Exception as e:
+           print(f"[ERR] failed to read selected list: {e}", file=sys.stderr, flush=True)
+
+
     # 2.1) 영상 복사/변환
     if choice in ("video", "both"):
         print("▶ 영상 저장 시작...", file=sys.stderr)
@@ -49,6 +66,8 @@ def main(e01_path, choice=None, download_dir=None):
                 continue
             for f in files:
                 if f.lower().endswith((".mp4", ".avi")):
+                    if selected and f.lower() not in selected:
+                        continue
                     src = os.path.join(root, f)
                     rel = os.path.relpath(src, output_dir)
                     dst = os.path.join(DOWNLOAD_DIR, "recovery", rel)
@@ -61,6 +80,8 @@ def main(e01_path, choice=None, download_dir=None):
                 for root, _, files in os.walk(slack_dir):
                     for fn in files:
                         if fn.lower().endswith(".mp4"):
+                            if selected and fn.lower() not in selected:
+                                continue
                             src = os.path.join(root, fn)
                             dst = os.path.join(DOWNLOAD_DIR, "recovery_hidden", fn)
                             os.makedirs(os.path.dirname(dst), exist_ok=True)
@@ -75,6 +96,10 @@ def main(e01_path, choice=None, download_dir=None):
         items = []
         for info in infos:
             # 슬랙 복구 영상
+            if selected:
+                nm=os.path.basename(info.get("name", "")).lower()
+                if nm not in selected:
+                    continue
             slack_info = info.get("slack_info", {})
             output_path = slack_info.get("output_path")
             print(f"[DEBUG] 슬랙 경로: {output_path} exists: {os.path.exists(output_path) if output_path else False}")
@@ -95,15 +120,18 @@ def main(e01_path, choice=None, download_dir=None):
 if __name__ == "__main__":
     # Usage:
     # 1) 분석만: python main.py <E01_PATH>
-    # 2) 다운로드: python main.py <E01_PATH> <video|frames|both> <DOWNLOAD_DIR>
+    # 2) 다운로드: python main.py <E01_PATH> <video|frames|both> <DOWNLOAD_DIR> [SELECTED_JSON]
     if len(sys.argv) == 2:
         main(sys.argv[1])
-    elif len(sys.argv) == 4 and all(sys.argv[1:]):
+    elif len(sys.argv) == 4:
         _, e01_path, choice, download_dir = sys.argv
-        main(e01_path, choice, download_dir)
+        main(e01_path, choice, download_dir, None)
+    elif len(sys.argv) == 5:
+        _, e01_path, choice, download_dir, selected_json = sys.argv
+        main(e01_path, choice, download_dir, selected_json)
     else:
         sys.stderr.write(f"Invalid arguments: {sys.argv[1:]}\n")
         sys.stderr.write("Usage:\n")
         sys.stderr.write("  분석만   : python main.py <E01_PATH>\n")
-        sys.stderr.write("  다운로드: python main.py <E01_PATH> <video|frames|both> <DOWNLOAD_DIR>\n")
+        sys.stderr.write("  다운로드: python main.py <E01_PATH> <video|frames|both> <DOWNLOAD_DIR> [SELECTED_JSON]\n")
         sys.exit(1)

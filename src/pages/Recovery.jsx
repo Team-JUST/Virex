@@ -39,6 +39,7 @@ const Recovery = ({ isDarkMode }) => {
   const prevIsRecovering = useRef(isRecovering);
   const [showDiskFullAlert, setShowDiskFullAlert] = useState(false);
   const navigate = useNavigate();
+  const [selectAll, setSelectAll] = useState(false);
   const rollbackRef = useRef(() => {});
 
   rollbackRef.current = () => {
@@ -346,6 +347,27 @@ const Recovery = ({ isDarkMode }) => {
       setSelectedPath(result.filePaths[0]);
     }
   };
+
+    // 전체 선택 토글
+  const handleSelectAll = () => {
+    if (selectAll) {
+      // 전체 해제
+      setSelectedFilesForDownload([]);
+    } else {
+      // 전체 선택: 모든 파일 path 수집
+      const all = results.map(f => f.path);
+      setSelectedFilesForDownload(all);
+    }
+    setSelectAll(!selectAll);
+  };
+
+  // 선택 수/결과 변화에 따라 selectAll 동기화 (선택)
+  useEffect(() => {
+    setSelectAll(
+      results.length > 0 && selectedFilesForDownload.length === results.length
+    );
+  }, [results, selectedFilesForDownload]);
+
 
   // 다운로드 백엔드
   const handleDownloadConfirm = async () => {
@@ -913,7 +935,15 @@ const Recovery = ({ isDarkMode }) => {
                 <span className="result-recovery-text">복원된 파일 목록</span>
               </div>
               <div className="result-wrapper">
-
+                <div style={{ display: "flex", alignItems: "center", marginBottom: "1rem" }}>
+                  <input
+                    type="checkbox"
+                    checked={selectAll}
+                    onChange={handleSelectAll}
+                    style={{ marginRight: "8px" }}
+                  />
+                  <span>전체 선택</span>
+                </div>
                 <p className="result-summary">
                   총 {results.length}개의 파일, 용량{' '}
                   {bytesToMB(
@@ -957,14 +987,23 @@ const Recovery = ({ isDarkMode }) => {
                                           type="checkbox"
                                           checked={selectedFilesForDownload.includes(file.path)}
                                           onChange={e => {
-                                            setSelectedFilesForDownload(prev =>
-                                              e.target.checked
-                                                ? [...prev, file.path]
-                                                : prev.filter(p => p !== file.path)
-                                            );
+                                            let updated;
+                                            if (e.target.checked) {
+                                              updated = [...selectedFilesForDownload, file.path];
+                                            } else {
+                                              updated = selectedFilesForDownload.filter(p => p !== file.path);
+                                            }
+                                            setSelectedFilesForDownload(updated);
+
+                                            // 전체선택 상태 동기화
+                                            if (updated.length === results.length) {
+                                              setSelectAll(true);
+                                            } else {
+                                              setSelectAll(false);
+                                            }
                                           }}
-                                          style={{ marginRight: '8px' }}
                                         />
+
                                         <button
                                           className="text-button"
                                           onClick={() => handleFileClick(file.name)}

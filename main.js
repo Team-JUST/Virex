@@ -261,9 +261,9 @@ ipcMain.handle('start-recovery', (_event, e01FilePath) => {
   });
 });
 
-ipcMain.handle('run-download', (_event, { e01Path, choice, downloadDir }) => {
+ipcMain.handle('run-download', async (_event, { e01Path, choice, downloadDir, files }) => {
   // 1) 호출된 인자 찍기
-  console.log("[Debug] run-download called with : ", { e01Path, choice, downloadDir });
+  console.log("[Debug] run-download called with : ", { e01Path, choice, downloadDir, files });
 
   // 2) 인자 유효성 검사
   if (
@@ -284,10 +284,21 @@ ipcMain.handle('run-download', (_event, { e01Path, choice, downloadDir }) => {
     throw new Error('run-download: invalid args');
   }
 
+  if (!Array.isArray(files) || files.length === 0) {
+    const msg = 'No files selected';
+    console.error('[Debug] run-download:', msg);
+    mainWindow.webContents.send('download-error', msg);
+   throw new Error(msg);
+  }
+
+  const baseNames = files.map(p => path.basename(p));
+  const selectedJsonPath = path.join(e01Path, 'selected_files.json');
+  await fs.writeFile(selectedJsonPath, JSON.stringify(baseNames, null, 2), 'utf-8');
+
   return new Promise((resolve, reject) => {
     const scriptPath = path.join(__dirname, 'python_engine', 'main.py');
     const env = { ...process.env, PYTHONPATH: __dirname };
-    const args = [scriptPath, e01Path, choice, downloadDir];
+    const args = [scriptPath, e01Path, choice, downloadDir, selectedJsonPath];
 
     console.log("[Debug] spawning python with args : ", args);
 

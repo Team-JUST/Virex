@@ -275,7 +275,7 @@ body {
 }
 
 .result-scroll-area {
-  max-height: 400px;
+  max-height: 360px;
   /* 원하는 높이로 조정 (예: 400~500px) */
   overflow-y: auto;
   padding-right: 0.5rem;
