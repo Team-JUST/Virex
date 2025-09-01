@@ -12,6 +12,7 @@ from python_engine.core.recovery.avi.extract_slack import recover_avi_slack
 from python_engine.core.analyzer.basic_info_parser import get_basic_info
 from python_engine.core.analyzer.integrity import get_integrity_info
 from python_engine.core.analyzer.struc import get_structure_info
+from python_engine.core.recovery.utils.unit import bytes_to_unit
 
 logger = logging.getLogger(__name__)
 VIDEO_EXTENSIONS = ('.mp4', '.avi')
@@ -100,7 +101,7 @@ def handle_mp4_file(name, filepath, data, output_dir, category):
     return {
         'name': name,
         'path': filepath,
-        'size': len(data),
+        'size': bytes_to_unit(len(data)),
         'origin_video': origin_video_path,
         'slack_info': slack_info,
         'analysis': build_analysis(origin_video_path)
@@ -128,7 +129,7 @@ def handle_avi_file(name, filepath, data, output_dir, category):
     return {
         'name': name,
         'path': filepath,
-        'size': len(data),
+        'size': bytes_to_unit(len(data)),
         'origin_video': origin_video_path,
         'channels': channels_only,
         'analysis': build_analysis(origin_video_path)
