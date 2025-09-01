@@ -63,7 +63,7 @@ def video_metadata(file_path):
         duration = float(stream.get('duration', 0.0))
         fps_str = stream.get('r_frame_rate', '0/1')
 
-        frame_rate = float(Fraction(fps_str)) if fps_str != '0/0' else 0.0
+        frame_rate = round(float(Fraction(fps_str)), 2) if fps_str != '0/0' else 0.0
 
         return {
             'duration': duration,
