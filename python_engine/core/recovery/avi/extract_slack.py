@@ -94,6 +94,19 @@ def extract_frames_from_raw(raw, sps_pps, out_fn):
 
     return count, recovered_bytes
 
+def bytes_to_unit(n):
+    if n < 1024:
+        return f"{n} B"
+    elif n < 1024**2:
+        val = n / 1024
+        return f"{val:.1f} KB".rstrip("0").rstrip(".")
+    elif n < 1024**3:
+        val = n / 1024**2
+        return f"{val:.1f} MB".rstrip("0").rstrip(".")
+    else:
+        val = n / 1024**3
+        return f"{val:.1f} GB".rstrip("0").rstrip(".")
+
 def recover_avi_slack(input_avi, base_dir, target_format='mp4'):
     os.makedirs(base_dir, exist_ok=True)
     with open(input_avi, "rb") as f:
@@ -134,7 +147,7 @@ def recover_avi_slack(input_avi, base_dir, target_format='mp4'):
             sps_pps = extract_sps_pps_from_raw(channel_data, codec, label)
             if sps_pps:
                 slack_h264 = os.path.join(ch_dir, f"{basename}_{label}_slack.h264")
-                slack_count, recovered_bytes = extract_frames_from_raw(channel_data, sps_pps, codec, slack_h264)
+                slack_count, recovered_bytes = extract_frames_from_raw(channel_data, sps_pps, slack_h264)
                 if slack_count > 0:
                     slack_mp4 = os.path.join(ch_dir, f"{basename}_{label}_slack.{target_format}")
                     convert_video(slack_h264, slack_mp4, extra_args=common_args)
@@ -142,7 +155,7 @@ def recover_avi_slack(input_avi, base_dir, target_format='mp4'):
                         'recovered': True,
                         'video_path': slack_mp4,
                         'slack_rate': round(recovered_bytes / len(data) * 100, 2),
-                        'slack_size_bytes': recovered_bytes
+                        'slack_size': bytes_to_unit(recovered_bytes)
                     }
 
         full_raw = extract_full_channel_bytes(data, label)
@@ -160,7 +173,7 @@ def recover_avi_slack(input_avi, base_dir, target_format='mp4'):
                     'recovered': False,
                     'video_path': None,
                     'slack_rate': 0.0,
-                    'slack_size_bytes': 0
+                    'slack_size': "0 B"
                 }
             results[label]['full_video_path'] = full_mp4
             has_output = True

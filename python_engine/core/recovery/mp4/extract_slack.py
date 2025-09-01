@@ -61,14 +61,16 @@ def extract_sps_pps(moov_data):
 
 def extract_frames(slack, offset, sps_pps, output_path):
     matches = []
+    has_i_frame = False
 
-    for label, pattern in [("I", IFRAME_PATTERN), ("P", PFRAME_PATTERN)]:
-        for m in pattern.finditer(slack):
-            matches.append((m.start(), label))
+    for m in IFRAME_PATTERN.finditer(slack):
+        matches.append((m.start()))
+        has_i_frame = True
+    for m in PFRAME_PATTERN.finditer(slack):
+        matches.append((m.start()))
 
-    matches.sort(key=lambda x: x[0])
+    matches.sort()
 
-    has_i_frame = any(ftype == "I" for _, ftype in matches)
     if not has_i_frame or len(matches) < 3:
         logger.info("유효한 슬랙 프레임 없음")
         return 0, 0
@@ -100,6 +102,19 @@ def extract_frames(slack, offset, sps_pps, output_path):
                 continue
 
     return recovered, recovered_bytes
+
+def bytes_to_unit(n):
+    if n < 1024:
+        return f"{n} B"
+    elif n < 1024**2:
+        val = n / 1024
+        return f"{val:.1f} KB".rstrip("0").rstrip(".")
+    elif n < 1024**3:
+        val = n / 1024**2
+        return f"{val:.1f} MB".rstrip("0").rstrip(".")
+    else:
+        val = n / 1024**3
+        return f"{val:.1f} GB".rstrip("0").rstrip(".")
 
 def recover_mp4_slack(filepath, output_h264_dir, output_video_dir, target_format="mp4"):
     os.makedirs(output_h264_dir, exist_ok=True)
@@ -143,7 +158,7 @@ def recover_mp4_slack(filepath, output_h264_dir, output_video_dir, target_format
 
         return {
             "recovered": True,
-            "file_size_bytes": int(final_size),
+            "slack_size": bytes_to_unit(int(final_size)),
             "video_path": mp4_path,
             "slack_rate": slack_rate
             }
@@ -156,7 +171,7 @@ def recover_mp4_slack(filepath, output_h264_dir, output_video_dir, target_format
 def _fail_result():
     return {
         "recovered": False,
-        "file_size_bytes": 0,
+        "slack_size": "0 B",
         "video_path": None,
         "slack_rate": 0.0,
     }
