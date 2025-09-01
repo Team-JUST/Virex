@@ -126,7 +126,7 @@ def recover_mp4_slack(filepath, output_h264_dir, output_video_dir, target_format
             return _fail_result()
 
         frame_count, recovered_bytes = extract_frames(slack, slack_offset, sps_pps, h264_path)
-        slack_rate = (recovered_bytes / len(data) * 100) if len(data) else 0.0
+        slack_rate = round((recovered_bytes / len(data) * 100), 2) if len(data) else 0.0
 
         if frame_count == 0:
             if os.path.exists(h264_path):
