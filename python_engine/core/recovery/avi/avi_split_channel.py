@@ -15,8 +15,8 @@ PATTERNS = {
         'types': [
             re.compile(b'\x00{2,3}\x01\x67'), # SPS
             re.compile(b'\x00{2,3}\x01\x68'), # PPS
-            re.compile(b'\x00{2,3}\x01[\x25\x45\x65]'), #IDR
-            re.compile(b'\x00{2,3}\x01[\x21\x41\x61]'), # Non-IDR
+            re.compile(b'\x00{2,3}\x01[\x25\x45\x65]'), # I-Frame
+            re.compile(b'\x00{2,3}\x01[\x21\x41\x61]'), # P-Frame
         ]
     },
     'HEVC': {
@@ -25,8 +25,8 @@ PATTERNS = {
             re.compile(b'\x00{2,3}\x01\x40'), # VPS
             re.compile(b'\x00{2,3}\x01\x42'), # SPS
             re.compile(b'\x00{2,3}\x01\x44'), # PPS
-            re.compile(b'\x00{2,3}\x01\x26'), # IDR
-            re.compile(b'\x00{2,3}\x01\x02'), # 기타
+            re.compile(b'\x00{2,3}\x01\x26'), # I-Frame
+            re.compile(b'\x00{2,3}\x01\x02'), # P-Frame
         ]
     }
 }

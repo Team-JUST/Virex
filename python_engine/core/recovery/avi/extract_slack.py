@@ -124,7 +124,6 @@ def recover_avi_slack(input_avi, base_dir, target_format='mp4'):
         '-crf', '30'
     ]
     
-    # 1) 슬랙 채널 분리 및 슬랙 영상 생성
     for label in("front", "rear", "side"):
         ch_dir = os.path.join(base_dir, label)
         os.makedirs(ch_dir, exist_ok=True)
