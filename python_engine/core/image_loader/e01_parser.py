@@ -1,4 +1,5 @@
 import os
+import struct
 import pyewf
 import pytsk3
 import tkinter as tk
@@ -8,7 +9,7 @@ import time
 import logging
 import tempfile
 import shutil
-import json
+import json, sys
 from python_engine.core.recovery.mp4.extract_slack import recover_mp4_slack
 from python_engine.core.recovery.avi.extract_slack import recover_avi_slack
 from python_engine.core.analyzer.basic_info_parser import get_basic_info
@@ -164,46 +165,61 @@ def extract_video_files(fs_info, output_dir, path="/", total_count=None, progres
             continue
 
         # AVI 처리
-        video_stem = os.path.splitext(name)[0]
-        base_dir = os.path.join(output_dir, category, video_stem)
-        os.makedirs(base_dir, exist_ok=True)
-
-        temp_avi = os.path.join(base_dir, f"{name}")
+        temp_dir = os.path.join(output_dir, category, 'tmp')
+        os.makedirs(temp_dir, exist_ok=True)
+        temp_avi = os.path.join(temp_dir, name)
         with open(temp_avi, 'wb') as wf:
             wf.write(data)
 
+        # 슬랙 & 채널 복원
+        base_dir = os.path.join(output_dir, category)
+        raw_dir = os.path.join(base_dir, 'raw')
+        slack_dir = os.path.join(base_dir, 'slack')
+        channels_dir = os.path.join(base_dir, 'channels')
+        os.makedirs(raw_dir, exist_ok=True)
+        os.makedirs(slack_dir, exist_ok=True)
+        os.makedirs(channels_dir, exist_ok=True)
+
         avi_info = recover_avi_slack(
             input_avi=temp_avi,
-            base_dir=base_dir,
+            raw_out_dir=raw_dir,
+            slack_out_dir=slack_dir,
+            channels_out_dir=channels_dir,
             target_format='mp4'
         )
 
-        if avi_info is None:
-            # 손상된 파일이거나 AVI 헤더가 올바르지 않은 경우 건너뜁니다.
-            continue
-        origin_video = avi_info.get('origin_video', temp_avi)
+        # 전체 채널 MP4 복사
+        for label, info in avi_info.items():
+            full_mp4 = info.get('full_path')
+            if full_mp4 and os.path.exists(full_mp4):
+                chan_dir = os.path.join(output_dir, category, label)
+                os.makedirs(chan_dir, exist_ok=True)
+                dst = os.path.join(chan_dir, os.path.basename(full_mp4))
+                shutil.copy2(full_mp4, dst)
 
+        # 결과 저장 - AVI의 경우 slack_info 추가
+        # 각 채널의 slack_rate 중 최대값을 사용하거나 평균값을 사용
         slack_rates = [info.get('slack_rate', 0) for info in avi_info.values() if 'slack_rate' in info]
         overall_slack_rate = max(slack_rates) if slack_rates else 0.0
-
+        
         slack_info = {
             'slack_rate': overall_slack_rate,
-            'channels': avi_info
+            'channels': avi_info  # 채널별 상세 정보도 포함
         }
-
+        
         analysis = {
-            'basic': get_basic_info(origin_video),
-            'integrity': get_integrity_info(origin_video),
-            'structure': get_structure_info(origin_video),
-            'slack_info': slack_info
+            'basic': get_basic_info(orig_path),
+            'integrity': get_integrity_info(orig_path),
+            'structure': get_structure_info(orig_path),
+            'slack_info': slack_info  # 분석에도 포함
         }
-
+        
         results.append({
             'name': name,
             'path': filepath,
             'size': size,
-            'origin_video': origin_video,
-            'slack_info': slack_info,
+            'origin_video': orig_path,
+            'slack_info': slack_info,  # 최상위 레벨에 slack_info 추가
             'channels': avi_info,
             'analysis': analysis
         })

@@ -91,6 +91,8 @@ const Recovery = ({ isDarkMode }) => {
   const [saveFrames, setSaveFrames] = useState(false);
   const [selectedPath, setSelectedPath] = useState("");
 
+  const [selectedFilesForDownload, setSelectedFilesForDownload] = useState([]);  // ✅ 추가
+
   const [currentCount, setCurrentCount] = useState(0);
   const [totalFiles, setTotalFiles] = useState(0);
 
@@ -347,8 +349,12 @@ const Recovery = ({ isDarkMode }) => {
 
   // 다운로드 백엔드
   const handleDownloadConfirm = async () => {
-    if (!selectedFile || !tempOutputDir || !selectedPath) {
-      alert('다운로드 경로 또는 임시 폴더가 올바르지 않습니다.');
+    if (
+      selectedFilesForDownload.length === 0 ||
+      !tempOutputDir ||
+      !selectedPath
+    ) {
+      alert('다운로드할 파일을 선택하고 경로를 지정하세요.');
       return;
     }
 
@@ -357,11 +363,12 @@ const Recovery = ({ isDarkMode }) => {
     try {
       setShowDownloadPopup(false);
       setIsDownloading(true);
-      
+
       await window.api.runDownload({
         e01Path: tempOutputDir,
         choice,
-        downloadDir: selectedPath
+        downloadDir: selectedPath,
+        files: selectedFilesForDownload // 선택된 파일만 전달
       });
 
       // 다운로드 완료는 onDownloadComplete 이벤트에서 처리
@@ -941,17 +948,30 @@ const Recovery = ({ isDarkMode }) => {
                                 ? (rawRate * 100).toFixed(0)
                                 : rawRate.toFixed(0);
 
-                            return (
-                              <div className="result-file-item" key={file.path}>
-                                <div className="result-file-info">
-                                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}>
-                                    <button
-                                      className="text-button"
-                                      onClick={() => handleFileClick(file.name)}
-                                    >
-                                      {file.name}
-                                    </button>
-                                    {slackRatePercent > 0 && (
+                                return (
+                                  <div className="result-file-item" key={file.path}>
+                                    <div className="result-file-info">
+                                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}>
+                                        {/* 체크박스 추가 */}
+                                        <input
+                                          type="checkbox"
+                                          checked={selectedFilesForDownload.includes(file.path)}
+                                          onChange={e => {
+                                            setSelectedFilesForDownload(prev =>
+                                              e.target.checked
+                                                ? [...prev, file.path]
+                                                : prev.filter(p => p !== file.path)
+                                            );
+                                          }}
+                                          style={{ marginRight: '8px' }}
+                                        />
+                                        <button
+                                          className="text-button"
+                                          onClick={() => handleFileClick(file.name)}
+                                        >
+                                          {file.name}
+                                        </button>
+                                        {slackRatePercent > 0 && (
                                       <Badge
                                         label="슬랙"
                                         onClick={() => {

@@ -4,6 +4,19 @@ import struct
 import logging
 from python_engine.core.recovery.utils.ffmpeg_wrapper import convert_video
 
+
+def _process_one_mp4(path: str, h264_root: str, out_root: str):
+    base = os.path.splitext(os.path.basename(path))[0]
+    h264_dir = os.path.join(h264_root, base)
+    out_dir  = os.path.join(out_root,  base)
+    os.makedirs(h264_dir, exist_ok=True)
+    os.makedirs(out_dir,  exist_ok=True)
+    return recover_mp4_slack(path, h264_dir, out_dir, target_format="mp4")
+
+def _choose_workers(max_cap=4):
+    cpu = os.cpu_count() or 4
+    return max(2, min(max_cap, math.ceil(cpu/2))) 
+
 logging.basicConfig(
     level=logging.INFO,
     format="[%(asctime)s] [%(levelname)s] %(message)s",
