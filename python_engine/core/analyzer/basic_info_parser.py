@@ -35,13 +35,15 @@ def file_creation_time(file_path):
         "accessed": datetime.datetime.fromtimestamp(accessed).strftime('%Y-%m-%d %H:%M:%S')
     }
 
-# ffprobe를 통해 비디오 메타데이터 추출
+def format_timestamp(ts):
+    return datetime.datetime.fromtimestamp(ts).strftime('%Y-%m-%d %H:%M:%S') if ts else None
+
+# 비디오/오디오 메타데이터 추출
 def video_metadata(file_path):
     cmd = [
         FFPROBE_PATH,
         '-v', 'error',
-        '-select_streams', 'v:0',
-        '-show_entries', 'stream=codec_name,width,height,r_frame_rate,duration',
+        '-show_entries', 'stream=index,codec_type,codec_name,width,height,r_frame_rate,channels,sample_rate,duration',
         '-of', 'json',
         file_path
     ]
@@ -55,23 +57,39 @@ def video_metadata(file_path):
             check=True
         )
         info = json.loads(result.stdout)
-        stream = info.get('streams', [{}])[0]
+        streams = info.get('streams', [])
 
-        codec = stream.get('codec_name', 'unknown')
-        width = int(stream.get('width', 0))
-        height = int(stream.get('height', 0))
-        duration = float(stream.get('duration', 0.0))
-        fps_str = stream.get('r_frame_rate', '0/1')
-
-        frame_rate = round(float(Fraction(fps_str)), 2) if fps_str != '0/0' else 0.0
-
-        return {
-            'duration': duration,
-            'codec': codec,
-            'width': width,
-            'height': height,
-            'frame_rate': frame_rate
+        # 기본값
+        video_meta = {
+            'duration': 0.0,
+            'codec': 'unknown',
+            'width': 0,
+            'height': 0,
+            'frame_rate': 0.0
         }
+        audio_meta = {
+            'audio_codec': 'unknown',
+            'audio_rate': 0,
+            'channels': 0
+        }
+
+        for stream in streams:
+            if stream.get('codec_type') == 'video':
+                video_meta.update({
+                    'duration': float(stream.get('duration', 0.0)),
+                    'codec': stream.get('codec_name', 'unknown'),
+                    'width': int(stream.get('width', 0)),
+                    'height': int(stream.get('height', 0)),
+                    'frame_rate': round(float(Fraction(stream.get('r_frame_rate', '0/1'))), 2)
+                })
+            elif stream.get('codec_type') == 'audio':
+                audio_meta.update({
+                    'audio_codec': stream.get('codec_name', 'unknown'),
+                    'audio_rate': int(stream.get('sample_rate', 0)),
+                    'channels': int(stream.get('channels', 0))
+                })
+            
+        return {**video_meta, **audio_meta}
 
     except Exception:
         # ffprobe 실행 실패 시 기본값 반환
@@ -80,7 +98,10 @@ def video_metadata(file_path):
             'codec': 'unknown',
             'width': 0,
             'height': 0,
-            'frame_rate': 0.0
+            'frame_rate': 0.0,
+            'audio_codec': 'unknown',
+            'audio_rate': 0,
+            'channels': 0
         }
 
 # 종합 정보 반환
@@ -88,5 +109,17 @@ def get_basic_info(file_path):
     return {
         "format": file_format(file_path),
         "timestamps": file_creation_time(file_path),
+        "video_metadata": video_metadata(file_path)
+    }
+
+# E01 메타데이터 기반 버전
+def get_basic_info_with_meta(file_path, meta):
+    return {
+        "format": file_format(file_path),
+        "timestamps": {
+            "created": format_timestamp(meta.crtime),
+            "modified": format_timestamp(meta.mtime),
+            "accessed": format_timestamp(meta.atime)
+        },
         "video_metadata": video_metadata(file_path)
     }
