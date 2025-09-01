@@ -3,6 +3,7 @@ import re
 import struct
 import logging
 from python_engine.core.recovery.utils.ffmpeg_wrapper import convert_video
+from python_engine.core.recovery.utils.unit import bytes_to_unit
 
 logger = logging.getLogger(__name__)
 
@@ -102,19 +103,6 @@ def extract_frames(slack, offset, sps_pps, output_path):
                 continue
 
     return recovered, recovered_bytes
-
-def bytes_to_unit(n):
-    if n < 1024:
-        return f"{n} B"
-    elif n < 1024**2:
-        val = n / 1024
-        return f"{val:.1f} KB".rstrip("0").rstrip(".")
-    elif n < 1024**3:
-        val = n / 1024**2
-        return f"{val:.1f} MB".rstrip("0").rstrip(".")
-    else:
-        val = n / 1024**3
-        return f"{val:.1f} GB".rstrip("0").rstrip(".")
 
 def recover_mp4_slack(filepath, output_h264_dir, output_video_dir, target_format="mp4"):
     os.makedirs(output_h264_dir, exist_ok=True)
