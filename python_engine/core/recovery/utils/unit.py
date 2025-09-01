@@ -1,12 +1,14 @@
+def _fmt1(x):
+    s = f"{x:.1f}"
+    s = s.rstrip("0").rstrip(".")
+    return s
+
 def bytes_to_unit(n):
     if n < 1024:
         return f"{n} B"
     elif n < 1024**2:
-        val = n / 1024
-        return f"{val:.1f} KB".rstrip("0").rstrip(".")
+        return f"{_fmt1(n/1024)} KB"
     elif n < 1024**3:
-        val = n / 1024**2
-        return f"{val:.1f} MB".rstrip("0").rstrip(".")
+        return f"{_fmt1(n/1024**2)} MB"
     else:
-        val = n / 1024**3
-        return f"{val:.1f} GB".rstrip("0").rstrip(".")
+        return f"{_fmt1(n/1024**3)} GB"
