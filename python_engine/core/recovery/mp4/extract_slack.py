@@ -27,8 +27,7 @@ def get_slack_after_moov(data):
         box_type = data[offset + 4:offset + 8].decode("utf-8", errors="ignore")
         if box_type == "moov":
             slack = data[offset + size:]
-            slack_rate = len(slack) / total_size * 100
-            return slack, offset + size, data[offset:offset + size], slack_rate
+            return slack, offset + size, data[offset:offset + size]
 
         if size < MIN_BOX_SIZE:
             logger.warning(f"비정상적인 박스 크기(size={size}) → 루프 종료 @ offset=0x{offset:X}")
@@ -36,7 +35,7 @@ def get_slack_after_moov(data):
 
         offset += size
 
-    return b'', None, None, 100.0
+    return b'', None, None
 
 def extract_sps_pps(moov_data):
     avcc_pos = moov_data.find(b'avcC')
@@ -81,7 +80,7 @@ def extract_frames(slack, offset, sps_pps, output_path):
         f.write(sps_pps)
         recovered_bytes += len(sps_pps)
 
-        for start, ftype in matches:
+        for start in matches:
             try:
                 size = struct.unpack('>I', slack[start:start + 4])[0]
                 if size > MAX_CHUNK_SIZE or size < MIN_FRAME_SIZE:
@@ -114,7 +113,7 @@ def recover_mp4_slack(filepath, output_h264_dir, output_video_dir, target_format
         with open(filepath, 'rb') as f:
             data = f.read()
         
-        slack, slack_offset, moov_data, _ = get_slack_after_moov(data)
+        slack, slack_offset, moov_data = get_slack_after_moov(data)
         
         if slack_offset is None:
             logger.error(f"{filename} → moov 박스 없음 → 복원 불가")
