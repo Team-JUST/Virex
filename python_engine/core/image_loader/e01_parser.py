@@ -9,7 +9,7 @@ import time
 from io import BytesIO
 from python_engine.core.recovery.mp4.extract_slack import recover_mp4_slack
 from python_engine.core.recovery.avi.extract_slack import recover_avi_slack
-from python_engine.core.analyzer.basic_info_parser import get_basic_info
+from python_engine.core.analyzer.basic_info_parser import get_basic_info_with_meta
 from python_engine.core.analyzer.integrity import get_integrity_info
 from python_engine.core.analyzer.struc import get_structure_info
 from python_engine.core.recovery.utils.unit import bytes_to_unit
@@ -69,14 +69,14 @@ def read_file_content(file_obj):
         offset += len(chunk)
     return buffer.getvalue()
 
-def build_analysis(origin_video_path):
+def build_analysis(origin_video_path, meta):
     return {
-        'basic': get_basic_info(origin_video_path),
+        'basic': get_basic_info_with_meta(origin_video_path, meta),
         'integrity': get_integrity_info(origin_video_path),
         'structure': get_structure_info(origin_video_path),
     }
 
-def handle_mp4_file(name, filepath, data, output_dir, category):
+def handle_mp4_file(name, filepath, data, file_obj, output_dir, category):
     orig_dir = os.path.join(output_dir, category)
     os.makedirs(orig_dir, exist_ok=True)
 
@@ -104,10 +104,10 @@ def handle_mp4_file(name, filepath, data, output_dir, category):
         'size': bytes_to_unit(len(data)),
         'origin_video': origin_video_path,
         'slack_info': slack_info,
-        'analysis': build_analysis(origin_video_path)
+        'analysis': build_analysis(origin_video_path, file_obj.info.meta)
     }
 
-def handle_avi_file(name, filepath, data, output_dir, category):
+def handle_avi_file(name, filepath, data, file_obj, output_dir, category):
     orig_dir = os.path.join(output_dir, category)
     os.makedirs(orig_dir, exist_ok=True)
 
@@ -132,7 +132,7 @@ def handle_avi_file(name, filepath, data, output_dir, category):
         'size': bytes_to_unit(len(data)),
         'origin_video': origin_video_path,
         'channels': channels_only,
-        'analysis': build_analysis(origin_video_path)
+        'analysis': build_analysis(origin_video_path, file_obj.info.meta)
     }
 
 def extract_video_files(fs_info, output_dir, path="/", total_count=None, progress=None):
@@ -161,10 +161,10 @@ def extract_video_files(fs_info, output_dir, path="/", total_count=None, progres
         category = path.lstrip('/').split('/',1)[0] or "root"
 
         if name_str.lower().endswith('.mp4'):
-            result = handle_mp4_file(name_str, filepath, data, output_dir, category)
+            result = handle_mp4_file(name_str, filepath, data, file_obj, output_dir, category)
         else: 
-            result = handle_avi_file(name_str, filepath, data, output_dir, category)
-        
+            result = handle_avi_file(name_str, filepath, data, file_obj, output_dir, category)
+
         if result:
             results.append(result)
     return results
