@@ -965,11 +965,12 @@ const Recovery = ({ isDarkMode }) => {
                                     >
                                       {file.name}
                                     </button>
-                                    {slackRatePercent > 0 && file.slack_info?.output_path &&(
+                                    {slackRatePercent > 0 && file.slack_info?.video_path && file.slack_info?.recovered && (
                                       <Badge
                                         label="슬랙"
                                         onClick={() => {
-                                          const formatted = `file:///${file.slack_info.video_path.replace(/\\/g, '/')}`;
+                                          const slackPath = file.slack_info.video_path;
+                                          const formatted = `file:///${slackPath.replace(/\\/g, '/')}`;
                                           setSlackVideoSrc(formatted);
                                           setShowSlackPopup(true);   
                                         }}
