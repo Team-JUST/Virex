@@ -128,7 +128,29 @@ const Recovery = ({ isDarkMode }) => {
   const [slackVideoSrc, setSlackVideoSrc] = useState('');
 
 // 8) 공통 유틸 (단위/코덱 포맷)
-  const bytesToMB = (bytes) => (bytes / 1024 / 1024).toFixed(1) + ' MB';
+  const bytesToUnit = (bytes) => {
+    let n = Number(bytes) || 0;
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    let i = 0;
+    while (n >= 1024 && i < units.length - 1) {
+      n /= 1024;
+      i++;
+    }
+    const decimals = 
+      i === 0 ? 0 : n >= 100 ? 0 : n >= 10 ? 1 : 2;
+    return `${n.toFixed(decimals)} ${units[i]}`;
+  };
+
+  const unitToBytes = (label) => {
+    if (typeof label === 'number') return label;
+    if (typeof label !== 'string') return 0;
+    const m = label.trim().match(/^([\d.]+)\s*(B|KB|MB|GB)$/i);
+    if (!m) return 0;
+    const n = parseFloat(m[1]);
+    const u = m[2].toUpperCase();
+    const mul = u === 'TB' ? 1024**4 : u === 'GB' ? 1024**3 : u === 'MB' ? 1024**2 : u === 'KB' ? 1024 : 1;
+    return Math.floor(n * mul);
+  }
 
   const formatCodec = (codec) =>
     codec
@@ -147,13 +169,8 @@ const Recovery = ({ isDarkMode }) => {
   );
 
   const slack_info = selectedResultFile?.slack_info ?? { slack_rate: 0 };
-  const safeSlackRate = slack_info.slack_rate ?? 0;
-
-  const slackPercent = safeSlackRate <= 1
-    ? (safeSlackRate * 100).toFixed(0)
-    : safeSlackRate.toFixed(0);
-
-  const validPercent = (100 - safeSlackRate * 100).toFixed(1);
+  const slackPercent = Math.round(Number(slack_info.slack_rate ?? 0));
+  const validPercent = (100 - slackPercent).toFixed(1);
 
 // 10) 진행률 변화 시 뷰 전환 로직
   useEffect(() => {
@@ -808,7 +825,7 @@ const Recovery = ({ isDarkMode }) => {
                     <div className="parser-info-row">
                       <span className="parser-info-label">파일 크기</span>
                       <span className="parser-info-value">
-                        {bytesToMB(analysis.basic.file_size)}
+                        {selectedResultFile?.size ?? '-'}
                       </span>
                     </div>
                     <div className="parser-info-row">
@@ -908,10 +925,11 @@ const Recovery = ({ isDarkMode }) => {
               <div className="result-wrapper">
 
                 <p className="result-summary">
-                  총 {results.length}개의 파일, 용량{' '}
-                  {bytesToMB(
-                    results.reduce((sum, f) => sum + f.size, 0)
-                  )}
+                  총 {results.length}개의 파일, 용량 {
+                    bytesToUnit(
+                      results.reduce((sum, f) => sum + unitToBytes(f.size), 0)
+                    )
+                  }
                 </p>
 
                 <div className="result-scroll-area" style={{ position: 'relative' }}>
@@ -934,12 +952,8 @@ const Recovery = ({ isDarkMode }) => {
                       {openGroups[category] && (
                         <div className="result-file-list">
                           {files.map((file) => {
-                            const mb = bytesToMB(file.size);
-                            const rawRate = file.slack_info.slack_rate;
-                            const slackRatePercent =
-                              rawRate <= 1
-                                ? (rawRate * 100).toFixed(0)
-                                : rawRate.toFixed(0);
+                            const sizeLabel = typeof file.size === 'string' ? file.size : bytesToUnit(file.size);
+                            const slackRatePercent = Math.round(Number(file.slack_info?.slack_rate ?? 0));
 
                             return (
                               <div className="result-file-item" key={file.path}>
@@ -951,19 +965,12 @@ const Recovery = ({ isDarkMode }) => {
                                     >
                                       {file.name}
                                     </button>
-                                    {slackRatePercent > 0 && (
+                                    {slackRatePercent > 0 && file.slack_info?.output_path &&(
                                       <Badge
                                         label="슬랙"
                                         onClick={() => {
-                                          const slackPath = file.slack_info?.output_path;
-                                          if (!slackPath) {
-                                            return;
-                                          }
-
-                                          const formatted = `file:///${slackPath.replace(/\\/g, '/')}`;
-                                          console.log("[Debug] slack video path : ", formatted);
-
-                                          setSlackVideoSrc(formatted);  // 슬랙 영상 경로 저장
+                                          const formatted = `file:///${file.slack_info.video_path.replace(/\\/g, '/')}`;
+                                          setSlackVideoSrc(formatted);
                                           setShowSlackPopup(true);   
                                         }}
                                         style={{ cursor: 'pointer' }}
@@ -971,7 +978,7 @@ const Recovery = ({ isDarkMode }) => {
                                     )}
                                   </div>
                                   <br />
-                                  {mb} ・ 슬랙비율: {slackRatePercent} %
+                                  {sizeLabel} ・ 슬랙비율: {slackRatePercent} %
                                 </div>
                               </div>
                             )
