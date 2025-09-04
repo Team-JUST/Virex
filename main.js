@@ -1,4 +1,22 @@
 const { app, BrowserWindow, Menu, ipcMain, dialog, protocol } = require('electron');
+// 개발 환경에서 핫리로드 적용
+if (process.env.NODE_ENV === 'development') {
+  try {
+    require('electron-reload')(__dirname, {
+      electron: require(`${__dirname}/node_modules/electron`),
+      // src, public, main.js 등도 감시
+      watch: [
+        path.join(__dirname, 'main.js'),
+        path.join(__dirname, 'preload.js'),
+        path.join(__dirname, 'src'),
+        path.join(__dirname, 'public')
+      ]
+    });
+    console.log('[Debug] electron-reload enabled');
+  } catch (e) {
+    console.warn('[Debug] electron-reload not installed or failed:', e);
+  }
+}
 const path = require('path');
 const { spawn } = require('child_process');
 const readline = require('readline');
@@ -108,7 +126,11 @@ function createWindow() {
     },
   });
 
-  mainWindow.loadFile(path.join(__dirname, 'dist', 'index.html')); // ✅
+  if (process.env.NODE_ENV === 'development') {
+    mainWindow.loadURL('http://localhost:5173');
+  } else {
+    mainWindow.loadFile(path.join(__dirname, 'dist', 'index.html'));
+  }
 }
 
 
@@ -224,7 +246,8 @@ ipcMain.handle('start-recovery', (_event, e01FilePath) => {
             const raw = await fs.readFile(data.analysisPath, 'utf8');
             const results = JSON.parse(raw);
             console.log("[Debug] results to frontend count : ", results.length);
-
+            
+            // 제거할지 말지 정하고 주석 제거 & 디버깅 코드 제거
             results.forEach((result, index) => {
               console.log(`[Debug] result ${index} : name=${result.name}, slack_info = `, result.slack_info);
             });

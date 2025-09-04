@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "main": "main.js",
   "scripts": {
-    "dev": "vite",
+    "dev": "concurrently \"cross-env NODE_ENV=development vite\" \"cross-env NODE_ENV=development electron .\"",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
@@ -24,6 +24,8 @@
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.6.0",
+    "concurrently": "^9.2.1",
+    "cross-env": "^10.0.0",
     "electron": "^37.2.1",
     "eslint": "^9.30.1",
     "eslint-plugin-react-hooks": "^5.2.0",
