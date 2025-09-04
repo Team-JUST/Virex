@@ -19,7 +19,7 @@ const Stepbar = ({ currentStep, isDarkMode }) => {
     // completed 처리
     for (let i = 0; i < currentStep; i++) {
       steps[i].classList.add('completed');
-      steps[i].querySelector('.circle').innerHTML = '<i class="fas fa-check"></i>';
+      steps[i].querySelector('.circle').innerHTML = '<i class="fas fa-check" style="margin-top: 2px;"></i>';
     }
 
     // active 처리
