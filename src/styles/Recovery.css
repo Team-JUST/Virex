@@ -104,7 +104,6 @@ body {
   justify-content: center;
   align-items: center;
   gap: 0.5rem;
-  margin-top: 2rem;
   height: var(--bar-height);
 }
 
@@ -129,6 +128,19 @@ body {
   font-weight: 600;
   color: #333;
   text-shadow: none;
+  display: flex;
+  align-items: center;
+  vertical-align: middle;
+}
+
+.data-bar-flex-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  width: 100%;
+  flex-wrap: nowrap;
 }
 
 .recovery-file-box {
@@ -246,8 +258,6 @@ body {
   font-weight: 600;
   display: block;
 }
-
-
 
 /* Download */
 
@@ -428,6 +438,9 @@ body {
 .parser-info-label {
   color: #444;
   font-weight: 500;
+  white-space: nowrap;
+  overflow: visible;
+  width: auto;
 }
 
 .parser-info-value {
@@ -466,13 +479,63 @@ body {
   background-color: #eee;
   border-radius: 5px;
   overflow: hidden;
-  margin-top: 0.5rem;
 }
 
 .data-bar-used {
   height: 100%;
   background-color: #3b82f6;
   transition: width 0.3s ease;
+}
+
+.data-bar-wrapper.is-single {
+  position: relative;
+  height: 24px;
+  display: flex;
+  align-items: center;
+}
+
+.data-bar-flex-row-between {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: 1rem;
+}
+
+.data-bar-wrapper.is-single .data-bar-used {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 8px;
+  box-sizing: border-box;
+  position: relative;
+  height: 100%;
+}
+
+.data-bar-wrapper.is-single .data-bar-text {
+  position: static;
+  pointer-events: none;
+  color: #fff;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  font-size: 0.75rem;
+}
+
+.parser-info-row--withbar .data-bar-wrapper.is-single {
+  height: 20px;
+  border-radius: 12px;
+  width: 85%;
+}
+
+.parser-info-row--withbar .parser-info-value {
+  display: block;
+  width: 100%;
+}
+
+.recovery-page.dark-mode .parser-info-row--withbar .data-bar-wrapper.is-single {
+  background-color: #374151;
 }
 
 .parser-structure {
@@ -579,6 +642,10 @@ body {
 
 .recovery-page.dark-mode .data-bar-wrapper {
   background-color: #374151;
+}
+
+.recovery-page.dark-mode .data-bar-text {
+  color: #fff;
 }
 
 .recovery-page.dark-mode .parser-structure {

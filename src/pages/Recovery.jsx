@@ -132,19 +132,15 @@ const Recovery = ({ isDarkMode }) => {
     let n = Number(bytes) || 0;
     const units = ['B', 'KB', 'MB', 'GB', 'TB'];
     let i = 0;
-    while (n >= 1024 && i < units.length - 1) {
-      n /= 1024;
-      i++;
-    }
-    const decimals = 
-      i === 0 ? 0 : n >= 100 ? 0 : n >= 10 ? 1 : 2;
-    return `${n.toFixed(decimals)} ${units[i]}`;
+    while (n >= 1024 && i < units.length - 1) { n /= 1024; i++;}
+    const decimals = i === 0 ? 0 : n >= 100 ? 0 : n >= 10 ? 1 : 2;
+    return `${n.toFixed(decimals).replace(/\.?0+$/, '')} ${units[i]}`;
   };
 
   const unitToBytes = (label) => {
     if (typeof label === 'number') return label;
     if (typeof label !== 'string') return 0;
-    const m = label.trim().match(/^([\d.]+)\s*(B|KB|MB|GB)$/i);
+    const m = label.trim().match(/^([\d.]+)\s*(B|KB|MB|GB|TB)$/i);
     if (!m) return 0;
     const n = parseFloat(m[1]);
     const u = m[2].toUpperCase();
@@ -168,9 +164,20 @@ const Recovery = ({ isDarkMode }) => {
     [results, selectedAnalysisFile]
   );
 
-  const slack_info = selectedResultFile?.slack_info ?? { slack_rate: 0 };
-  const slackPercent = Math.round(Number(slack_info.slack_rate ?? 0));
-  const validPercent = (100 - slackPercent).toFixed(1);
+  const slack_info = selectedResultFile?.slack_info ?? { recovered: false, slack_size: '0 B', slack_rate: 0,  };
+  const totalBytes = unitToBytes(selectedResultFile?.size || '0 B');
+  let slackBytes = slack_info?.slack_size ? unitToBytes(slack_info.slack_size) : 0;
+  if ((!slackBytes || Number.isNaN(slackBytes)) && totalBytes && (slack_info?.slack_rate ?? 0) > 0) {
+    slackBytes = Math.round(totalBytes * (Number(slack_info.slack_rate) / 100));
+  }
+  slackBytes = Math.min(Math.max(slackBytes, 0), totalBytes);
+  const usedBytes = Math.max(totalBytes - slackBytes, 0);
+  const totalLabel = bytesToUnit(totalBytes);
+  const usedLabel = bytesToUnit(usedBytes);
+  const slackLabel = bytesToUnit(slackBytes);
+  const slackPercent = Number.isFinite(Number(slack_info?.slack_rate))
+    ? Math.round(Number(slack_info.slack_rate))
+    : (totalBytes ? Math.round((slackBytes / totalBytes) * 100) : 0);
 
 // 10) 진행률 변화 시 뷰 전환 로직
   useEffect(() => {
@@ -274,8 +281,8 @@ const Recovery = ({ isDarkMode }) => {
         console.warn("[Recovery] startRecovery failed:", msg);
 
         if (msg.includes("disk_full")) {
-          setShowDiskFullAlert(true);   // ✅ 팝업 띄우기
-          rollbackToFirst();          // ✅ 초기화
+          setShowDiskFullAlert(true);   // 팝업 띄우기
+          rollbackToFirst();          // 초기화
         } else {
           // TODO: 그 외 에러 처리 (원하면 일반 에러 팝업 따로)
         }
@@ -818,8 +825,18 @@ const Recovery = ({ isDarkMode }) => {
                     </div>
 
                     <div className="parser-info-row">
-                      <span className="parser-info-label">복구 시간</span>
-                      <span className="parser-info-value">{analysis.basic.timestamps.created}</span>
+                      <span className="parser-info-label">생성 시간</span>
+                      <span className="parser-info-value">{analysis.basic.timestamps?.created ?? '-'}</span>
+                    </div>
+
+                    <div className="parser-info-row">
+                      <span className="parser-info-label">수정 시간</span>
+                      <span className="parser-info-value">{analysis.basic.timestamps?.modified ?? '-'}</span>
+                    </div>
+
+                    <div className="parser-info-row">
+                      <span className="parser-info-label">마지막 접근 시간</span>
+                      <span className="parser-info-value">{analysis.basic.timestamps?.accessed ?? '-'}</span>
                     </div>
 
                     <div className="parser-info-row">
@@ -882,25 +899,26 @@ const Recovery = ({ isDarkMode }) => {
                 <div className={`parser-tab-content ${activeTab === 'slack' ? 'active' : ''}`}>
                   <div className="parser-info-table">
                     <div className="parser-info-row">
-                      <span className="parser-info-label">슬랙 비율</span>
-                      <span className="parser-info-value">{slackPercent} %</span>
+                      <span className="parser-info-label">전체 크기</span>
+                      <span className="parser-info-value">{totalLabel}</span>
                     </div>
                     <div className="parser-info-row">
-                      <span className="parser-info-label">유효 데이터 비율</span>
-                      <span className="parser-info-value">
-                        {100 - slackPercent} %
-                      </span>
+                      <span className="parser-info-label">원본 영상 크기</span>
+                      <span className="parser-info-value">{usedLabel}</span>
                     </div>
                     <div className="parser-info-row">
-                      <span className="parser-info-label">데이터 분포</span>
+                      <span className="parser-info-label">슬랙 영상 크기</span>
+                      <span className="parser-info-value">{slackLabel}</span>
                     </div>
-                    <div className="data-bar-wrapper">
-                      <div
-                        className="data-bar-used"
-                        style={{
-                          width: `${100 - slackPercent}%`
-                        }}
-                      />
+                    <div className="parser-info-row parser-info-row--withbar">
+                      <div className="data-bar-flex-row-between">
+                        <span className="parser-info-label">전체 영상 대비 슬랙 영상 비율</span>
+                        <div className="data-bar-wrapper is-single is-narrow">
+                          <div className="data-bar-used" style={{ width: `${slackPercent}%`, minWidth: slackPercent ? '44px' : '0' }}>
+                            <span className="data-bar-text">{slackPercent} %</span>
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
