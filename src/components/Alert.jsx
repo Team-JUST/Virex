@@ -5,7 +5,7 @@ const Alert = forwardRef(({ icon, title, description, children, isDarkMode }, re
   return (
     <div className={`alert-box ${isDarkMode ? 'dark-mode' : ''}`} ref={ref}>
       <div className="alert-title">
-        <img src={icon} alt="아이콘" style={{ width: 30, height: 30 }} />
+        <div className="alert-icon-wrapper">{icon}</div>
         <span>{title}</span>
       </div>
       <div className="alert-desc">{description}</div>

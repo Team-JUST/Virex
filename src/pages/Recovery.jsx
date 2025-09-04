@@ -10,24 +10,24 @@ import '../styles/Stepbar.css';
 import '../styles/Recovery.css';
 import '../styles/Button.css';
 import '../styles/Alert.css';
-import alertIcon from '../images/alert_file.svg';
-import drivingIcon from '../images/driving.svg';
-import parkingIcon from '../images/parking.svg';
-import eventIcon from '../images/event.svg';
-import deletedIcon from '../images/deleted.svg';
-import downloadIcon from '../images/download.svg';
-import basicIcon from '../images/information_t.svg';
-import integrityIcon from '../images/integrity.svg';
-import slackIcon from '../images/slack.svg';
-import structureIcon from '../images/struc.svg';
-import recoveryPauseIcon from '../images/recoveryPauseIcon.svg';
-import replayIcon from '../images/view_replay.svg';
-import pauseIcon from '../images/view_pause.svg';
-import fullscreenIcon from '../images/view_fullscreen.svg';
-import integrityGreen from '../images/integrity_g.svg';
-import integrityRed from '../images/integrity_r.svg';
-import completeIcon from '../images/complete.svg';
-import storageFullIcon from '../images/storageFullIcon.svg';
+import AlertIcon from '../images/alert_file.svg?react';
+import DrivingIcon from '../images/driving.svg?react';
+import ParkingIcon from '../images/parking.svg?react';
+import EventIcon from '../images/event.svg?react';
+import DeletedIcon from '../images/deleted.svg?react';
+import DownloadIcon from '../images/download.svg?react';
+import BasicIcon from '../images/information_t.svg?react';
+import IntegrityIcon from '../images/integrity.svg?react';
+import SlackIcon from '../images/slack.svg?react';
+import StructureIcon from '../images/struc.svg?react';
+import RecoveryPauseIcon from '../images/recoveryPauseIcon.svg?react';
+import ReplayIcon from '../images/view_replay.svg?react';
+import PauseIcon from '../images/view_pause.svg?react';
+import FullscreenIcon from '../images/view_fullscreen.svg?react';
+import IntegrityGreen from '../images/integrity_g.svg?react';
+import IntegrityRed from '../images/integrity_r.svg?react';
+import CompleteIcon from '../images/complete.svg?react';
+import StorageFullIcon from '../images/storageFullIcon.svg?react';
 import { useNavigate } from 'react-router-dom';
 
 const Recovery = ({ isDarkMode }) => {
@@ -169,11 +169,11 @@ const Recovery = ({ isDarkMode }) => {
 
 // 11) 카테고리 아이콘 매핑 및 아이콘 선택 헬퍼
   const categoryIcons = {
-    driving: drivingIcon,
-    parking: parkingIcon,
-    event: eventIcon,
-    slack: slackIcon,
-    deleted: deletedIcon,
+    driving: DrivingIcon,
+    parking: ParkingIcon,
+    event: EventIcon,
+    slack: SlackIcon,
+    deleted: DeletedIcon,
   };
 
   const specialCategoryMap = {
@@ -190,7 +190,7 @@ const Recovery = ({ isDarkMode }) => {
     const prefix = Object.keys(categoryIcons).find((k) =>
       cat.startsWith(k)
     );
-    return prefix ? categoryIcons[prefix] : slackIcon;
+    return prefix ? categoryIcons[prefix] : SlackIcon;
   };
 
   // 12) 메인 IPC: 진행률/완료 리스너 등록
@@ -603,7 +603,7 @@ const Recovery = ({ isDarkMode }) => {
                 alignItems: 'center',
                 flexDirection: 'column',
               }}>
-                <img src={completeIcon} alt="완료 아이콘" style={{ width: '100px', margin: '3rem 0', marginTop: '6rem' }} />
+                <CompleteIcon className='complete_icon' />
               </div>
               <p style={{ textAlign: 'center', fontSize: '1rem' }}>
                 선택된 경로에 복원된 영상이 저장되었습니다.
@@ -734,28 +734,27 @@ const Recovery = ({ isDarkMode }) => {
 
                   <div className="parser-controls">
                     <button id="replayBtn">
-                      <img src={replayIcon} alt="Replay" />
+                      <ReplayIcon />
                     </button>
                     <button
                       id="playPauseBtn"
                       style={{ background: 'none', border: 'none', cursor: 'pointer' }}
                     >
-                      <img
+                      <PauseIcon
                         id="playPauseIcon"
-                        src={pauseIcon}
-                        alt="Pause"
                         style={{
                           width: '30px',
                           transition: 'filter 0.2s',
                           filter: 'none', 
                         }}
+                        className='pause_icon'
                       />
                     </button>
 
                     <input type="range" id="progressBar" min="0" defaultValue="0" step="0.01" />
                     <span id="timeText">00:00 / 00:00</span>
                     <button id="fullscreenBtn">
-                      <img src={fullscreenIcon} alt="Fullscreen" />
+                      <FullscreenIcon className='fullscreen_icon' />
                     </button>
                   </div>
                 </div>
@@ -766,28 +765,28 @@ const Recovery = ({ isDarkMode }) => {
                     className={`parser-tab-button ${activeTab === 'basic' ? 'active' : ''}`}
                     onClick={() => handleTabClick('basic')}
                   >
-                    <img src={basicIcon} alt="기본 정보" />
+                    <BasicIcon className='tab-icon' />
                     <span>기본 정보</span>
                   </button>
                   <button
                     className={`parser-tab-button ${activeTab === 'integrity' ? 'active' : ''}`}
                     onClick={() => handleTabClick('integrity')}
                   >
-                    <img src={integrityIcon} alt="무결성 검사" />
+                    <IntegrityIcon className='tab-icon' />
                     <span>무결성 검사</span>
                   </button>
                   <button
                     className={`parser-tab-button ${activeTab === 'slack' ? 'active' : ''}`}
                     onClick={() => handleTabClick('slack')}
                   >
-                    <img src={slackIcon} alt="슬랙 정보" />
+                    <SlackIcon className='tab-icon' />
                     <span>슬랙 정보</span>
                   </button>
                   <button
                     className={`parser-tab-button ${activeTab === 'structure' ? 'active' : ''}`}
                     onClick={() => handleTabClick('structure')}
                   >
-                    <img src={structureIcon} alt="구조 정보" />
+                    <StructureIcon className='tab-icon' />
                     <span>구조 정보</span>
                   </button>
                 </div>
@@ -837,11 +836,11 @@ const Recovery = ({ isDarkMode }) => {
                     <div className="parser-info-row">
                       <span className="parser-info-label">전체 상태</span>
                       <span className="parser-info-value">
-                        <img
-                          src={analysis.integrity.damaged ? integrityRed : integrityGreen}
-                          alt={analysis.integrity.damaged ? "손상" : "정상"}
-                          className="status-icon"
-                        />
+                        {analysis.integrity.damaged ? (
+                          <IntegrityRed alt="손상" className="status-icon" />
+                        ) : (
+                          <IntegrityGreen alt="정상" className="status-icon" />
+                        )}
                         <span className={`status-text ${analysis.integrity.damaged ? 'red' : 'green'}`}>
                           {analysis.integrity.damaged ? '손상됨' : '정상'}
                         </span>
@@ -923,11 +922,7 @@ const Recovery = ({ isDarkMode }) => {
                         onClick={() => toggleGroup(category)}
                       >
                         <span className="result-group-toggle" />
-                        <img
-                          className="result-group-icon"
-                          src={getCategoryIcon(category)}
-                          alt={`${category} icon`}
-                        />
+                        {React.createElement(getCategoryIcon(category), { className: "result-group-icon" })}
                         {category} ({files.length})
                       </div>
 
@@ -1005,7 +1000,7 @@ const Recovery = ({ isDarkMode }) => {
     {/* Alert 조건문 */}
       {showAlert && (
         <Alert
-          icon={alertIcon}
+          icon={<AlertIcon className='alert-icon' />}
           title="파일 형식 오류"
           isDarkMode={isDarkMode}
           description={
@@ -1020,9 +1015,9 @@ const Recovery = ({ isDarkMode }) => {
         </Alert>
       )}
 
-      {showTabGuardPopup && (
+      {/* {showTabGuardPopup && (
         <Alert
-          icon={recoveryPauseIcon}
+          icon={<RecoveryPauseIcon className='recoveryPause-icon' />}
           title="탭 전환 경고"
           isDarkMode={isDarkMode}
           description={
@@ -1041,7 +1036,7 @@ const Recovery = ({ isDarkMode }) => {
             <Button variant="dark" onClick={confirmTabMove}>이동하기</Button>
           </div>
         </Alert>
-      )}
+      )} */}
 
       {showSlackPopup && (
         <div
@@ -1079,7 +1074,7 @@ const Recovery = ({ isDarkMode }) => {
 
       {showDiskFullAlert && (
         <Alert
-          icon={storageFullIcon}
+          icon={<StorageFullIcon />}
           title="용량 부족 알림"
           isDarkMode={isDarkMode}
           description={
@@ -1097,7 +1092,7 @@ const Recovery = ({ isDarkMode }) => {
 
       {showDownloadPopup && (
         <Alert
-          icon={downloadIcon}
+          icon={<DownloadIcon />}
           title="다운로드 옵션"
           isDarkMode={isDarkMode}
           description={
