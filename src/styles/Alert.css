@@ -37,6 +37,12 @@
   justify-content: flex-end;
 }
 
+.alert-icon-wrapper svg {
+  width: 30px;
+  height: 30px;
+  vertical-align: middle;
+}
+
 /* ++ 다크모드 ++ */
 
 .alert-box.dark-mode {
@@ -51,8 +57,4 @@
 
 .alert-box.dark-mode .alert-desc {
   color: #cbd5e1;
-}
-
-.alert-box.dark-mode img {
-  filter: brightness(1.2);
 }

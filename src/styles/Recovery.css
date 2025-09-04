@@ -308,6 +308,18 @@ body {
   background: #f9f9f9;
 }
 
+.parser-tabs .tab-icon{
+  color: #747474;
+}
+
+.alert-icon{
+  color: #3B82F6;
+}
+
+.recoveryPause-icon{
+  color: #EAB308;
+}
+
 .parser-tab-button {
   flex: 1;
   padding: 10px 16px;
@@ -324,7 +336,7 @@ body {
   gap: 6px;
 }
 
-.parser-tab-button img {
+.parser-tab-button .tab-icon {
   width: 18px;
   height: 18px;
   filter: grayscale(100%) brightness(0.5);
@@ -334,10 +346,6 @@ body {
 .parser-tab-button.active {
   color: #3B82F6;
   border-bottom: 3px solid #3B82F6;
-}
-
-.parser-tab-button.active img {
-  filter: brightness(1) saturate(100%) sepia(1) hue-rotate(185deg) saturate(10);
 }
 
 .parser-tab-content {
@@ -387,11 +395,6 @@ body {
   border: none;
   padding: 0;
   cursor: pointer;
-}
-
-.parser-controls img {
-  width: 20px;
-  height: 20px;
 }
 
 .parser-controls input[type="range"] {
@@ -503,6 +506,12 @@ body {
   padding: 0;
 }
 
+.complete_icon{
+  width: 100px;
+  margin: 3rem 0;
+  margin-top: 6rem;
+}
+
 /* ++ 다크모드 ++ */
 
 .recovery-page.dark-mode .upload-title {
@@ -598,24 +607,12 @@ body {
   color: #f1f5f9;
 }
 
-.recovery-page.dark-mode .status-icon {
-  filter: invert(1) brightness(1);
-}
-
-.recovery-page.dark-mode img {
-  filter: brightness(0.9);
-}
-
 .recovery-page.dark-mode .progress-bar-text {
   color: #f1f5f9;
 }
 
-/* 아이콘 색상 반전 */
-.recovery-page.dark-mode .parser-tab-button img,
-.recovery-page.dark-mode .result-group-icon,
-.recovery-page.dark-mode #playPauseIcon,
-.recovery-page.dark-mode .recovery-file-box img {
-  filter: invert(1) brightness(1);
+.recovery-page.dark-mode .parser-tabs .tab-icon{
+  color: #f1f5f9;
 }
 
 /* parser-tabs 다크모드 스타일 */
