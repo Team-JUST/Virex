@@ -108,7 +108,8 @@ def handle_mp4_file(name, filepath, data, file_obj, output_dir, category):
     }
 
 def handle_avi_file(name, filepath, data, file_obj, output_dir, category):
-    orig_dir = os.path.join(output_dir, category)
+    video_stem = os.path.splitext(name)[0]
+    orig_dir = os.path.join(output_dir, category, video_stem)
     os.makedirs(orig_dir, exist_ok=True)
 
     original_path = os.path.join(orig_dir, name)

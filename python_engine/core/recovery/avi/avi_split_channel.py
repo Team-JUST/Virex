@@ -44,7 +44,7 @@ def split_channel_bytes(data, label):
     codec = detect_codec(data)
     pats = PATTERNS[codec]
 
-    # RIFF 헤더가 있으면 전체 길이만큼 offset 건너뛰기
+    # RIFF 헤더 건너뛰기
     offset = 0
     if data.startswith(b'RIFF'):
         total = struct.unpack('<I', data[4:8])[0]

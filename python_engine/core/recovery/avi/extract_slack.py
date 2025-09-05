@@ -145,10 +145,10 @@ def recover_avi_slack(input_avi, base_dir, target_format='mp4'):
                         'slack_rate': round(recovered_bytes / len(data) * 100, 2),
                         'slack_size': bytes_to_unit(recovered_bytes)
                     }
+                    has_output = True
 
         full_raw = extract_full_channel_bytes(data, label)
-        full_count = full_raw.count(CHUNK_SIG[label])
-        if full_count > 0:
+        if len(full_raw) > 0:
             raw_fn = os.path.join(ch_dir, f"{label}_full.raw")
             with open(raw_fn, 'wb') as rf:
                 rf.write(full_raw)
