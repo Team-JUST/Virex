@@ -601,17 +601,6 @@ const Recovery = ({ isDarkMode }) => {
       return () => { try { off && off(); } catch {} };
     }, []);
 
-    useEffect(() => {
-      if (isRecovering && selectedFile) {
-        window.api.startRecovery(selectedFile.path).catch((err) => {
-          if (String(err?.message || err).includes("disk_full")) {
-            setShowDiskFullAlert(true);
-            rollbackToFirst();   
-          }
-        });
-      }
-    }, [isRecovering, selectedFile]);
-
   return (
     <div className={`recovery-page ${isDarkMode ? 'dark-mode' : ''}`}>
       <Stepbar currentStep={currentStep} isDarkMode={isDarkMode} />
