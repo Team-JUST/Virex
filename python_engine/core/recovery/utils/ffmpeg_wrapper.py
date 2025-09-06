@@ -3,13 +3,13 @@ import os
 
 # FFmpeg 실행 파일 경로 (프로젝트 bin 폴더 기준)
 FFMPEG_PATH = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), '../ffmpeg/ffmpeg.exe')
+    os.path.join(os.path.dirname(__file__), '../../../bin/ffmpeg.exe')
 )
 
 def convert_video(input_path, output_path, extra_args=None, use_gpu=True):
     cmd = [FFMPEG_PATH, '-hide_banner', '-loglevel', 'error']
 
-    # GPU 옵션 적용
+    # GPU 적용
     if use_gpu:
         cmd += [
             '-hwaccel', 'cuda',
@@ -25,6 +25,7 @@ def convert_video(input_path, output_path, extra_args=None, use_gpu=True):
             '-c:a', 'aac', '-b:a', '192k',
             '-movflags', '+faststart'
         ]
+
 
     if extra_args:
         if isinstance(extra_args, str):

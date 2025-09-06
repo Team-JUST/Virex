@@ -260,10 +260,10 @@ const Recovery = ({ isDarkMode }) => {
         console.warn("[Recovery] startRecovery failed:", msg);
 
         if (msg.includes("disk_full")) {
-          setShowDiskFullAlert(true);   // ✅ 팝업 띄우기
-          rollbackToFirst();          // ✅ 초기화
+          setShowDiskFullAlert(true);  
+          rollbackToFirst();        
         } else {
-          // TODO: 그 외 에러 처리 (원하면 일반 에러 팝업 따로)
+
         }
       });
     }
@@ -598,24 +598,30 @@ const Recovery = ({ isDarkMode }) => {
 
   // 21) 디스크 용량 부족 이벤트 수신 → Alert 띄우고 롤백
   useEffect(() => {
-      if (!window.api?.onDiskFull) return;
-      const off = window.api.onDiskFull(() => {
-        setShowDiskFullAlert(true);
-        rollbackToFirst();  
-      });
-      return () => { try { off && off(); } catch {} };
-    }, []);
-
-    useEffect(() => {
-      if (isRecovering && selectedFile) {
-        window.api.startRecovery(selectedFile.path).catch((err) => {
-          if (String(err?.message || err).includes("disk_full")) {
+    if (isRecovering && selectedFile) {
+      (async () => {
+        try {
+          await window.api.startRecoverySafe(selectedFile.path);
+        } catch (err) {
+          if (String(err?.message || '').includes('disk_full')) {
             setShowDiskFullAlert(true);
-            rollbackToFirst();   
+            rollbackToFirst();
           }
-        });
-      }
-    }, [isRecovering, selectedFile]);
+        }
+      })();
+    }
+  }, [isRecovering, selectedFile]);
+
+  useEffect(() => {
+    if (!window.api?.onDiskFull) return;
+    const off = window.api.onDiskFull(() => {
+      setShowDiskFullAlert(true);
+      rollbackToFirst();
+    });
+    return () => { off && off(); };
+  }, []);
+
+
 
   return (
     <div className={`recovery-page ${isDarkMode ? 'dark-mode' : ''}`}>
@@ -1015,6 +1021,7 @@ const Recovery = ({ isDarkMode }) => {
                                         label="슬랙"
                                         onClick={() => {
                                           const slackPath = file.slack_info?.output_path;
+                                          console.log("Badge clicked!");
                                           if (!slackPath) {
                                             return;
                                           }
