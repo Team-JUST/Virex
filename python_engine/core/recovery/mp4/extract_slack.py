@@ -232,19 +232,14 @@ def recover_mp4_slack(filepath, output_h264_dir, output_video_dir, target_format
             fcount = get_video_frame_count(mp4_path)
             duration = get_video_duration_sec(mp4_path)
 
-            need_jpeg = (
-                (fcount is not None and fcount <= 1) or
-                (fcount >= 0 and duration <= SLACK_IMAGE_THRESHOLD_SEC)
-            )
-
-            if need_jpeg:
+            # 1초 미만 영상이면 mp4 삭제, jpeg 생성
+            if duration is not None and duration < 1.0:
                 ok = extract_first_frame(mp4_path, jpeg_path)
+                try:
+                    os.remove(mp4_path)
+                except Exception:
+                    pass
                 if ok:
-                    try:
-                        os.remove(mp4_path)
-                        mp4_path = None
-                    except Exception:
-                        pass
                     final_size = os.path.getsize(jpeg_path) if os.path.exists(jpeg_path) else recovered_bytes
                     return {
                         "recovered": True,
@@ -255,6 +250,7 @@ def recover_mp4_slack(filepath, output_h264_dir, output_video_dir, target_format
                         "slack_rate": slack_rate
                     }
                 else:
+                    # jpeg 추출 실패 시 mp4 경로 반환
                     final_size = os.path.getsize(mp4_path)
                     return {
                         "recovered": True,
@@ -265,6 +261,7 @@ def recover_mp4_slack(filepath, output_h264_dir, output_video_dir, target_format
                         "slack_rate": slack_rate
                     }
             else:
+                # 1초 이상이면 mp4 경로 반환
                 final_size = os.path.getsize(mp4_path)
                 return {
                     "recovered": True,
