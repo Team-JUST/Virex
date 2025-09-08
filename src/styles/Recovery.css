@@ -9,6 +9,7 @@ body {
   font-size: 2rem;
   font-weight: 900;
   margin-top: 0.5rem;
+  margin-bottom: 0.5rem;
   color: #1f2937;
 }
 
@@ -55,14 +56,12 @@ body {
   margin-bottom: 2rem;
 }
 
-
 /* Progress Bar page */
 .recovery-desc-left {
   text-align: left;
   font-size: 0.95rem;
   color: #999;
-  margin-bottom: 1.5rem;
-  margin-left: 1rem;
+  margin-bottom: 1rem;
 }
 
 .recovery-desc-right {
