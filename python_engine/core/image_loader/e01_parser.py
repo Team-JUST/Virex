@@ -1,4 +1,5 @@
 import os
+import struct
 import pyewf
 import pytsk3
 import logging
@@ -145,29 +146,157 @@ def extract_video_files(fs_info, output_dir, path="/", total_count=None, progres
         name_str = name.decode('utf-8', 'ignore')
         filepath = path.rstrip('/') + '/' + name_str
 
+
         if entry.info.meta.type == pytsk3.TSK_FS_META_TYPE_DIR:
             results += extract_video_files(fs_info, output_dir, filepath, total_count, progress)
             continue
 
+        # 비디오 확장자만
         if not name_str.lower().endswith(VIDEO_EXTENSIONS):
             continue
 
+        # 진행률 업데이트
+        
         if progress:
             progress[0] += 1
             print(json.dumps({"processed": progress[0], "total": total_count}), flush=True)
 
+
+        # 파일 열고 전체 데이터 읽기
         file_obj = fs_info.open(filepath)
         data = read_file_content(file_obj)
-        category = path.lstrip('/').split('/',1)[0] or "root"
+        # 최상위 디렉토리명을 카테고리로 사용 (없으면 root)
+        category = path.lstrip('/').split('/', 1)[0] or "root"
 
+        # =========================
+        # MP4 처리 (인라인)
+        # =========================
         if name_str.lower().endswith('.mp4'):
-            result = handle_mp4_file(name_str, filepath, data, file_obj, output_dir, category)
-        else: 
-            result = handle_avi_file(name_str, filepath, data, file_obj, output_dir, category)
+            # 1) 원본 저장
+            orig_dir = os.path.join(output_dir, category)
+            os.makedirs(orig_dir, exist_ok=True)
 
-        if result:
-            results.append(result)
+            original_path = os.path.join(orig_dir, name_str)
+            with open(original_path, 'wb') as wf:
+                wf.write(data)
+
+            # 2) 슬랙 히든 복원 (raw + slack)
+            raw_dir = os.path.join(orig_dir, 'raw')
+            slack_dir = os.path.join(orig_dir, 'slack')
+            os.makedirs(raw_dir, exist_ok=True)
+            os.makedirs(slack_dir, exist_ok=True)
+
+            slack_info = recover_mp4_slack(
+                filepath=original_path,
+                output_h264_dir=raw_dir,
+                output_video_dir=slack_dir,
+                target_format="mp4"
+            )
+
+            # 3) 분석 및 결과 기록
+            origin_video_path = slack_info.get('source_path', original_path)
+            analysis = build_analysis(origin_video_path, file_obj.info.meta)
+
+            results.append({
+                'name': name_str,
+                'path': filepath,
+                'size': bytes_to_unit(len(data)),
+                'origin_video': origin_video_path,
+                'slack_info': slack_info,
+                'analysis': analysis
+            })
+            continue  # 한 파일 처리 완료 후 다음 항목
+
+        # =========================
+        # AVI 처리 (인라인)
+        # =========================
+        if name_str.lower().endswith('.avi'):
+            # 1) 기본 디렉토리/원본 저장
+            base_dir = os.path.join(output_dir, category)
+            os.makedirs(base_dir, exist_ok=True)
+
+            original_path = os.path.join(base_dir, name_str)
+            with open(original_path, 'wb') as wf:
+                wf.write(data)
+
+            # 2) 작업용 서브 디렉토리
+            tmp_dir = os.path.join(base_dir, 'tmp')
+            raw_dir = os.path.join(base_dir, 'raw')
+            slack_dir = os.path.join(base_dir, 'slack')
+            channels_dir = os.path.join(base_dir, 'channels')
+            os.makedirs(tmp_dir, exist_ok=True)
+            os.makedirs(raw_dir, exist_ok=True)
+            os.makedirs(slack_dir, exist_ok=True)
+            os.makedirs(channels_dir, exist_ok=True)
+
+            # 임시 avi 복사 (복사 실패 시 원본 그대로 사용)
+            temp_avi = os.path.join(tmp_dir, name_str)
+            try:
+                shutil.copy2(original_path, temp_avi)
+                input_avi = temp_avi
+            except Exception:
+                input_avi = original_path
+
+            # 3) 슬랙 & 채널 복원
+            avi_info = recover_avi_slack(
+                input_avi=input_avi,
+                raw_out_dir=raw_dir,
+                slack_out_dir=slack_dir,
+                channels_out_dir=channels_dir,
+                target_format='mp4'
+            )
+            if not avi_info:
+                # 복원 실패 시 스킵
+                continue
+
+            # 4) 분석 대상(원본) 경로 결정
+            origin_video_path = avi_info.get('source_path', avi_info.get('origin_path', original_path))
+
+            # 5) 채널 dict만 추출
+            channels_only = {k: v for k, v in avi_info.items() if isinstance(v, dict)}
+
+            # 6) 채널별 full MP4가 있으면 category/<label>/ 로 복사
+            for label, info in channels_only.items():
+                full_mp4 = info.get('full_path')
+                if full_mp4 and os.path.exists(full_mp4):
+                    chan_dir = os.path.join(base_dir, label)
+                    os.makedirs(chan_dir, exist_ok=True)
+                    dst = os.path.join(chan_dir, os.path.basename(full_mp4))
+                    try:
+                        shutil.copy2(full_mp4, dst)
+                    except Exception as e:
+                        logger.warning(f"채널 파일 복사 실패({label}): {e}")
+
+            # 7) slack_rate 집계 (최대값)
+            slack_rates = [info.get('slack_rate', 0.0) for info in channels_only.values() if isinstance(info, dict)]
+            overall_slack_rate = max(slack_rates) if slack_rates else 0.0
+
+            slack_info = {
+                'slack_rate': overall_slack_rate,
+                'channels': channels_only  # 채널별 상세 정보 포함
+            }
+
+            # 8) 분석 + slack_info 포함
+            analysis = build_analysis(origin_video_path, file_obj.info.meta)
+            analysis_with_slack = dict(analysis)
+            analysis_with_slack['slack_info'] = slack_info
+
+            # 9) 결과 저장
+            results.append({
+                'name': name_str,
+                'path': filepath,
+                'size': bytes_to_unit(len(data)),
+                'origin_video': origin_video_path,
+                'slack_info': slack_info,     # 최상위에도 포함
+                'channels': channels_only,    # 채널 상세
+                'analysis': analysis_with_slack
+            })
+            continue
+
+        continue
+
     return results
+
 
 def extract_videos_from_e01(e01_path):
     logger.info(f"▶ 분석용 E01 파일: {e01_path}")

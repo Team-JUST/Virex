@@ -33,12 +33,15 @@ import { useNavigate } from 'react-router-dom';
 const Recovery = ({ isDarkMode }) => {
 
 // 1) 화면 제어 상태 정의
+  const startedRef = useRef(false);      
+  const diskFullHandledRef = useRef(false); 
   const [showTabGuardPopup, setShowTabGuardPopup] = useState(false);
   const [isRecovering, setIsRecovering] = useState(false);
   const [progress, setProgress] = useState(0);
   const prevIsRecovering = useRef(isRecovering);
   const [showDiskFullAlert, setShowDiskFullAlert] = useState(false);
   const navigate = useNavigate();
+  const [selectAll, setSelectAll] = useState(false);
   const rollbackRef = useRef(() => {});
 
   rollbackRef.current = () => {
@@ -90,6 +93,8 @@ const Recovery = ({ isDarkMode }) => {
   const [selectedFile, setSelectedFile] = useState(null);
   const [saveFrames, setSaveFrames] = useState(false);
   const [selectedPath, setSelectedPath] = useState("");
+
+  const [selectedFilesForDownload, setSelectedFilesForDownload] = useState([]);  // ✅ 추가
 
   const [currentCount, setCurrentCount] = useState(0);
   const [totalFiles, setTotalFiles] = useState(0);
@@ -249,28 +254,41 @@ const Recovery = ({ isDarkMode }) => {
     };
   }, []);
 
+
 // 15) 복원 자동 시작 트리거
-  useEffect(() => {
-    if (isRecovering && selectedFile) {
-      window.api.startRecovery(selectedFile.path).catch((err) => {
-        const msg = String(err?.message || err);
-        console.warn("[Recovery] startRecovery failed:", msg);
+useEffect(() => {
+  if (isRecovering && selectedFile) {
+    if (startedRef.current) return; 
+    startedRef.current = true;
 
-        if (msg.includes("disk_full")) {
-          setShowDiskFullAlert(true);   // ✅ 팝업 띄우기
-          rollbackToFirst();          // ✅ 초기화
-        } else {
-          // TODO: 그 외 에러 처리 (원하면 일반 에러 팝업 따로)
+    window.api.startRecovery(selectedFile.path).catch((err) => {
+      const msg = String(err?.message || err);
+      console.warn("[Recovery] startRecovery failed:", msg);
+
+      if (msg.includes("disk_full")) {
+        if (!diskFullHandledRef.current) {
+          diskFullHandledRef.current = true;
+          setShowDiskFullAlert(true);
         }
-      });
-    }
-  }, [isRecovering, selectedFile]);
+      }
+    });
+  }
+}, [isRecovering, selectedFile]);
 
-  useEffect(() => {
-    if (autoStart && initialFile) {
-      handleFile(initialFile);
-    }
-  }, [autoStart, initialFile]);
+
+useEffect(() => {
+  if (autoStart && initialFile) {
+    handleFile(initialFile);
+  }
+}, [autoStart, initialFile]);
+
+
+useEffect(() => {
+  if (!isRecovering || recoveryDone) {
+    startedRef.current = false;
+  }
+}, [isRecovering, recoveryDone]);
+
 
 // 16) 파일/다운로드 등 핸들러
   const handleFile = (file) => {
@@ -345,10 +363,35 @@ const Recovery = ({ isDarkMode }) => {
     }
   };
 
+    // 전체 선택 토글
+  const handleSelectAll = () => {
+    if (selectAll) {
+      // 전체 해제
+      setSelectedFilesForDownload([]);
+    } else {
+      // 전체 선택: 모든 파일 path 수집
+      const all = results.map(f => f.path);
+      setSelectedFilesForDownload(all);
+    }
+    setSelectAll(!selectAll);
+  };
+
+  // 선택 수/결과 변화에 따라 selectAll 동기화 (선택)
+  useEffect(() => {
+    setSelectAll(
+      results.length > 0 && selectedFilesForDownload.length === results.length
+    );
+  }, [results, selectedFilesForDownload]);
+
+
   // 다운로드 백엔드
   const handleDownloadConfirm = async () => {
-    if (!selectedFile || !tempOutputDir || !selectedPath) {
-      alert('다운로드 경로 또는 임시 폴더가 올바르지 않습니다.');
+    if (
+      selectedFilesForDownload.length === 0 ||
+      !tempOutputDir ||
+      !selectedPath
+    ) {
+      alert('다운로드할 파일을 선택하고 경로를 지정하세요.');
       return;
     }
 
@@ -357,11 +400,12 @@ const Recovery = ({ isDarkMode }) => {
     try {
       setShowDownloadPopup(false);
       setIsDownloading(true);
-      
+
       await window.api.runDownload({
         e01Path: tempOutputDir,
         choice,
-        downloadDir: selectedPath
+        downloadDir: selectedPath,
+        files: selectedFilesForDownload // 선택된 파일만 전달
       });
 
       // 다운로드 완료는 onDownloadComplete 이벤트에서 처리
@@ -569,24 +613,39 @@ const Recovery = ({ isDarkMode }) => {
 
   // 21) 디스크 용량 부족 이벤트 수신 → Alert 띄우고 롤백
   useEffect(() => {
-      if (!window.api?.onDiskFull) return;
-      const off = window.api.onDiskFull(() => {
-        setShowDiskFullAlert(true);
-        rollbackToFirst();  
-      });
-      return () => { try { off && off(); } catch {} };
-    }, []);
+    if (isRecovering && selectedFile) {
+      if (startedRef.current) return;   // ← 중복 시작 가드
+      startedRef.current = true;
 
-    useEffect(() => {
-      if (isRecovering && selectedFile) {
-        window.api.startRecovery(selectedFile.path).catch((err) => {
-          if (String(err?.message || err).includes("disk_full")) {
-            setShowDiskFullAlert(true);
-            rollbackToFirst();   
+      (async () => {
+        try {
+          await window.api.startRecoverySafe(selectedFile.path);
+        } catch (err) {
+          const msg = String(err?.message || '');
+          if (isDiskFullMessage(msg)) {
+            if (!diskFullHandledRef.current) {     // ← 중복 알림 방지
+              diskFullHandledRef.current = true;
+              setShowDiskFullAlert(true);          // 알림만 띄움
+            }
+          } else {
+            console.warn("[Recovery] startRecoverySafe failed:", msg);
           }
-        });
+        }
+      })();
+    }
+  }, [isRecovering, selectedFile]);
+
+  useEffect(() => {
+    if (!window.api?.onDiskFull) return;
+    const off = window.api.onDiskFull(() => {
+      if (!diskFullHandledRef.current) {
+        diskFullHandledRef.current = true;
+        setShowDiskFullAlert(true);  
       }
-    }, [isRecovering, selectedFile]);
+    });
+    return () => { off && off(); };
+  }, []);
+
 
   return (
     <div className={`recovery-page ${isDarkMode ? 'dark-mode' : ''}`}>
@@ -905,7 +964,15 @@ const Recovery = ({ isDarkMode }) => {
                 <span className="result-recovery-text">복원된 파일 목록</span>
               </div>
               <div className="result-wrapper">
-
+                <div style={{ display: "flex", alignItems: "center", marginBottom: "1rem" }}>
+                  <input
+                    type="checkbox"
+                    checked={selectAll}
+                    onChange={handleSelectAll}
+                    style={{ marginRight: "8px" }}
+                  />
+                  <span>전체 선택</span>
+                </div>
                 <p className="result-summary">
                   총 {results.length}개의 파일, 용량{' '}
                   {bytesToMB(
@@ -936,18 +1003,40 @@ const Recovery = ({ isDarkMode }) => {
                                 ? (rawRate * 100).toFixed(0)
                                 : rawRate.toFixed(0);
 
-                            return (
-                              <div className="result-file-item" key={file.path}>
-                                <div className="result-file-info">
-                                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}>
-                                    <button
-                                      className="text-button"
-                                      onClick={() => handleFileClick(file.name)}
-                                    >
-                                      {file.name}
-                                    </button>
-                                    {slackRatePercent > 0 && (
-                                      <Badge
+                                return (
+                                  <div className="result-file-item" key={file.path}>
+                                    <div className="result-file-info">
+                                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}>
+                                        {/* 체크박스 추가 */}
+                                        <input
+                                          type="checkbox"
+                                          checked={selectedFilesForDownload.includes(file.path)}
+                                          onChange={e => {
+                                            let updated;
+                                            if (e.target.checked) {
+                                              updated = [...selectedFilesForDownload, file.path];
+                                            } else {
+                                              updated = selectedFilesForDownload.filter(p => p !== file.path);
+                                            }
+                                            setSelectedFilesForDownload(updated);
+
+                                            // 전체선택 상태 동기화
+                                            if (updated.length === results.length) {
+                                              setSelectAll(true);
+                                            } else {
+                                              setSelectAll(false);
+                                            }
+                                          }}
+                                        />
+
+                                        <button
+                                          className="text-button"
+                                          onClick={() => handleFileClick(file.name)}
+                                        >
+                                          {file.name}
+                                        </button>
+                                        {slackRatePercent > 0 && (
+                                        <Badge
                                         label="슬랙"
                                         onClick={() => {
                                           const slackPath = file.slack_info?.output_path;
@@ -963,6 +1052,7 @@ const Recovery = ({ isDarkMode }) => {
                                         }}
                                         style={{ cursor: 'pointer' }}
                                       />
+
                                     )}
                                   </div>
                                   <br />
@@ -1059,6 +1149,7 @@ const Recovery = ({ isDarkMode }) => {
             </Button>
           </div>
           <video
+            key={slackVideoSrc} 
             preload="metadata"
             controls
             style={{
@@ -1084,7 +1175,16 @@ const Recovery = ({ isDarkMode }) => {
             </>
           }
         >
-          <Button variant="dark" onClick={() => setShowDiskFullAlert(false)}>확인</Button>
+          <Button
+            variant="dark"
+            onClick={() => {
+              setShowDiskFullAlert(false);      
+              diskFullHandledRef.current = false; 
+              rollbackToFirst();
+            }}
+          >
+            확인
+          </Button>
 
         </Alert>
       )}
