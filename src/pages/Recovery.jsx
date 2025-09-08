@@ -1041,11 +1041,13 @@ const Recovery = ({ isDarkMode }) => {
                     <div className="parser-info-row parser-info-row--withbar">
                       <div className="data-bar-flex-row-between">
                         <span className="parser-info-label">전체 영상 대비 슬랙 영상 비율</span>
-                        <div className="data-bar-wrapper is-single is-narrow">
-                          <div className="data-bar-used" style={{ width: `${slackPercent}%`, minWidth: slackPercent ? '44px' : '0' }}>
-                            <span className="data-bar-text">{slackPercent} %</span>
+                          <div className="data-bar-wrapper is-single is-narrow">
+                            {slackPercent > 0 && (
+                              <div className="data-bar-used" style={{ width: `${slackPercent}%`, minWidth: '0' }}>
+                                <span className="data-bar-text">{slackPercent} %</span>
+                              </div>
+                            )}
                           </div>
-                        </div>
                       </div>
                     </div>
                   </div>
