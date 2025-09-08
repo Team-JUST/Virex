@@ -1,9 +1,9 @@
 .rcvpage .stepper-wrapper {
     position: relative;
-    width: 96%;
+    width: 970px;
     max-width: 1000px;
-    margin: 1.3rem 1rem 1rem 0rem;
-    padding: 1rem 0.5rem 1.5rem;
+    margin: 2rem 1rem 1rem 0rem;
+    padding: 1rem 0.7rem 1.5rem;
     height: 50px;
     background: white;
     border-radius: 0.6rem;
