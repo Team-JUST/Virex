@@ -216,7 +216,6 @@ body {
 .result-group-header.open .result-group-toggle::before {
   transform: rotate(90deg);
 }
-
 .result-group-icon {
   width: 20px;
   height: 20px;
@@ -683,4 +682,8 @@ input[type="checkbox"] {
 .path-box input::placeholder,
 .custom-path-input.dark-mode::placeholder {
   color: #9ca3af;
+}
+
+.recovery-page.dark-mode .result-group-toggle::before {
+  background-color: #e2e8f0;
 }
