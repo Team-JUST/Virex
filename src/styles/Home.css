@@ -85,6 +85,7 @@
 }
 
 .drive_icon {
+  color: #1F2937;
   vertical-align: middle;
 }
 
@@ -232,7 +233,9 @@
 }
 
 /* 아이콘 */
-.entry_icon {
+.folder_icon,
+.file_icon {
+  color: #1F2937;
   width: 20px;
   height: 20px;
 }
@@ -312,10 +315,8 @@
 
 /* 아이콘 색상 반전 */
 
-.main_content.dark-mode .drive_icon {
-  filter: invert(1) brightness(1);
-}
-
-.main_content.dark-mode .entry_icon {
-  filter: invert(1) brightness(1);
+.main_content.dark-mode .drive_icon,
+.main_content.dark-mode .folder_icon,
+.main_content.dark-mode .file_icon {
+  color: #cbd5e1;
 }
