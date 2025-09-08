@@ -628,8 +628,9 @@ const Recovery = ({ isDarkMode }) => {
       };
 
       video.ontimeupdate = () => {
-        progressBar.value = video.currentTime;
-        timeText.textContent = `${formatTime(video.currentTime)} / ${formatTime(video.duration)}`;
+  progressBar.value = video.currentTime;
+  const durationText = isNaN(video.duration) ? '--:--' : formatTime(video.duration);
+  timeText.textContent = `${formatTime(video.currentTime)} / ${durationText}`;
       };
 
       progressBar.oninput = () => {
@@ -638,12 +639,18 @@ const Recovery = ({ isDarkMode }) => {
 
       video.onloadedmetadata = () => {
         progressBar.max = video.duration;
+        // 메타데이터 로드 시 시간 표시 갱신
+        const timeText = document.getElementById('timeText');
+        if (timeText) {
+          timeText.textContent = `${formatTime(0)} / ${formatTime(video.duration)}`;
+        }
       };
 
       function formatTime(seconds) {
-        const min = Math.floor(seconds / 60).toString().padStart(2, '0');
-        const sec = Math.floor(seconds % 60).toString().padStart(2, '0');
-        return `${min}:${sec}`;
+  if (isNaN(seconds) || seconds === undefined) return '--:--';
+  const min = Math.floor(seconds / 60).toString().padStart(2, '0');
+  const sec = Math.floor(seconds % 60).toString().padStart(2, '0');
+  return `${min}:${sec}`;
       }
     };
 
