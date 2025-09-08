@@ -648,14 +648,20 @@ useEffect(() => {
   }, []);
 
   // 22 슬랙 배지 처리 함수
- const handleSlackBadgeClick = (originVideo) => {
-   if (!originVideo) return;
-   const url = window.api?.toFileUrl
-     ? window.api.toFileUrl(originVideo)
-     : `file:///${originVideo.replace(/\\/g, "/")}`;
-   setSlackVideoSrc(url);
-   setShowSlackPopup(true);
- };
+  const fileByName = useMemo(() => {
+    const map = new Map();
+    (results || []).forEach(f => map.set(f.name, f));
+    return (name) => map.get(name);
+  }, [results]);
+
+  const handleSlackBadgeClick = (videoPath) => {
+    const url = window.api?.toFileUrl
+      ? window.api.toFileUrl(videoPath)
+      : `file:///${videoPath.replace(/\\/g, "/")}`;
+    setSlackVideoSrc(url);    
+    setShowSlackPopup(true);
+  };
+
 
   return (
     <div className={`recovery-page ${isDarkMode ? 'dark-mode' : ''}`}>
@@ -1053,10 +1059,10 @@ useEffect(() => {
                                         <Badge
                                           label="슬랙"
                                           style={{
-                                            cursor: file.slack_info ? "pointer" : "not-allowed",
-                                            opacity: file.slack_info ? 1 : 0.5,
+                                            cursor: file.slack_info?.video_path ? "pointer" : "not-allowed",
+                                            opacity: file.slack_info?.video_path ? 1 : 0.5,
                                           }}
-                                          onClick={() => file.origin_video && handleSlackBadgeClick(file.origin_video)}
+                                          onClick={() => file.slack_info?.video_path && handleSlackBadgeClick(file.slack_info.video_path)}
                                         />
                                     )}
                                   </div>
