@@ -3,7 +3,7 @@ import os
 
 # FFmpeg 실행 파일 경로 
 FFMPEG_PATH = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), '../../../bin/ffmpeg.exe')
+    os.path.join(os.path.dirname(__file__), '../../../../bin/ffmpeg.exe')
 )
 
 def convert_video(input_path, output_path, extra_args=None, use_gpu=True):

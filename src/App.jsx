@@ -7,8 +7,8 @@ import Home from './pages/Home';
 import Recovery from './pages/Recovery';
 import Setting from './pages/Settings';
 import Information from './pages/Information';
-import './styles/App.css';   
-import recoveryPauseIcon from './images/recoveryPauseIcon.svg';
+import './styles/App.css';
+import RecoveryPauseIcon from './images/recoveryPauseIcon.svg?react';
 
 function App() {
   const navigate = useNavigate();
@@ -68,7 +68,7 @@ function App() {
       </main>
    {showStopRecoverPopup && (
       <Alert
-        icon={recoveryPauseIcon}
+        icon={<RecoveryPauseIcon className="recoveryPause-icon" />}
         title="복구 중단 알림"
         isDarkMode={isDarkMode}
         description={
