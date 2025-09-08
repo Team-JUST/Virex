@@ -137,6 +137,15 @@ function createWindow() {
 
 // view
 app.whenReady().then(() => {
+  // 테스트용 analysis.json IPC 핸들러 (추후 제거)
+  ipcMain.handle('read-json', async (_event, filePath) => {
+    try {
+      const txt = await fs.readFile(filePath, 'utf-8');
+      return JSON.parse(txt);
+    } catch (err) {
+      throw new Error('파일 읽기 실패: ' + err.message);
+    }
+  }); //여기까지 테스트용
   protocol.interceptFileProtocol('stream', (request, callback) => {
     const url = request.url.substr(9); // 'stream://' 제거
     const decodedPath = decodeURIComponent(url);

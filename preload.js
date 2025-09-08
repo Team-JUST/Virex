@@ -10,6 +10,9 @@ contextBridge.exposeInMainWorld('api', {
   startRecovery: (e01Path) => ipcRenderer.invoke('start-recovery', e01Path),
   clearCache: () => ipcRenderer.invoke('clear-cache'),
 
+  // 테스트 용 IPC 함수 (main process에서 구현 필요)
+  readJson: (p) => ipcRenderer.invoke('read-json', p),
+  
   onDiskFull: (cb) => {
     if (typeof cb !== 'function') return () => {};
     const handler = (_event, payload) => cb(payload);
