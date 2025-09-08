@@ -1,4 +1,5 @@
 import React, { useRef, useState, useEffect, useMemo } from 'react';
+import { useSessionStore } from '../session.js';
 import { useLocation } from 'react-router-dom';
 import Stepbar from '../components/Stepbar.jsx';
 import Box from '../components/Box.jsx';
@@ -23,6 +24,7 @@ import StructureIcon from '../images/struc.svg?react';
 import RecoveryPauseIcon from '../images/recoveryPauseIcon.svg?react';
 import ReplayIcon from '../images/view_replay.svg?react';
 import PauseIcon from '../images/view_pause.svg?react';
+import ResetIcon from '../images/resetIcon.svg?react';
 import FullscreenIcon from '../images/view_fullscreen.svg?react';
 import IntegrityGreen from '../images/integrity_g.svg?react';
 import IntegrityRed from '../images/integrity_r.svg?react';
@@ -32,27 +34,65 @@ import { useNavigate } from 'react-router-dom';
 
 const Recovery = ({ isDarkMode }) => {
 
+// 0) 세션 스토어 훅
+const { session, startSession, patchSession, resetSession } = useSessionStore();
+const [showRange, setShowRange] = useState(false);
+const selectedFile = session.file;
+const setSelectedFile = (file) => patchSession({ file });
+const [resultError, setResultError] = useState(null);
+const progress = session.progress;
+const setProgress = (v) => patchSession({ progress: v });
+
+const isRecovering = session.isRecovering;
+const setIsRecovering = (v) => patchSession({ isRecovering: v });
+
+const recoveryDone = session.recoveryDone;
+const setRecoveryDone = (v) => patchSession({ recoveryDone: v });
+
+const results = session.results;
+const setResults = (arr) => patchSession({ results: arr });
+
+const tempOutputDir = session.tempOutputDir;
+const setTempOutputDir = (p) => patchSession({ tempOutputDir: p });
+
+const selectedAnalysisFile = session.selectedAnalysisFile;
+const setSelectedAnalysisFile = (n) => patchSession({ selectedAnalysisFile: n });
+
+const activeTab = session.activeTab;
+const setActiveTab = (t) => patchSession({ activeTab: t });
+
+const selectedFilesForDownload = session.selectedFilesForDownload;
+const setSelectedFilesForDownload = (arr) =>
+  patchSession({ selectedFilesForDownload: arr });
+
+const selectedPath = session.selectedPath;
+const setSelectedPath = (p) => patchSession({ selectedPath: p });
+
+const saveFrames = session.saveFrames;
+const setSaveFrames = (b) => patchSession({ saveFrames: b });
+
+const slackVideoSrc = session.slackVideoSrc;
+const setSlackVideoSrc = (u) => patchSession({ slackVideoSrc: u });
+
+const openGroups = session.openGroups || {};
+const setOpenGroups = (next) => patchSession({ openGroups: next });
+
+
 // 1) 화면 제어 상태 정의
   const startedRef = useRef(false);      
   const diskFullHandledRef = useRef(false); 
   const [showTabGuardPopup, setShowTabGuardPopup] = useState(false);
-  const [isRecovering, setIsRecovering] = useState(false);
-  const [progress, setProgress] = useState(0);
   const prevIsRecovering = useRef(isRecovering);
   const [showDiskFullAlert, setShowDiskFullAlert] = useState(false);
   const navigate = useNavigate();
   const [selectAll, setSelectAll] = useState(false);
   const rollbackRef = useRef(() => {});
 
+
   rollbackRef.current = () => {
-    setIsRecovering(false);
-    setProgress(0);
-    setRecoveredFiles?.([]);
-    setRecoveryDone?.(false);
-    setSelectedAnalysisFile?.(null);
-    setSlackVideoSrc?.(null);
-    setShowDiskFullAlert?.(false);
-    navigate('/recovery'); // 또는 setView('upload')
+    resetSession();
+    setShowDiskFullAlert(false);
+    navigate('/recovery');
   };
 
   function rollbackToFirst() {
@@ -86,26 +126,13 @@ const Recovery = ({ isDarkMode }) => {
   const [pendingTab, setPendingTab] = useState(null);
 
   const [showAlert, setShowAlert] = useState(false);
-  const [recoveryDone, setRecoveryDone] = useState(false);
   const [showDownloadPopup, setShowDownloadPopup] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
-
-  const [selectedFile, setSelectedFile] = useState(null);
-  const [saveFrames, setSaveFrames] = useState(false);
-  const [selectedPath, setSelectedPath] = useState("");
-
-  const [selectedFilesForDownload, setSelectedFilesForDownload] = useState([]);  // ✅ 추가
 
   const [currentCount, setCurrentCount] = useState(0);
   const [totalFiles, setTotalFiles] = useState(0);
 
   const [showSlackPopup, setShowSlackPopup] = useState(false);
-
-  const [results, setResults] = useState([]);
-  const [openGroups, setOpenGroups] = useState({});
-
-  const [tempOutputDir, setTempOutputDir] = useState(null);
-
 
 // 4) 결과 목록 → 카테고리 그룹핑 유틸/파생값
   function groupByCategory(list) {
@@ -119,8 +146,6 @@ const Recovery = ({ isDarkMode }) => {
   const groupedResults = useMemo(() => groupByCategory(results), [results])
 
 // 5) 분석 선택/탭/다운로드 완료 등 결과 뷰 상태
-  const [selectedAnalysisFile, setSelectedAnalysisFile] = useState(null);
-  const [activeTab, setActiveTab] = useState('basic');
   const [showComplete, setShowComplete] = useState(false);
   const [showDownloadAlert, setShowDownloadAlert] = useState(false);
 
@@ -129,10 +154,8 @@ const Recovery = ({ isDarkMode }) => {
   const initialFile = location.state?.e01File || null;
   const autoStart = location.state?.autoStart || false;
 
-// 7) 슬랙 영상 소스 등 슬랙 관련 상태
-  const [slackVideoSrc, setSlackVideoSrc] = useState('');
 
-// 8) 공통 유틸 (단위/코덱 포맷)
+// 7) 공통 유틸 (단위/코덱 포맷)
   const bytesToMB = (bytes) => (bytes / 1024 / 1024).toFixed(1) + ' MB';
 
   const formatCodec = (codec) =>
@@ -140,7 +163,7 @@ const Recovery = ({ isDarkMode }) => {
       .toUpperCase()
       .replace(/^([HE]\d{3,4})$/, (m) => m[0] + '.' + m.slice(1));
 
-// 9) 결과/분석 파일 파생값 및 슬랙 지표
+// 8) 결과/분석 파일 파생값 및 슬랙 지표
   const analysis = useMemo(
     () => results.find(f => f.name === selectedAnalysisFile)?.analysis,
     [results, selectedAnalysisFile]
@@ -160,7 +183,7 @@ const Recovery = ({ isDarkMode }) => {
 
   const validPercent = (100 - safeSlackRate * 100).toFixed(1);
 
-// 10) 진행률 변화 시 뷰 전환 로직
+// 9) 진행률 변화 시 뷰 전환 로직
   useEffect(() => {
     if (progress >= 100) {
       setIsRecovering(false);
@@ -172,7 +195,7 @@ const Recovery = ({ isDarkMode }) => {
 
   }, [progress]);
 
-// 11) 카테고리 아이콘 매핑 및 아이콘 선택 헬퍼
+// 10) 카테고리 아이콘 매핑 및 아이콘 선택 헬퍼
   const categoryIcons = {
     driving: DrivingIcon,
     parking: ParkingIcon,
@@ -198,7 +221,7 @@ const Recovery = ({ isDarkMode }) => {
     return prefix ? categoryIcons[prefix] : SlackIcon;
   };
 
-  // 12) 메인 IPC: 진행률/완료 리스너 등록
+  // 11) 메인 IPC: 진행률/완료 리스너 등록
   useEffect(() => {
     console.log("[Debug] onProgress useEffect : mounted");
     const offProg = window.api.onProgress(({ processed, total }) => {
@@ -215,7 +238,7 @@ const Recovery = ({ isDarkMode }) => {
     return () => { offProg(); offDone(); };
   }, []);
 
-// 13) 결과 수신 리스너
+// 12) 결과 수신 리스너
   useEffect(() => {
     console.log("[Debug] onResults listener : registered");
     const off = window.api.onResults(data => {
@@ -226,7 +249,7 @@ const Recovery = ({ isDarkMode }) => {
     return off;
   }, []);
 
-// 14) 분석 경로/다운로드 로그·에러 리스너
+// 13) 분석 경로/다운로드 로그·에러 리스너
   useEffect(() => {
     const offPath = window.api.onAnalysisPath(path => {
       console.log("[Debug] analysis path : ", path);
@@ -255,7 +278,7 @@ const Recovery = ({ isDarkMode }) => {
   }, []);
 
 
-// 15) 복원 자동 시작 트리거
+// 14) 복원 자동 시작 트리거
 useEffect(() => {
   if (isRecovering && selectedFile) {
     if (startedRef.current) return; 
@@ -290,17 +313,14 @@ useEffect(() => {
 }, [isRecovering, recoveryDone]);
 
 
-// 16) 파일/다운로드 등 핸들러
+// 15) 파일/다운로드 등 핸들러
   const handleFile = (file) => {
   if (!file.name.toLowerCase().endsWith('.e01')) {
     setShowAlert(true);
     return;
   }
-  setSelectedFile(file);
   setShowAlert(false);
-  setIsRecovering(true);     // ← 시작
-  setRecoveryDone(false);
-  setProgress(0);            // ← 0으로 리셋
+  startSession(file);           
   setTotalFiles(0);
 };
 
@@ -333,8 +353,14 @@ useEffect(() => {
     setTotalFiles(300);
   };
 
-  const toggleGroup = (cat) =>
-    setOpenGroups(prev => ({ ...prev, [cat]: !prev[cat] }))
+  const toggleGroup = (cat) => {
+    patchSession({
+      openGroups: {
+        ...openGroups,
+        [cat]: !openGroups[cat],
+      },
+    });
+  };
 
   const confirmDownload = () => {
     console.log("[Debug] final save path : ", selectedPath);
@@ -376,7 +402,6 @@ useEffect(() => {
     setSelectAll(!selectAll);
   };
 
-  // 선택 수/결과 변화에 따라 selectAll 동기화 (선택)
   useEffect(() => {
     setSelectAll(
       results.length > 0 && selectedFilesForDownload.length === results.length
@@ -434,7 +459,7 @@ useEffect(() => {
     }
   };
 
-// 17) 스텝바 계산
+// 16) 스텝바 계산
   let currentStep = 0;
 
   if (recoveryDone) {
@@ -447,7 +472,7 @@ useEffect(() => {
     currentStep = 0;
   }
 
-// 18) 파서 뷰어 DOM 세팅(useEffect)
+// 17) 파서 뷰어 DOM 세팅(useEffect)
   useEffect(() => {
     if (!selectedAnalysisFile) return;
 
@@ -546,7 +571,7 @@ useEffect(() => {
     requestAnimationFrame(waitForDOMAndSetup);
   }, [selectedAnalysisFile]); // selectedAnalysisFile이 변경될 때마다 실행
 
-// 19) 다운로드 완료 후 복원 재시작 핸들러
+// 18) 다운로드 완료 후 복원 재시작 핸들러
     const startRecoveryFromDownload = () => {
       setShowDownloadPopup(false);
       setShowComplete(false);
@@ -556,7 +581,7 @@ useEffect(() => {
       setTotalFiles(300);
     };
 
-// 20) 화면 전환/탭 가드 네비게이션
+// 19) 화면 전환/탭 가드 네비게이션
     const [view, setView] = useState('upload');
     const [history, setHistory] = useState(['upload']);
 
@@ -611,7 +636,8 @@ useEffect(() => {
       setPendingTab(null);
     };
 
-  // 21) 디스크 용량 부족 이벤트 수신 → Alert 띄우고 롤백
+
+  // 20) 디스크 용량 부족 이벤트 수신 → Alert 띄우고 롤백
   useEffect(() => {
     if (isRecovering && selectedFile) {
       if (startedRef.current) return;   // ← 중복 시작 가드
@@ -646,6 +672,24 @@ useEffect(() => {
     return () => { off && off(); };
   }, []);
 
+  // 21) 슬랙 배지 처리 함수
+  const fileByName = useMemo(() => {
+    const map = new Map();
+    (results || []).forEach(f => map.set(f.name, f));
+    return (name) => map.get(name);
+  }, [results]);
+
+  const handleSlackBadgeClick = (videoPath) => {
+    const url = window.api?.toFileUrl
+      ? window.api.toFileUrl(videoPath)
+      : `file:///${videoPath.replace(/\\/g, "/")}`;
+    setSlackVideoSrc(url);    
+    setShowSlackPopup(true);
+  };
+
+  // 22) 리셋 팝업 핸들러
+  const [showRestartPopup, setShowRestartPopup] = useState(false);
+
 
   return (
     <div className={`recovery-page ${isDarkMode ? 'dark-mode' : ''}`}>
@@ -662,13 +706,31 @@ useEffect(() => {
                 alignItems: 'center',
                 flexDirection: 'column',
               }}>
-                <CompleteIcon className='complete_icon' />
+              <CompleteIcon className='complete_icon' />
               </div>
               <p style={{ textAlign: 'center', fontSize: '1rem' }}>
                 선택된 경로에 복원된 영상이 저장되었습니다.
               </p>
-              <div style={{ display: 'flex', justifyContent: 'center', marginTop: '1.5rem' }}>
-                <Button variant="dark" onClick={() => navigate('/')}>홈으로</Button>
+              <div style={{ display: 'flex', justifyContent: 'center', gap: '12px', marginTop: '1.5rem' }}>
+                <Button
+                  variant="dark"
+                  onClick={() => {
+                    setShowComplete(false);
+                    setSelectedAnalysisFile(null);
+                    setIsRecovering(false);
+                    setRecoveryDone(true);
+                    setView && setView('result');
+                  }}
+                >
+                  뒤로가기
+                </Button>
+
+                <Button
+                  variant="gray"
+                  onClick={() => setShowRestartPopup(true)}
+                >
+                  새 복원 시작
+                </Button>
               </div>
             </div>
           </>
@@ -731,7 +793,7 @@ useEffect(() => {
             >
               <p className="dropzone-title">복구할 블랙박스 이미지(E01) 선택</p>
               <p className="dropzone-desc">
-                E01 파일을 드래그 앤 드롭하거나 클릭하여 선택하세요<br />
+                E01 파일을 업로드해주세요<br />
                 분할된 E01 파일(.E01, E02, E03 ...)을 자동으로 인식합니다
               </p>
 
@@ -793,27 +855,23 @@ useEffect(() => {
 
                   <div className="parser-controls">
                     <button id="replayBtn">
-                      <ReplayIcon />
+                    <ReplayIcon />
                     </button>
                     <button
                       id="playPauseBtn"
                       style={{ background: 'none', border: 'none', cursor: 'pointer' }}
                     >
-                      <PauseIcon
-                        id="playPauseIcon"
-                        style={{
-                          width: '30px',
-                          transition: 'filter 0.2s',
-                          filter: 'none', 
-                        }}
-                        className='pause_icon'
-                      />
+                    <PauseIcon
+                      id="playPauseIcon"
+                      className='pause_icon'
+                      style={{ width: '30px', transition: 'filter 0.2s', filter: 'none' }}
+                    />
                     </button>
 
                     <input type="range" id="progressBar" min="0" defaultValue="0" step="0.01" />
                     <span id="timeText">00:00 / 00:00</span>
                     <button id="fullscreenBtn">
-                      <FullscreenIcon className='fullscreen_icon' />
+                      <FullscreenIcon className='full-icon' />
                     </button>
                   </div>
                 </div>
@@ -824,7 +882,7 @@ useEffect(() => {
                     className={`parser-tab-button ${activeTab === 'basic' ? 'active' : ''}`}
                     onClick={() => handleTabClick('basic')}
                   >
-                    <BasicIcon className='tab-icon' />
+                  <BasicIcon className='tab-icon' />
                     <span>기본 정보</span>
                   </button>
                   <button
@@ -1007,7 +1065,7 @@ useEffect(() => {
                                   <div className="result-file-item" key={file.path}>
                                     <div className="result-file-info">
                                       <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}>
-                                        {/* 체크박스 추가 */}
+                                        {/* 개별 파일 다운 */}
                                         <input
                                           type="checkbox"
                                           checked={selectedFilesForDownload.includes(file.path)}
@@ -1020,7 +1078,6 @@ useEffect(() => {
                                             }
                                             setSelectedFilesForDownload(updated);
 
-                                            // 전체선택 상태 동기화
                                             if (updated.length === results.length) {
                                               setSelectAll(true);
                                             } else {
@@ -1037,22 +1094,13 @@ useEffect(() => {
                                         </button>
                                         {slackRatePercent > 0 && (
                                         <Badge
-                                        label="슬랙"
-                                        onClick={() => {
-                                          const slackPath = file.slack_info?.video_path;
-                                          if (!slackPath) {
-                                            return;
-                                          }
-
-                                          const formatted = `file:///${slackPath.replace(/\\/g, '/')}`;
-                                          console.log("[Debug] slack video path : ", formatted);
-
-                                          setSlackVideoSrc(formatted);  // 슬랙 영상 경로 저장
-                                          setShowSlackPopup(true);   
-                                        }}
-                                        style={{ cursor: 'pointer' }}
-                                      />
-
+                                          label="슬랙"
+                                          style={{
+                                            cursor: file.slack_info?.video_path ? "pointer" : "not-allowed",
+                                            opacity: file.slack_info?.video_path ? 1 : 0.5,
+                                          }}
+                                          onClick={() => file.slack_info?.video_path && handleSlackBadgeClick(file.slack_info.video_path)}
+                                        />
                                     )}
                                   </div>
                                   <br />
@@ -1105,10 +1153,60 @@ useEffect(() => {
         </Alert>
       )}
 
-      {/* {showTabGuardPopup && (
+      {showRestartPopup && (
         <Alert
-          icon={<RecoveryPauseIcon className='recoveryPause-icon' />}
-          title="탭 전환 경고"
+          icon={<ResetIcon />}
+          title="복원 세션 초기화"
+          isDarkMode={isDarkMode}
+          description={
+            <>
+              새 복원을 시작하시면 현재 복구하신 파일의<br />
+              분석 작업이 모두 초기화 됩니다. <br />
+              계속 진행하시겠습니까?
+            </>
+          }
+        >
+          <div style={{ display: 'flex', gap: '12px', marginTop: '1rem', justifyContent: 'center' }}>
+            <Button
+              variant="gray"
+              onClick={() => {
+                setShowRestartPopup(false);
+                setShowComplete(false);         
+                setSelectedAnalysisFile(null);  
+                setIsRecovering(false);
+                setRecoveryDone(true);         
+                setView && setView('result');
+              }}
+            >
+              취소
+            </Button>
+
+            {/* 세션 리셋 */}
+            <Button
+              variant="dark"
+              onClick={() => {
+                setShowRestartPopup(false);
+                resetSession();
+
+                setShowComplete(false);
+                setSelectedAnalysisFile(null);
+                setIsRecovering(false);
+                setRecoveryDone(false);
+                setView && setView('upload'); 
+              }}
+            >
+              확인
+            </Button>
+          </div>
+        </Alert>
+
+      )}
+
+
+      {showTabGuardPopup && (
+        <Alert
+          icon={<RecoveryPauseIcon/>}
+          title="복원 중단 경고"
           isDarkMode={isDarkMode}
           description={
             <>
@@ -1126,39 +1224,46 @@ useEffect(() => {
             <Button variant="dark" onClick={confirmTabMove}>이동하기</Button>
           </div>
         </Alert>
-      )} */}
-
+      )}
       {showSlackPopup && (
         <div
           style={{
-            position: 'fixed',
+            position: "fixed",
             top: 0,
             left: 0,
-            width: '100vw',
-            height: '100vh',
-            backgroundColor: 'rgba(0, 0, 0, 0.85)',
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
+            width: "100vw",
+            height: "100vh",
+            backgroundColor: "rgba(0, 0, 0, 0.85)",
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
             zIndex: 9999,
           }}
         >
-          <div style={{ position: 'absolute', top: '20px', right: '30px' }}>
+          <div style={{ position: "absolute", top: "20px", right: "30px" }}>
             <Button variant="gray" onClick={() => setShowSlackPopup(false)}>
               닫기
             </Button>
           </div>
           <video
             key={slackVideoSrc} 
+            src={slackVideoSrc}   // ← 최종 file:/// 경로 들어가야 함
             preload="metadata"
             controls
             style={{
-              width: '90vw',
-              height: '80vh',
-              backgroundColor: 'black',
-              borderRadius: '12px',
+              width: "90vw",
+              height: "80vh",
+              backgroundColor: "black",
+              borderRadius: "12px",
             }}
-            src={slackVideoSrc} 
+            onLoadedMetadata={() => console.log("[Debug] loaded:", slackVideoSrc)}
+            onError={(e) =>
+              console.error(
+                "[Error] video load failed:",
+                slackVideoSrc,
+                e?.nativeEvent?.message
+              )
+            }
           />
         </div>
       )}
