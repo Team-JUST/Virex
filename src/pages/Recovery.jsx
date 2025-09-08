@@ -44,6 +44,7 @@ const Recovery = ({ isDarkMode }) => {
   const [selectAll, setSelectAll] = useState(false);
   const rollbackRef = useRef(() => {});
 
+
   rollbackRef.current = () => {
     setIsRecovering(false);
     setProgress(0);
@@ -94,7 +95,7 @@ const Recovery = ({ isDarkMode }) => {
   const [saveFrames, setSaveFrames] = useState(false);
   const [selectedPath, setSelectedPath] = useState("");
 
-  const [selectedFilesForDownload, setSelectedFilesForDownload] = useState([]);  // ✅ 추가
+  const [selectedFilesForDownload, setSelectedFilesForDownload] = useState([]);  
 
   const [currentCount, setCurrentCount] = useState(0);
   const [totalFiles, setTotalFiles] = useState(0);
@@ -646,6 +647,15 @@ useEffect(() => {
     return () => { off && off(); };
   }, []);
 
+  // 22 슬랙 배지 처리 함수
+ const handleSlackBadgeClick = (originVideo) => {
+   if (!originVideo) return;
+   const url = window.api?.toFileUrl
+     ? window.api.toFileUrl(originVideo)
+     : `file:///${originVideo.replace(/\\/g, "/")}`;
+   setSlackVideoSrc(url);
+   setShowSlackPopup(true);
+ };
 
   return (
     <div className={`recovery-page ${isDarkMode ? 'dark-mode' : ''}`}>
@@ -1012,7 +1022,7 @@ useEffect(() => {
                                   <div className="result-file-item" key={file.path}>
                                     <div className="result-file-info">
                                       <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}>
-                                        {/* 체크박스 추가 */}
+                                        {/* 개별 파일 다운 */}
                                         <input
                                           type="checkbox"
                                           checked={selectedFilesForDownload.includes(file.path)}
@@ -1025,7 +1035,6 @@ useEffect(() => {
                                             }
                                             setSelectedFilesForDownload(updated);
 
-                                            // 전체선택 상태 동기화
                                             if (updated.length === results.length) {
                                               setSelectAll(true);
                                             } else {
@@ -1042,22 +1051,13 @@ useEffect(() => {
                                         </button>
                                         {slackRatePercent > 0 && (
                                         <Badge
-                                        label="슬랙"
-                                        onClick={() => {
-                                          const slackPath = file.slack_info?.output_path;
-                                          if (!slackPath) {
-                                            return;
-                                          }
-
-                                          const formatted = `file:///${slackPath.replace(/\\/g, '/')}`;
-                                          console.log("[Debug] slack video path : ", formatted);
-
-                                          setSlackVideoSrc(formatted);  // 슬랙 영상 경로 저장
-                                          setShowSlackPopup(true);   
-                                        }}
-                                        style={{ cursor: 'pointer' }}
-                                      />
-
+                                          label="슬랙"
+                                          style={{
+                                            cursor: file.slack_info ? "pointer" : "not-allowed",
+                                            opacity: file.slack_info ? 1 : 0.5,
+                                          }}
+                                          onClick={() => file.origin_video && handleSlackBadgeClick(file.origin_video)}
+                                        />
                                     )}
                                   </div>
                                   <br />
@@ -1132,38 +1132,45 @@ useEffect(() => {
           </div>
         </Alert>
       )}
-
       {showSlackPopup && (
         <div
           style={{
-            position: 'fixed',
+            position: "fixed",
             top: 0,
             left: 0,
-            width: '100vw',
-            height: '100vh',
-            backgroundColor: 'rgba(0, 0, 0, 0.85)',
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
+            width: "100vw",
+            height: "100vh",
+            backgroundColor: "rgba(0, 0, 0, 0.85)",
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
             zIndex: 9999,
           }}
         >
-          <div style={{ position: 'absolute', top: '20px', right: '30px' }}>
+          <div style={{ position: "absolute", top: "20px", right: "30px" }}>
             <Button variant="gray" onClick={() => setShowSlackPopup(false)}>
               닫기
             </Button>
           </div>
           <video
             key={slackVideoSrc} 
+            src={slackVideoSrc}   // ← 최종 file:/// 경로 들어가야 함
             preload="metadata"
             controls
             style={{
-              width: '90vw',
-              height: '80vh',
-              backgroundColor: 'black',
-              borderRadius: '12px',
+              width: "90vw",
+              height: "80vh",
+              backgroundColor: "black",
+              borderRadius: "12px",
             }}
-            src={slackVideoSrc} 
+            onLoadedMetadata={() => console.log("[Debug] loaded:", slackVideoSrc)}
+            onError={(e) =>
+              console.error(
+                "[Error] video load failed:",
+                slackVideoSrc,
+                e?.nativeEvent?.message
+              )
+            }
           />
         </div>
       )}
