@@ -1039,7 +1039,7 @@ useEffect(() => {
                                         <Badge
                                         label="슬랙"
                                         onClick={() => {
-                                          const slackPath = file.slack_info?.output_path;
+                                          const slackPath = file.slack_info?.video_path;
                                           if (!slackPath) {
                                             return;
                                           }
