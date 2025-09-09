@@ -3,9 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import '../styles/Home.css';
 import '../styles/Button.css';
 import Button from '../components/Button.jsx';
-import DriveIcon from '../images/drive.svg';
-import FolderIcon from '../images/folder.svg';
-import FileIcon from '../images/file.svg';
+import DriveIcon from '../images/drive.svg?react';
+import FolderIcon from '../images/folder.svg?react';
+import FileIcon from '../images/file.svg?react';
 
 function bytesToGB(n) {
   if (!n || n <= 0) return '0 GB';
@@ -46,7 +46,7 @@ function DriveCard({ drive, onClick }) {
     >
       <div className="info">
         <div className="drive_title">
-          <img src={DriveIcon} alt="드라이브 아이콘" className="drive_icon" />
+          <DriveIcon className="drive_icon" />
           <strong>{drive.label || drive.mount}</strong>
         </div>
         <div>
@@ -93,7 +93,7 @@ function ExplorerView({
       <div className={`drive_category ${isDarkMode ? 'dark-mode' : ''}`}>
         <div className="drive_header">
           <div className="drive_header_left">
-            <img src={DriveIcon} className="drive_icon" alt="" />
+            <DriveIcon className="drive_icon" />
             <span className="drive_path_text">{displayPath}</span>
           </div>
           <div className="drive_controls">
@@ -118,7 +118,11 @@ function ExplorerView({
                 onClick={() => (entry.isDirectory ? onOpenDir(entry.path) : onSelectE01(entry))}
                 style={{ fontWeight: entry.isDirectory ? 'bold' : 'normal', cursor: 'pointer' }}
               >
-                <img src={entry.isDirectory ? FolderIcon : FileIcon} className="entry_icon" alt="" />
+                {entry.isDirectory ? (
+                  <FolderIcon className="folder_icon" />
+                ) : (
+                  <FileIcon className="file_icon" />
+                )}
                 <span>{entry.name}</span>
                 {entry.isE01 && entry.size ? (
                   <span className="file_size">({bytesToGB(entry.size)})</span>
@@ -130,11 +134,15 @@ function ExplorerView({
           <div id="selected_file_info">
             {selectedE01 && (
               <div className="selected_box">
-                <h4>선택된 파일</h4>
-                <p><strong>파일명:</strong> {selectedE01.name}</p>
-                <p><strong>크기:</strong> {bytesToGB(selectedE01.size)}</p>
-                <p><strong>경로:</strong> {selectedE01.path}</p>
-                <Button variant="dark" onClick={handleStart}>
+                <h4 style={{ marginLeft: '10px' }}>선택된 파일</h4>
+                <p style={{ marginLeft: '10px' }}><strong>파일명:</strong> {selectedE01.name}</p>
+                <p style={{ marginLeft: '10px' }}><strong>크기:</strong> {bytesToGB(selectedE01.size)}</p>
+                <p style={{ marginLeft: '10px' }}><strong>경로:</strong> {selectedE01.path}</p>
+                <Button
+                  variant="dark"
+                  onClick={handleStart}
+                  disabled={!selectedE01 || !selectedE01.path || !selectedE01.name}
+                >
                   복원 시작
                 </Button>
               </div>
@@ -252,7 +260,7 @@ const Home = ({ isDarkMode }) => {
           onSelectDrive={handleSelectDrive}
           onOpenDir={handleOpenDir}
           onSelectE01={handleSelectE01}
-          isDarkMode={isDarkMode}   // ← 추가
+          isDarkMode={isDarkMode}
         />
       )}
     </div>

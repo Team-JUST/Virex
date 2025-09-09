@@ -2,11 +2,11 @@ import React, { useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import '../styles/Sidebar.css';
 
-import LogoIcon from '../images/logo.svg';
-import HomeIcon from '../images/home.svg';
-import RecoveryIcon from '../images/recovery.svg';
-import SettingIcon from '../images/setting.svg';
-import InfoIcon from '../images/information.svg';
+import LogoIcon from '../images/logo.svg?react';
+import HomeIcon from '../images/home.svg?react';
+import RecoveryIcon from '../images/recovery.svg?react';
+import SettingIcon from '../images/setting.svg?react';
+import InfoIcon from '../images/information.svg?react';
 
 const Sidebar = ({ isDarkMode }) => {
   const location = useLocation();
@@ -42,7 +42,7 @@ const Sidebar = ({ isDarkMode }) => {
     <div id="sidebar" className={`container${isDarkMode ? ' dark-mode' : ''}`}>
       <div className="menu_box">
         <div className="logo_section">
-          <img src={LogoIcon} alt="앱로고" className="logo_icon" />
+          <LogoIcon className="logo_icon" alt="앱로고" />
           <span className="logo_text">Virex</span>
         </div>
         <div className="menu_title_section">
@@ -57,7 +57,7 @@ const Sidebar = ({ isDarkMode }) => {
                 onClick={(e) => handleNav(e, path)}  
                 className={`menu_item${location.pathname === path ? ' active' : ''}`}
               >
-                <img src={icon} alt={alt} className="menu_icon" />
+                {React.createElement(icon, { className: 'menu_icon', alt })}
                 {label}
               </Link>
             </li>

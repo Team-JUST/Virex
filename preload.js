@@ -9,18 +9,15 @@ contextBridge.exposeInMainWorld('api', {
   openE01File: () => ipcRenderer.invoke('dialog:openE01File'),
   startRecovery: (e01Path) => ipcRenderer.invoke('start-recovery', e01Path),
   clearCache: () => ipcRenderer.invoke('clear-cache'),
-
-  // 테스트 용 IPC 함수 (main process에서 구현 필요)
-  readJson: (p) => ipcRenderer.invoke('read-json', p),
   
   onDiskFull: (cb) => {
-    if (typeof cb !== 'function') return () => {};
-    const handler = (_event, payload) => cb(payload);
-    ipcRenderer.on('recovery-disk-full', handler);
-
-    // 컴포넌트 unmount 시 호출하면 리스너 제거됨
-    return () => ipcRenderer.removeListener('recovery-disk-full', handler);
+    const channel = 'recovery-disk-full';
+    const handler = (_e, payload) => cb(payload);
+    ipcRenderer.on(channel, handler);
+    return () => ipcRenderer.removeListener(channel, handler);
   },
+  checkDiskSpace: (targetPath, requiredBytes) =>
+    ipcRenderer.invoke('check-disk-space', targetPath, requiredBytes),
 
   onDrivesUpdated: (callback) => {
     const listener = (_event, data) => callback(data);
@@ -49,12 +46,12 @@ contextBridge.exposeInMainWorld('api', {
     return () => ipcRenderer.removeListener('analysis-path', listener);
   },
 
+
   onResults: (callback) => {
     const listener = (_e, data) => callback(data);
     ipcRenderer.on('recovery-results', listener);
     return () => ipcRenderer.removeListener('recovery-results', listener);},
 
-  // 다운로드 기능 추가
   runDownload: (args) => ipcRenderer.invoke('run-download', args),
   onDownloadLog: (cb) => {
     const l = (_e, line) => cb(line);
@@ -70,5 +67,33 @@ contextBridge.exposeInMainWorld('api', {
     const l = () => cb();
     ipcRenderer.on('download-complete', l);
     return () => ipcRenderer.removeListener('download-complete', l);
+  },
+
+  
+  onRecoveryError: (cb) => {
+    const channel = 'recovery-error';
+    const handler = (_e, msg) => cb(msg);
+    ipcRenderer.on(channel, handler);
+    return () => ipcRenderer.removeListener(channel, handler);
+  },
+
+  startRecoverySafe: async (e01Path) => {
+    const res = await ipcRenderer.invoke('start-recovery', e01Path);
+    if (res && res.started === false && res.reason === 'disk_full') {
+      const err = new Error('disk_full_preflight');
+      err.code = 'DISK_FULL_PREFLIGHT';
+      throw err;
+    }
+    return res;
+  },
+
+  onceDiskFull: (cb) => {
+    const channel = 'recovery-disk-full';
+    const handler = (_e, payload) => {
+      ipcRenderer.removeListener(channel, handler);
+      cb(payload);
+    };
+    ipcRenderer.on(channel, handler);
+    return () => ipcRenderer.removeListener(channel, handler);
   },
 });
