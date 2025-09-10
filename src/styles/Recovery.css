@@ -103,6 +103,7 @@ body {
   align-items: center;
   gap: 0.5rem;
   height: var(--bar-height);
+  margin-top: 40px;
 }
 
 .progress-bar-track {
