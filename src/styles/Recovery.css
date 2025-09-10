@@ -188,11 +188,11 @@ body {
 /* Result-page */
 
 .result-group {
-  margin: 1rem;
+  margin: 1rem 1rem 1rem 0;
 }
 
 .result-summary{
-  margin-left: 1rem;
+  margin-bottom: 0;
 }
 
 .result-group-header {
@@ -285,8 +285,7 @@ body {
 }
 
 .result-scroll-area {
-  max-height: 360px;
-  /* 원하는 높이로 조정 (예: 400~500px) */
+  max-height: 400px;
   overflow-y: auto;
   padding-right: 0.5rem;
   /* 스크롤바 공간 */
