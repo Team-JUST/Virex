@@ -1109,9 +1109,7 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
               <h1 className="upload-title">Result</h1>
               <div className="recovery-file-box">
                 <span className="result-recovery-text">복원된 파일 목록</span>
-              </div>
-              <div className="result-wrapper">
-                <div style={{ display: "flex", alignItems: "center", marginBottom: "1rem" }}>
+                <div style={{ display: "flex", alignItems: "center" }}>
                   <input
                     type="checkbox"
                     checked={selectAll}
@@ -1120,6 +1118,8 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
                   />
                   <span>전체 선택</span>
                 </div>
+              </div>
+              <div className="result-wrapper">
                 <p className="result-summary">
                   총 {results.length}개의 파일, 용량 {
                     bytesToUnit(
