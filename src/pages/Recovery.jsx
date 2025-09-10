@@ -261,10 +261,7 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
 
   const slack_info = selectedResultFile?.slack_info ?? { recovered: false, slack_size: '0 B', slack_rate: 0,  };
   const totalBytes = unitToBytes(selectedResultFile?.size || '0 B');
-  
   const isAVI = selectedResultFile?.name?.toLowerCase().endsWith('.avi');
-  const isMP4 = selectedResultFile?.name?.toLowerCase().endsWith('.mp4');
-
   const aviSlackBytes = isAVI && selectedResultFile?.channels
     ? Object.values(selectedResultFile.channels)
       .filter(Boolean)
@@ -279,8 +276,8 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
     slackLabel = bytesToUnit(slackBytes);
   } else {
     if (slack_info?.slack_size && typeof slack_info.slack_size === 'string') {
-      slackLabel = slack_info.slack_size.replace(/([A-Z])$/,' $1');
       slackBytes = unitToBytes(slack_info.slack_size);
+      slackLabel = bytesToUnit(slackBytes);
     } else {
       const r = Number(slack_info?.slack_rate ?? 0);
       const ratePct = Number.isFinite(r) ? (r <= 1 ? r * 100 : r) : 0;
@@ -1081,13 +1078,16 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
                     <div className="parser-info-row parser-info-row--withbar">
                       <div className="data-bar-flex-row-between">
                         <span className="parser-info-label">전체 영상 대비 슬랙 영상 비율</span>
+                        {slackPercent > 0 && (
                           <div className="data-bar-wrapper is-single is-narrow">
-                            {slackPercent > 0 && (
-                              <div className="data-bar-used" style={{ width: `${slackPercent}%`, minWidth: '0' }}>
-                                <span className="data-bar-text">{slackPercent} %</span>
-                              </div>
-                            )}
+                            <div
+                              className="data-bar-used"
+                              style={{ width: `${slackPercent}%`, minWidth: '44px' }}
+                            >
+                              <span className="data-bar-text">{slackPercent} %</span>
+                            </div>
                           </div>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -1255,7 +1255,7 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
                     justifyContent: 'flex-end',
                   }}
                 >
-                  <Button variant="dark" onClick={handleDownload}>
+                  <Button variant="dark" onClick={handleDownload} style={{ marginRight: '12px' }}>
                     다운로드
                   </Button>
                 </div>
