@@ -1253,9 +1253,10 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
                     right: '4rem',
                     display: 'flex',
                     justifyContent: 'flex-end',
+                    marginRight: '12px'
                   }}
                 >
-                  <Button variant="dark" onClick={handleDownload} style={{ marginRight: '12px' }}>
+                  <Button variant="dark" onClick={handleDownload}>
                     다운로드
                   </Button>
                 </div>
