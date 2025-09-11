@@ -13,6 +13,7 @@
   transition: background-color 0.2s ease, transform 0.1s ease;
   width: 120px;
   height: 45px;
+  z-index: 9999;
 }
 
 .button.dark {

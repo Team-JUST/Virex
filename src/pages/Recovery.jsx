@@ -1193,51 +1193,53 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
                             const checked = selectedFilesForDownload.includes(file.path);
 
                             return (
-                                <div className="result-file-item" key={file.path}>
-                                  <div className="result-file-info">
-                                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}>
-                                      {/* 개별 파일 다운 */}
-                                      <input
-                                        type="checkbox"
-                                        checked={checked}
-                                        onChange={(e) => {
-                                          let updated;
-                                          if (e.target.checked) {
-                                            updated = [...selectedFilesForDownload, file.path];
+                              <div className="result-file-item" key={file.path}>
+                                {/* 개별 파일 다운 */}
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={(e) => {
+                                    let updated;
+                                    if (e.target.checked) {
+                                      updated = [...selectedFilesForDownload, file.path];
+                                    } else {
+                                      updated = selectedFilesForDownload.filter((p) => p !== file.path);
+                                    }
+                                    setSelectedFilesForDownload(updated);
+                                  }}
+                                />
+
+                                <div className="result-file-info">
+                                  <div className="result-file-title-row">              
+                                    <button className="text-button" onClick={() => handleFileClick(file.name)}>
+                                      {file.name}
+                                    </button>
+                                    
+                                    {hasSlackBadge && (
+                                      <Badge
+                                        label="슬랙"
+                                        style={{ cursor: 'pointer' }}
+                                        onClick={() => {
+                                          setSelectedSlackFile(file);
+                                          if (isAVI) {
+                                            const [ch, media] = pickFirstAvailableChannel(file);
+                                            setSlackChannel(ch);
+                                            setSlackMedia(media || { type: null, src: '' });
                                           } else {
-                                            updated = selectedFilesForDownload.filter((p) => p !== file.path);
+                                            setSlackChannel(null);
+                                            setSlackMedia(mp4Media || { type: null, src: '' });
                                           }
-                                          setSelectedFilesForDownload(updated);
+                                          setShowSlackPopup(true);
                                         }}
                                       />
-
-                                      <button className="text-button" onClick={() => handleFileClick(file.name)}>
-                                        {file.name}
-                                      </button>
-                                      
-                                      {hasSlackBadge && (
-                                        <Badge
-                                          label="슬랙"
-                                          style={{ cursor: 'pointer' }}
-                                          onClick={() => {
-                                            setSelectedSlackFile(file);
-                                            if (isAVI) {
-                                              const [ch, media] = pickFirstAvailableChannel(file);
-                                              setSlackChannel(ch);
-                                              setSlackMedia(media || { type: null, src: '' });
-                                            } else {
-                                              setSlackChannel(null);
-                                              setSlackMedia(mp4Media || { type: null, src: '' });
-                                            }
-                                            setShowSlackPopup(true);
-                                          }}
-                                        />
-                                      )}
-                                    </div>
-                                    <br />
+                                    )}
+                                  </div>
+                                    
+                                  <div className="file-meta">
                                     {sizeLabel} ・ 슬랙비율: {slackRatePercent} %
                                   </div>
                                 </div>
+                              </div>
                             );
                           })}
                         </div>

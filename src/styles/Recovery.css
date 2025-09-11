@@ -172,6 +172,13 @@ body {
   color: #222;
 }
 
+.file-meta {
+  margin-top: 2px;
+  font-size: 0.88rem;
+  color: #6b7280;
+  line-height: 1.4;
+}
+
 .close-btn {
   background: none;
   border: none;
@@ -196,6 +203,12 @@ body {
 }
 
 .result-group-header {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: #fff;
+  padding: 0.5rem 1rem;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.06);
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -230,13 +243,19 @@ body {
   height: 20px;
 }
 
+.result-file-title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 .result-file-list {
   margin-left: 3.5rem;
 }
 
 .result-file-item {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 0.7rem;
   margin: 0.8rem 0;
 }
@@ -257,6 +276,12 @@ body {
   font-size: 1rem;
   font-weight: 600;
   display: block;
+}
+
+.result-file-info .file-title {
+  display: inlie-block;
+  font-weight: 600;
+  text-decoration: underline;
 }
 
 /* Download */
@@ -285,7 +310,7 @@ body {
 }
 
 .result-scroll-area {
-  max-height: 400px;
+  max-height: 410px;
   overflow-y: auto;
   padding-right: 0.5rem;
   /* 스크롤바 공간 */
@@ -750,4 +775,9 @@ input[type="checkbox"] {
 
 .recovery-page.dark-mode .result-group-toggle::before {
   background-color: #e2e8f0;
+}
+
+.recovery-page.dark-mode .result-group-header {
+  background: #1e293b;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.06);
 }
