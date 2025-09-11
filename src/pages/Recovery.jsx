@@ -238,7 +238,9 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
 
   const availableChannels = useMemo(() => {
     const f = selectedResultFile;
-    if (!f || !f.name?.toLowerCase().endsWith('.avi') || !f.channels) return [];
+    if (!f || !f.channels) return [];
+    const lowerCaseName = f.name?.toLowerCase() || '';
+    if (!lowerCaseName.endsWith('.avi') && !lowerCaseName.endsWith('.jdr')) return [];
     return ['front','rear','side'].filter((ch) => !!f.channels?.[ch]?.full_video_path);
   }, [selectedResultFile]);
 
@@ -246,8 +248,10 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
     const f = selectedResultFile;
     if (!f) return '';
 
-    const isAVI = f.name?.toLowerCase().endsWith('.avi');
-    if (isAVI && f.channels) {
+    const lowerCaseName = f.name?.toLowerCase() || '';
+    const isMultiChannel = (lowerCaseName.endsWith('.avi') || lowerCaseName.endsWith('.jdr')) && f.channels;
+
+    if (isMultiChannel) {
       const pref =
         selectedChannel ||
         ['front', 'rear', 'side'].find((ch) => f.channels?.[ch]?.full_video_path) ||
@@ -261,8 +265,10 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
 
   const slack_info = selectedResultFile?.slack_info ?? { recovered: false, slack_size: '0 B', slack_rate: 0,  };
   const totalBytes = unitToBytes(selectedResultFile?.size || '0 B');
-  const isAVI = selectedResultFile?.name?.toLowerCase().endsWith('.avi');
-  const aviSlackBytes = isAVI && selectedResultFile?.channels
+  const lowerCaseName = selectedResultFile?.name?.toLowerCase() || '';
+  const isMultiChannel = lowerCaseName.endsWith('.avi') || lowerCaseName.endsWith('.jdr');
+
+  const multiChannelSlackBytes = isMultiChannel && selectedResultFile?.channels
     ? Object.values(selectedResultFile.channels)
       .filter(Boolean)
       .reduce((sum, ch) => sum + (ch?.slack_size ? unitToBytes(ch.slack_size) : 0), 0)
@@ -271,8 +277,8 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
   let slackBytes = 0;
   let slackLabel = '0 B';
 
-  if (isAVI) {
-    slackBytes = aviSlackBytes;
+  if (isMultiChannel) {
+    slackBytes = multiChannelSlackBytes;
     slackLabel = bytesToUnit(slackBytes);
   } else {
     if (slack_info?.slack_size && typeof slack_info.slack_size === 'string') {
@@ -294,7 +300,7 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
 
   const slackPercent = (() => {
     if (!totalBytes) return 0;
-    if (isAVI) {
+    if (isMultiChannel) {
       const p = (slackBytes / totalBytes) * 100;
       return p > 0 && p < 1 ? 1 : Math.round(p);
     }
@@ -566,8 +572,10 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
     setActiveTab('basic');
 
     const f = results.find((r) => r.name === filename);
-    const isAVI = filename.toLowerCase().endsWith('.avi');
-    if (isAVI && f?.channels) {
+    const lowerCaseName = filename.toLowerCase();
+    const isMultiChannel = lowerCaseName.endsWith('.avi') || lowerCaseName.endsWith('.jdr');
+
+    if (isMultiChannel && f?.channels) {
       const first = ['front','rear','side'].find(ch => f.channels?.[ch]?.full_video_path) ?? null;
       setSelectedChannel(first);
     } else {
@@ -892,26 +900,33 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
               <div className="recovery-file-box">
                 <span className="file-name">{selectedAnalysisFile}</span>
                 <div className="recovery-file-controls">
-                  {selectedResultFile?.name?.toLowerCase().endsWith('.avi') && availableChannels.length > 0 && (
-                    <>
-                      {availableChannels.map((ch) => {
-                        const label = ch === 'front' ? '전방' : ch === 'rear' ? '후방' : '사이드';
-                        const active = selectedChannel === ch;
-                        return (
-                          <Badge
-                            key={ch}
-                            label={label}
-                            onClick={() => setSelectedChannel(ch)}
-                            style={{
-                              cursor: 'pointer',
-                              opacity: active ? 1 : 0.6,
-                              border: active ? '1px solid #333' : '1px solid transparent',
-                            }}
-                          />
-                        );
-                      })}
-                    </>
-                  )}
+                  {(() => {
+                    const lowerCaseName = selectedResultFile?.name?.toLowerCase() || '';
+                    const isMultiChannel = lowerCaseName.endsWith('.avi') || lowerCaseName.endsWith('.jdr');
+                    if (isMultiChannel && availableChannels.length > 0) {
+                      return (
+                        <>
+                          {availableChannels.map((ch) => {
+                            const label = ch === 'front' ? '전방' : ch === 'rear' ? '후방' : '사이드';
+                            const active = selectedChannel === ch;
+                            return (
+                              <Badge
+                                key={ch}
+                                label={label}
+                                onClick={() => setSelectedChannel(ch)}
+                                style={{
+                                  cursor: 'pointer',
+                                  opacity: active ? 1 : 0.6,
+                                  border: active ? '1px solid #333' : '1px solid transparent',
+                                }}
+                              />
+                            );
+                          })}
+                        </>
+                      );
+                    }
+                    return null;
+                  })()}
                   <button className="close-btn" onClick={handleBack}>✕</button>
                 </div>
               </div>
@@ -950,157 +965,161 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
                 </div>
 
                 {/* 분석 화면 */}
-                <div className="parser-tabs">
-                  <button
-                    className={`parser-tab-button ${activeTab === 'basic' ? 'active' : ''}`}
-                    onClick={() => handleTabClick('basic')}
-                  >
-                  <BasicIcon className='tab-icon' />
-                    <span>기본 정보</span>
-                  </button>
-                  <button
-                    className={`parser-tab-button ${activeTab === 'integrity' ? 'active' : ''}`}
-                    onClick={() => handleTabClick('integrity')}
-                  >
-                    <IntegrityIcon className='tab-icon' />
-                    <span>무결성 검사</span>
-                  </button>
-                  <button
-                    className={`parser-tab-button ${activeTab === 'slack' ? 'active' : ''}`}
-                    onClick={() => handleTabClick('slack')}
-                  >
-                    <SlackIcon className='tab-icon' />
-                    <span>슬랙 정보</span>
-                  </button>
-                  <button
-                    className={`parser-tab-button ${activeTab === 'structure' ? 'active' : ''}`}
-                    onClick={() => handleTabClick('structure')}
-                  >
-                    <StructureIcon className='tab-icon' />
-                    <span>구조 정보</span>
-                  </button>
-                </div>
-
-              {/* 분석 파서 */}
-                <div className={`parser-tab-content ${activeTab === 'basic' ? 'active' : ''}`}>
-                  <div className="parser-info-table">
-                    <div className="parser-info-row">
-                      <span className="parser-info-label">파일 포맷</span>
-                      <span className="parser-info-value">{analysis.basic.format}</span>
+                {analysis && (
+                  <>
+                    <div className="parser-tabs">
+                      <button
+                        className={`parser-tab-button ${activeTab === 'basic' ? 'active' : ''}`}
+                        onClick={() => handleTabClick('basic')}
+                      >
+                        <BasicIcon className="tab-icon" />
+                        <span>기본 정보</span>
+                      </button>
+                      <button
+                        className={`parser-tab-button ${activeTab === 'integrity' ? 'active' : ''}`}
+                        onClick={() => handleTabClick('integrity')}
+                      >
+                        <IntegrityIcon className="tab-icon" />
+                        <span>무결성 검사</span>
+                      </button>
+                      <button
+                        className={`parser-tab-button ${activeTab === 'slack' ? 'active' : ''}`}
+                        onClick={() => handleTabClick('slack')}
+                      >
+                        <SlackIcon className="tab-icon" />
+                        <span>슬랙 정보</span>
+                      </button>
+                      <button
+                        className={`parser-tab-button ${activeTab === 'structure' ? 'active' : ''}`}
+                        onClick={() => handleTabClick('structure')}
+                      >
+                        <StructureIcon className="tab-icon" />
+                        <span>구조 정보</span>
+                      </button>
                     </div>
 
-                    <div className="parser-info-row">
-                      <span className="parser-info-label">생성 시간</span>
-                      <span className="parser-info-value">{analysis.basic.timestamps?.created ?? '-'}</span>
-                    </div>
+                    {/* 분석 파서 */}
+                    <div className={`parser-tab-content ${activeTab === 'basic' ? 'active' : ''}`}>
+                      <div className="parser-info-table">
+                        <div className="parser-info-row">
+                          <span className="parser-info-label">파일 포맷</span>
+                          <span className="parser-info-value">{analysis.basic.format}</span>
+                        </div>
 
-                    <div className="parser-info-row">
-                      <span className="parser-info-label">수정 시간</span>
-                      <span className="parser-info-value">{analysis.basic.timestamps?.modified ?? '-'}</span>
-                    </div>
+                        <div className="parser-info-row">
+                          <span className="parser-info-label">생성 시간</span>
+                          <span className="parser-info-value">{analysis.basic.timestamps?.created ?? '-'}</span>
+                        </div>
 
-                    <div className="parser-info-row">
-                      <span className="parser-info-label">마지막 접근 시간</span>
-                      <span className="parser-info-value">{analysis.basic.timestamps?.accessed ?? '-'}</span>
-                    </div>
+                        <div className="parser-info-row">
+                          <span className="parser-info-label">수정 시간</span>
+                          <span className="parser-info-value">{analysis.basic.timestamps?.modified ?? '-'}</span>
+                        </div>
 
-                    <div className="parser-info-row">
-                      <span className="parser-info-label">파일 크기</span>
-                      <span className="parser-info-value">
-                        {selectedResultFile?.size ?? '-'}
-                      </span>
-                    </div>
-                    <div className="parser-info-row">
-                      <span className="parser-info-label">비디오 코덱</span>
-                      <span className="parser-info-value">
-                        {formatCodec(analysis.basic.video_metadata.codec)}
-                      </span>
-                    </div>
-                    <div className="parser-info-row">
-                      <span className="parser-info-label">해상도</span>
-                      <span className="parser-info-value">
-                        {analysis.basic.video_metadata.width}×{analysis.basic.video_metadata.height}
-                      </span>
-                    </div>
-                    <div className="parser-info-row">
-                      <span className="parser-info-label">프레임 레이트</span>
-                      <span className="parser-info-value">
-                        {Math.round(analysis.basic.video_metadata.frame_rate)} fps
-                      </span>
-                    </div>
-                  </div>
-                </div>
+                        <div className="parser-info-row">
+                          <span className="parser-info-label">마지막 접근 시간</span>
+                          <span className="parser-info-value">{analysis.basic.timestamps?.accessed ?? '-'}</span>
+                        </div>
 
-                <div className={`parser-tab-content ${activeTab === 'integrity' ? 'active' : ''}`}>
-                  <div className="parser-info-table">
-                    <div className="parser-info-row">
-                      <span className="parser-info-label">전체 상태</span>
-                      <span className="parser-info-value">
-                        {analysis.integrity.damaged ? (
-                          <IntegrityRed alt="손상" className="status-icon" />
-                        ) : (
-                          <IntegrityGreen alt="정상" className="status-icon" />
-                        )}
-                        <span className={`status-text ${analysis.integrity.damaged ? 'red' : 'green'}`}>
-                          {analysis.integrity.damaged ? '손상됨' : '정상'}
-                        </span>
-                      </span>
-                    </div>
-                    {analysis.integrity.damaged && analysis.integrity.reasons.length > 0 && (
-                      <div className="parser-info-row">
-                        <span className="parser-info-label">손상 사유</span>
-                        <span className="parser-info-value">
-                          <ul className="reason-list">
-                            {analysis.integrity.reasons.map((reason, idx) => (
-                              <li key={idx}>{reason}</li>
-                            ))}
-                          </ul>
-                        </span>
+                        <div className="parser-info-row">
+                          <span className="parser-info-label">파일 크기</span>
+                          <span className="parser-info-value">
+                            {selectedResultFile?.size ?? '-'}
+                          </span>
+                        </div>
+                        <div className="parser-info-row">
+                          <span className="parser-info-label">비디오 코덱</span>
+                          <span className="parser-info-value">
+                            {formatCodec(analysis.basic.video_metadata.codec)}
+                          </span>
+                        </div>
+                        <div className="parser-info-row">
+                          <span className="parser-info-label">해상도</span>
+                          <span className="parser-info-value">
+                            {analysis.basic.video_metadata.width}×{analysis.basic.video_metadata.height}
+                          </span>
+                        </div>
+                        <div className="parser-info-row">
+                          <span className="parser-info-label">프레임 레이트</span>
+                          <span className="parser-info-value">
+                            {Math.round(analysis.basic.video_metadata.frame_rate)} fps
+                          </span>
+                        </div>
                       </div>
-                    )}
-                  </div>
-                </div>
+                    </div>
 
-                <div className={`parser-tab-content ${activeTab === 'slack' ? 'active' : ''}`}>
-                  <div className="parser-info-table">
-                    <div className="parser-info-row">
-                      <span className="parser-info-label">전체 크기</span>
-                      <span className="parser-info-value">{totalLabel}</span>
-                    </div>
-                    <div className="parser-info-row">
-                      <span className="parser-info-label">원본 영상 크기</span>
-                      <span className="parser-info-value">{usedLabel}</span>
-                    </div>
-                    <div className="parser-info-row">
-                      <span className="parser-info-label">슬랙 영상 크기</span>
-                      <span className="parser-info-value">{slackLabel}</span>
-                    </div>
-                    <div className="parser-info-row parser-info-row--withbar">
-                      <div className="data-bar-flex-row-between">
-                        <span className="parser-info-label">전체 영상 대비 슬랙 영상 비율</span>
-                        {slackPercent > 0 && (
-                          <div className="data-bar-wrapper is-single is-narrow">
-                            <div
-                              className="data-bar-used"
-                              style={{ width: `${slackPercent}%`, minWidth: '44px' }}
-                            >
-                              <span className="data-bar-text">{slackPercent} %</span>
-                            </div>
+                    <div className={`parser-tab-content ${activeTab === 'integrity' ? 'active' : ''}`}>
+                      <div className="parser-info-table">
+                        <div className="parser-info-row">
+                          <span className="parser-info-label">전체 상태</span>
+                          <span className="parser-info-value">
+                            {analysis.integrity.damaged ? (
+                              <IntegrityRed alt="손상" className="status-icon" />
+                            ) : (
+                              <IntegrityGreen alt="정상" className="status-icon" />
+                            )}
+                            <span className={`status-text ${analysis.integrity.damaged ? 'red' : 'green'}`}>
+                              {analysis.integrity.damaged ? '손상됨' : '정상'}
+                            </span>
+                          </span>
+                        </div>
+                        {analysis.integrity.damaged && analysis.integrity.reasons.length > 0 && (
+                          <div className="parser-info-row">
+                            <span className="parser-info-label">손상 사유</span>
+                            <span className="parser-info-value">
+                              <ul className="reason-list">
+                                {analysis.integrity.reasons.map((reason, idx) => (
+                                  <li key={idx}>{reason}</li>
+                                ))}
+                              </ul>
+                            </span>
                           </div>
                         )}
                       </div>
                     </div>
-                  </div>
-                </div>
 
-                <div className={`parser-tab-content ${activeTab === 'structure' ? 'active' : ''}`}>
-                  <div className="parser-structure">
-                    <h4>{analysis.structure.type.toUpperCase()} Structure</h4>
-                    <pre className="structure-pre">
-                      {analysis.structure.structure.join('\n')}
-                    </pre>
-                  </div>
-                </div>
+                    <div className={`parser-tab-content ${activeTab === 'slack' ? 'active' : ''}`}>
+                      <div className="parser-info-table">
+                        <div className="parser-info-row">
+                          <span className="parser-info-label">전체 크기</span>
+                          <span className="parser-info-value">{totalLabel}</span>
+                        </div>
+                        <div className="parser-info-row">
+                          <span className="parser-info-label">원본 영상 크기</span>
+                          <span className="parser-info-value">{usedLabel}</span>
+                        </div>
+                        <div className="parser-info-row">
+                          <span className="parser-info-label">슬랙 영상 크기</span>
+                          <span className="parser-info-value">{slackLabel}</span>
+                        </div>
+                        <div className="parser-info-row parser-info-row--withbar">
+                          <div className="data-bar-flex-row-between">
+                            <span className="parser-info-label">전체 영상 대비 슬랙 영상 비율</span>
+                            {slackPercent > 0 && (
+                              <div className="data-bar-wrapper is-single is-narrow">
+                                <div
+                                  className="data-bar-used"
+                                  style={{ width: `${slackPercent}%`, minWidth: '44px' }}
+                                >
+                                  <span className="data-bar-text">{slackPercent} %</span>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className={`parser-tab-content ${activeTab === 'structure' ? 'active' : ''}`}>
+                      <div className="parser-structure">
+                        <h4>{analysis.structure.type.toUpperCase()} Structure</h4>
+                        <pre className="structure-pre">
+                          {analysis.structure.structure.join('\n')}
+                        </pre>
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
             </>
           ) : (
@@ -1371,30 +1390,36 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
           }}
         >
           <div style={{ position: 'absolute', top: 20, right: 30, display: 'flex', gap: 8 }}>
-            {String(selectedSlackFile?.name ?? '').toLowerCase().endsWith('.avi') &&
-              ['front', 'rear', 'side'].map((ch) => {
-                const media = getSlackForChannel(selectedSlackFile, ch);
-                if (!media) return null;
-                const label = ch === 'front' ? '전방' : ch === 'rear' ? '후방' : '사이드';
-                const active = slackChannel === ch;
-                return (
-                  <Badge 
-                    key={ch}
-                    label={label}
-                    onClick={() => {
-                      setSlackChannel(ch);
-                      setSlackMedia(media);
-                    }}
-                    style={{
-                      cursor: 'pointer',
-                      opacity: active ? 1 : 0.6,
-                      border: active ? '1px solid #fff' : '1px solid transparent',
-                      background: '#333',
-                      color: '#fff'
-                    }}
-                  />
-                );
-              })}
+            {(() => {
+              const lowerCaseName = String(selectedSlackFile?.name ?? '').toLowerCase();
+              const isMultiChannel = lowerCaseName.endsWith('.avi') || lowerCaseName.endsWith('.jdr');
+              if (isMultiChannel) {
+                return ['front', 'rear', 'side'].map((ch) => {
+                  const media = getSlackForChannel(selectedSlackFile, ch);
+                  if (!media) return null;
+                  const label = ch === 'front' ? '전방' : ch === 'rear' ? '후방' : '사이드';
+                  const active = slackChannel === ch;
+                  return (
+                    <Badge 
+                      key={ch}
+                      label={label}
+                      onClick={() => {
+                        setSlackChannel(ch);
+                        setSlackMedia(media);
+                      }}
+                      style={{
+                        cursor: 'pointer',
+                        opacity: active ? 1 : 0.6,
+                        border: active ? '1px solid #fff' : '1px solid transparent',
+                        background: '#333',
+                        color: '#fff'
+                      }}
+                    />
+                  );
+                });
+              }
+              return null;
+            })()}
             <Button variant="gray" onClick={() => setShowSlackPopup(false)}>
               닫기
             </Button>

@@ -4,15 +4,15 @@ import os
 # FFmpeg 실행 파일 경로 
 FFMPEG_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../../bin/ffmpeg.exe'))
 
-def convert_video(input_path, output_path, extra_args=None, use_gpu=True, wait=True):
+def convert_video(input_path, output_path, fps=30, extra_args=None, use_gpu=True, wait=True):
     cmd = [FFMPEG_PATH, '-hide_banner', '-loglevel', 'error']
 
     want_copy = (extra_args and any(a.lower() == 'copy' for a in extra_args[1::2])) if extra_args else False
-    is_raw_h264 = input_path.lower().endswith('.h264')
+    is_raw_h264 = input_path.lower().endswith(('.h264', '.vrx', '.tmp'))
     wrapping_mode = want_copy or is_raw_h264
 
     if wrapping_mode:
-        cmd += ['-r', '30', '-f', 'h264', '-i', input_path, '-c:v', 'copy', '-movflags', '+faststart']
+        cmd += ['-r', str(fps), '-f', 'h264', '-i', input_path, '-c:v', 'copy', '-movflags', '+faststart']
     else:
         if use_gpu:
             cmd += [
@@ -41,4 +41,48 @@ def convert_video(input_path, output_path, extra_args=None, use_gpu=True, wait=T
     else:
         p = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         print(f"[INFO] ffmpeg (PID={p.pid}) | GPU={use_gpu} | wrapping_mode={wrapping_mode}")
+        return p
+
+def convert_audio(input_path, output_path, sample_rate=8000, extra_args=None, wait=True):
+    """
+    Converts a raw audio file to a standard format like WAV.
+    """
+    cmd = [
+        FFMPEG_PATH, '-hide_banner', '-loglevel', 'error',
+        '-f', 's16le',
+        '-ar', str(sample_rate),
+        '-ac', '1',
+        '-i', input_path
+    ]
+    
+    if extra_args:
+        cmd += list(extra_args)
+
+    cmd += [output_path]
+
+    if wait:
+        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return None
+    else:
+        p = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        print(f"[INFO] ffmpeg audio conversion (PID={p.pid})")
+        return p
+
+def merge_video_audio(video_path, audio_path, output_path, wait=True):
+    cmd = [
+        FFMPEG_PATH, '-hide_banner', '-loglevel', 'error',
+        '-i', video_path,
+        '-i', audio_path,
+        '-c:v', 'copy',
+        '-c:a', 'aac', '-b:a', '192k',
+        '-movflags', '+faststart',
+        output_path
+    ]
+
+    if wait:
+        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return None
+    else:
+        p = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        print(f"[INFO] ffmpeg merge (PID={p.pid})")
         return p
