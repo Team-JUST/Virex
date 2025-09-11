@@ -533,7 +533,6 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
       !tempOutputDir ||
       !selectedPath
     ) {
-      alert('다운로드할 파일을 선택하고 경로를 지정하세요.');
       return;
     }
 
