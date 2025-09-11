@@ -586,6 +586,15 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
     }
   };
 
+  const resetToUpload = () => {
+    resetSession();
+    setShowComplete(false);
+    setSelectedAnalysisFile(null);
+    setIsRecovering(false);
+    setRecoveryDone(false);
+    setView('upload');
+  }
+
 // 17) 스텝바 계산
   let currentStep = 0;
 
@@ -1106,7 +1115,14 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
           ) : (
             <>
               {/* 복원 결과 리스트 */}
-              <h1 className="upload-title">Result</h1>
+              <div className="result-header">
+                <h1 className="upload-title">Result</h1>
+                <button
+                  className="close-btn header-close"
+                  onClick={resetToUpload}
+                >✕</button>
+              </div>
+              
               <div className="recovery-file-box">
                 <span className="result-recovery-text">복원된 파일 목록</span>
                 <div style={{ display: "flex", alignItems: "center" }}>

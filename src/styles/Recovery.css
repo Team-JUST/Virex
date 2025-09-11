@@ -202,6 +202,26 @@ body {
   margin-bottom: 0;
 }
 
+.result-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: relative;
+  margin-bottom: 0.25rem;
+}
+
+.header-close {
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 10px;
+  color: #111827;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .result-group-header {
   position: sticky;
   top: 0;
@@ -613,6 +633,10 @@ input[type="checkbox"] {
 
 .recovery-page.dark-mode .upload-subtitle {
   color: #cbd5e1;
+}
+
+.recovery-page.dark-mode .header-close {
+  color: #f9fafb;
 }
 
 .recovery-page.dark-mode .result-recovery-text {
