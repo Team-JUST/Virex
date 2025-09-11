@@ -37,11 +37,11 @@ function classifyDrive(drive) {
   return 'external';
 }
 
- ipcMain.handle('check-disk-space', async (_event, targetPath, requiredBytes) => {
-   const root = path.parse(targetPath).root || targetPath; // D:\ 같은 루트
-   const { free, size } = await checkDiskSpace(root);
-   return { ok: free >= requiredBytes, free, size };
- });
+ipcMain.handle('check-disk-space', async (_event, targetPath, requiredBytes) => {
+  const root = path.parse(targetPath).root || targetPath; // D:\ 같은 루트
+  const { free, size } = await checkDiskSpace(root);
+  return { ok: free >= requiredBytes, free, size };
+});
 
 // Label formatting
 function makeDriveLabel(drive, mountPath) {
@@ -408,7 +408,7 @@ ipcMain.handle('clear-cache', async () => {
   const files = fssync.readdirSync(tempDir);
   let deleted = 0;
   for (const file of files) {
-    if (file.startsWith('retato_')) {
+    if (file.startsWith('Virex_')) {
       const fullPath = path.join(tempDir, file);
       try {
         fssync.rmSync(fullPath, { recursive: true, force: true });
