@@ -1252,7 +1252,7 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
                   style={{
                     position: 'absolute',
                     bottom: '1.5rem',
-                    right: '4rem',
+                    right: '2rem',
                     display: 'flex',
                     justifyContent: 'flex-end',
                     marginRight: '12px'
