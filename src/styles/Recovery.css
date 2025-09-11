@@ -314,6 +314,7 @@ body {
   overflow-y: auto;
   padding-right: 0.5rem;
   /* 스크롤바 공간 */
+  scrollbar-gutter: stable both-edges;
 }
 
 .result-wrapper {
@@ -571,10 +572,6 @@ input[type="checkbox"] {
   width: 100%;
 }
 
-.recovery-page.dark-mode .parser-info-row--withbar .data-bar-wrapper.is-single {
-  background-color: #374151;
-}
-
 .parser-structure {
   background-color: #f7f7f7;
   padding: 1rem;
@@ -668,6 +665,10 @@ input[type="checkbox"] {
 .recovery-page.dark-mode .parser-info-table {
   background-color: #1e293b;
   color: #e2e8f0;
+}
+
+.recovery-page.dark-mode .parser-info-row--withbar .data-bar-wrapper.is-single {
+  background-color: #374151;
 }
 
 .recovery-page.dark-mode .parser-info-row {
@@ -779,4 +780,38 @@ input[type="checkbox"] {
 .recovery-page.dark-mode .result-group-header {
   background: #1e293b;
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+/* ++ 스크롤바 공통 ++ */
+.result-scroll-area::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.result-scroll-area::-webkit-scrollbar-track {
+  background: transparent;
+  margin-top: 50px;
+  margin-bottom: 50px;
+}
+
+.result-scroll-area::-webkit-scrollbar-thumb {
+  border-radius: 10px;
+}
+
+/* ++ 스크롤바 라이트 모드 ++ */
+.result-scroll-area::-webkit-scrollbar-thumb {
+  background-color: rgba(160, 160, 160, 0.4);
+}
+
+.result-scroll-area::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(120, 120, 120, 0.6);
+}
+
+/* ++ 스크롤바 다크 모드 ++ */
+.recovery-page.dark-mode .result-scroll-area::-webkit-scrollbar-thumb {
+  background-color: rgba(200, 200, 200, 0.3);
+}
+
+.recovery-page.dark-mode .result-scroll-area::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(220, 220, 220, 0.5);
 }
