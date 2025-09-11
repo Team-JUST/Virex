@@ -222,6 +222,8 @@ body {
   justify-content: center;
 }
 
+.header-close:hover { background: #e5e7eb; transform: translateY(-1px); }
+
 .result-group-header {
   position: sticky;
   top: 0;

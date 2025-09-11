@@ -775,6 +775,7 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
   
   // 22) 리셋 팝업 핸들러
   const [showRestartPopup, setShowRestartPopup] = useState(false);
+  const [showClosePopup, setShowClosePopup] = useState(false);
 
   return (
     <div className={`recovery-page ${isDarkMode ? 'dark-mode' : ''}`}>
@@ -1118,7 +1119,7 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
                 <h1 className="upload-title">Result</h1>
                 <button
                   className="close-btn header-close"
-                  onClick={resetToUpload}
+                  onClick={() => setShowClosePopup(true)}
                 >✕</button>
               </div>
               
@@ -1540,6 +1541,32 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
               }
             >
               완료
+            </Button>
+          </div>
+        </Alert>
+      )}
+
+      {showClosePopup && (
+        <Alert
+          icon={<RecoveryPauseIcon style={{ color: '#eab308' }} />}
+          title="복원 결과 닫기"
+          isDarkMode={isDarkMode}
+          description= {
+            <>
+              복원 결과를 닫고 파일 업로드로 돌아갈까요?
+            </>
+          }
+        >
+          <div className="alert-buttons">
+            <Button variant="gray" onClick={() => setShowClosePopup(false)}>취소</Button>
+            <Button
+              variant="dark"
+              onClick={() => {
+                setShowClosePopup(false);
+                resetToUpload();
+              }}
+            >
+              확인
             </Button>
           </div>
         </Alert>
