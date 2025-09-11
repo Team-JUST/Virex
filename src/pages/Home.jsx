@@ -134,11 +134,15 @@ function ExplorerView({
           <div id="selected_file_info">
             {selectedE01 && (
               <div className="selected_box">
-                <h4>선택된 파일</h4>
-                <p><strong>파일명:</strong> {selectedE01.name}</p>
-                <p><strong>크기:</strong> {bytesToGB(selectedE01.size)}</p>
-                <p><strong>경로:</strong> {selectedE01.path}</p>
-                <Button variant="dark" onClick={handleStart}>
+                <h4 style={{ marginLeft: '10px' }}>선택된 파일</h4>
+                <p style={{ marginLeft: '10px' }}><strong>파일명:</strong> {selectedE01.name}</p>
+                <p style={{ marginLeft: '10px' }}><strong>크기:</strong> {bytesToGB(selectedE01.size)}</p>
+                <p style={{ marginLeft: '10px' }}><strong>경로:</strong> {selectedE01.path}</p>
+                <Button
+                  variant="dark"
+                  onClick={handleStart}
+                  disabled={!selectedE01 || !selectedE01.path || !selectedE01.name}
+                >
                   복원 시작
                 </Button>
               </div>

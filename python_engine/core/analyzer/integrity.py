@@ -33,26 +33,37 @@ def get_integrity_info(file_path):
     
     # AVI 무결성 검사
     if ext == ".avi":
-        if not data.startswith(b'RIFF'):
+        # 헤더
+        if not (data.startswith(b'RIFF') or data.startswith(b'RF64')):
             result["damaged"] = True
-            result["reasons"].append("[헤더 손상] 'RIFF' 시그니처 누락")
+            result["reasons"].append("[헤더 손상] 'RIFF/RF64' 시그니처 누락")
             return result
-        
-        riff_size = struct.unpack('<I', data[4:8])[0] + 8
-        actual_size = len(data)
-        if abs(riff_size - actual_size) > 1024:
+
+        # 파일 잘림 여부
+        try:
+            riff_size = struct.unpack('<I', data[4:8])[0] + 8
+        except struct.error:
             result["damaged"] = True
-            result["reasons"].append(f"[파일 크기 불일치] RIFF={riff_size}, 실제={actual_size}")
-        
+            result["reasons"].append("[헤더 손상] 크기 필드 파싱 실패")
+            return result
+
+        actual_size = len(data)
+        if actual_size < riff_size:
+            result["damaged"] = True
+            result["reasons"].append(f"[파일 잘림] 선언={riff_size}, 실제={actual_size}")
+            return result
+
+        # movi 청크 존재 확인
         if b'movi' not in data:
             result["damaged"] = True
             result["reasons"].append("[필수 청크 누락] 'movi' 청크 없음")
+            return result
 
-        front_count = data.count(b'00dc')
-        rear_count = data.count(b'01dc')
-        if front_count == 0 or rear_count == 0:
+        # 비디오 데이터 최소 존재 (00dc/00db/01dc/01db 중 하나라도 있어야 함)
+        if not (b'00dc' in data or b'00db' in data or b'01dc' in data or b'01db' in data):
             result["damaged"] = True
-            result["reasons"].append("[프레임 청크 누락] '00dc' 또는 '01dc' 없음")
+            result["reasons"].append("[비디오 데이터 없음] 'NNdc/NNdb' 미검출")
+            return result
     
     # MP4 무결성 검사
     elif ext == ".mp4":

@@ -8,8 +8,8 @@ body {
 .upload-title {
   font-size: 2rem;
   font-weight: 900;
-  margin-left: 1rem;
   margin-top: 0.5rem;
+  margin-bottom: 0.5rem;
   color: #1f2937;
 }
 
@@ -56,14 +56,12 @@ body {
   margin-bottom: 2rem;
 }
 
-
 /* Progress Bar page */
 .recovery-desc-left {
   text-align: left;
   font-size: 0.95rem;
   color: #999;
-  margin-bottom: 1.5rem;
-  margin-left: 1rem;
+  margin-bottom: 1rem;
 }
 
 .recovery-desc-right {
@@ -104,7 +102,6 @@ body {
   justify-content: center;
   align-items: center;
   gap: 0.5rem;
-  margin-top: 2rem;
   height: var(--bar-height);
 }
 
@@ -129,11 +126,23 @@ body {
   font-weight: 600;
   color: #333;
   text-shadow: none;
+  display: flex;
+  align-items: center;
+  vertical-align: middle;
+}
+
+.data-bar-flex-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  width: 100%;
+  flex-wrap: nowrap;
 }
 
 .recovery-file-box {
   display: flex;
-  margin-left: 1rem;
   justify-content: space-between;
   align-items: center;
   padding: 0.8rem 1.2rem;
@@ -142,7 +151,6 @@ body {
   border-radius: 0.6rem;
   margin-bottom: 1rem;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
-  max-width: 880px;
 }
 
 .result-recovery-text {
@@ -182,6 +190,10 @@ body {
   margin: 1rem;
 }
 
+.result-summary{
+  margin-left: 1rem;
+}
+
 .result-group-header {
   display: flex;
   align-items: center;
@@ -212,7 +224,6 @@ body {
 .result-group-header.open .result-group-toggle::before {
   transform: rotate(90deg);
 }
-
 .result-group-icon {
   width: 20px;
   height: 20px;
@@ -247,8 +258,6 @@ body {
   display: block;
 }
 
-
-
 /* Download */
 
 .download-options label {
@@ -275,7 +284,7 @@ body {
 }
 
 .result-scroll-area {
-  max-height: 400px;
+  max-height: 360px;
   /* 원하는 높이로 조정 (예: 400~500px) */
   overflow-y: auto;
   padding-right: 0.5rem;
@@ -284,6 +293,15 @@ body {
 
 .result-wrapper {
   margin: 1rem;
+}
+
+input[type="checkbox"] {
+  width: 13px;  
+  height: 13px; 
+  transform: scale(1.5); 
+  margin-right: 8px; 
+  accent-color: #3B82F6;
+  margin-left: 1rem;
 }
 
 .text-button {
@@ -372,9 +390,10 @@ body {
 }
 
 .video-container video {
-  max-width: 100%;
-  max-height: 100%;
+  width: 100%;
+  height: auto;
   display: block;
+  margin: 0;
 }
 
 .parser-controls {
@@ -431,6 +450,9 @@ body {
 .parser-info-label {
   color: #444;
   font-weight: 500;
+  white-space: nowrap;
+  overflow: visible;
+  width: auto;
 }
 
 .parser-info-value {
@@ -469,13 +491,63 @@ body {
   background-color: #eee;
   border-radius: 5px;
   overflow: hidden;
-  margin-top: 0.5rem;
 }
 
 .data-bar-used {
   height: 100%;
   background-color: #3b82f6;
   transition: width 0.3s ease;
+}
+
+.data-bar-wrapper.is-single {
+  position: relative;
+  height: 24px;
+  display: flex;
+  align-items: center;
+}
+
+.data-bar-flex-row-between {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: 1rem;
+}
+
+.data-bar-wrapper.is-single .data-bar-used {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 8px;
+  box-sizing: border-box;
+  position: relative;
+  height: 100%;
+}
+
+.data-bar-wrapper.is-single .data-bar-text {
+  position: static;
+  pointer-events: none;
+  color: #fff;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  font-size: 0.75rem;
+}
+
+.parser-info-row--withbar .data-bar-wrapper.is-single {
+  height: 20px;
+  border-radius: 12px;
+  width: 85%;
+}
+
+.parser-info-row--withbar .parser-info-value {
+  display: block;
+  width: 100%;
+}
+
+.recovery-page.dark-mode .parser-info-row--withbar .data-bar-wrapper.is-single {
+  background-color: #374151;
 }
 
 .parser-structure {
@@ -590,6 +662,10 @@ body {
   background-color: #374151;
 }
 
+.recovery-page.dark-mode .data-bar-text {
+  color: #fff;
+}
+
 .recovery-page.dark-mode .parser-structure {
   background-color: #1e293b;
   color: #e2e8f0;
@@ -670,4 +746,8 @@ body {
 .path-box input::placeholder,
 .custom-path-input.dark-mode::placeholder {
   color: #9ca3af;
+}
+
+.recovery-page.dark-mode .result-group-toggle::before {
+  background-color: #e2e8f0;
 }

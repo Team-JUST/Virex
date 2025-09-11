@@ -1,6 +1,8 @@
 import os
 import logging
 import shutil
+import subprocess
+import json
 from python_engine.core.recovery.avi.avi_split_channel import (
     split_channel_bytes,
     extract_full_channel_bytes,
@@ -9,6 +11,10 @@ from python_engine.core.recovery.utils.ffmpeg_wrapper import convert_video
 from python_engine.core.recovery.utils.unit import bytes_to_unit
 
 logger = logging.getLogger(__name__)
+
+FFMPEG = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../../bin/ffmpeg.exe'))
+FFPROBE = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../../bin/ffprobe.exe'))
+SLACK_IMAGE_THRESHOLD_SEC = 0.6
 
 def find_nal_start(buf, start):
     idx3 = buf.find(b'\x00\x00\x01', start)
@@ -95,6 +101,63 @@ def extract_frames_from_raw(raw, sps_pps, out_fn):
 
     return count, recovered_bytes
 
+def get_video_frame_count(video_path):
+    try:
+        out = subprocess.check_output(
+            [FFPROBE, '-v', 'error',
+            '-show-entries', 'format=nb_frames',
+            '-print_format', 'json',
+            video_path],
+            stderr=subprocess.DEVNULL
+        )
+        meta = json.loads(out.decode('utf-8', 'ignore'))
+        s = (meta.get("streams") or [{}])[0]
+        nb = s.get("nb_frames")
+        if nb not in (None, 'N/A'):
+            return int(nb)
+        
+        out2 = subprocess.check_output(
+            [FFPROBE, '-v', 'error',
+            '-select_streams', 'v:0',
+            '-count_frames',
+            '-show_entries', 'stream=nb_read_frames',
+            '-print_format', 'json',
+            video_path],
+            stderr=subprocess.DEVNULL
+        )
+        meta2 = json.loads(out2.decode('utf-8', 'ignore'))
+        s2 = (meta2.get("streams") or [{}])[0]
+        nb_read = s2.get("nb_read_frames")
+        return int(nb_read) if nb_read not in (None, 'N/A') else 0
+    except Exception:
+        return None
+    
+def get_video_duration_sec(video_path: str) -> float:
+    try:
+        out = subprocess.check_output(
+            [FFPROBE, "-v", "quiet",
+            "-print_format", "json",
+            "-show_format",
+            video_path],
+            stderr=subprocess.STDOUT
+        )
+        meta = json.loads(out.decode("utf-8", "ignore"))
+        dur = float(meta.get("format", {}).get("duration", "0"))
+        return dur if dur >= 0 else -1.0
+    except Exception:
+        return -1.0
+    
+def extract_first_frame(video_path, out_jpeg, force_input_format):
+    try:
+        cmd = [FFMPEG, '-y']
+        if force_input_format:
+            cmd += ['-f', force_input_format]
+        cmd += ['-i', video_path, '-frames:v', '1', out_jpeg]
+        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return os.path.exists(out_jpeg)
+    except Exception:
+        return False
+
 def recover_avi_slack(input_avi, base_dir, target_format='mp4'):
     os.makedirs(base_dir, exist_ok=True)
     with open(input_avi, "rb") as f:
@@ -131,41 +194,119 @@ def recover_avi_slack(input_avi, base_dir, target_format='mp4'):
         has_output = False
         
         channel_data, frame_count, codec = split_channel_bytes(data, label)
+
         if frame_count > 0:
             sps_pps = extract_sps_pps_from_raw(channel_data, codec, label)
             if sps_pps:
                 slack_h264 = os.path.join(ch_dir, f"{basename}_{label}_slack.h264")
-                slack_count, recovered_bytes = extract_frames_from_raw(channel_data, sps_pps, slack_h264)
-                if slack_count > 0:
-                    slack_mp4 = os.path.join(ch_dir, f"{basename}_{label}_slack.{target_format}")
-                    convert_video(slack_h264, slack_mp4, extra_args=common_args)
-                    results[label] = {
-                        'recovered': True,
-                        'video_path': slack_mp4,
-                        'slack_rate': round(recovered_bytes / len(data) * 100, 2),
-                        'slack_size': bytes_to_unit(recovered_bytes)
-                    }
+                slack_nal_count, recovered_bytes = extract_frames_from_raw(channel_data, sps_pps, slack_h264)
+
+                if slack_nal_count > 0:
+                    image_jpeg = os.path.join(ch_dir, f"{basename}_{label}_slack.jpg")
+
+                    if frame_count <= 1:
+                        ok = extract_first_frame(slack_h264, image_jpeg, force_input_format='h264')
+                        try: 
+                            os.remove(slack_h264)
+                        except OSError: 
+                            pass
+
+                        if ok:
+                            results[label] = {
+                                'recovered': True,
+                                'video_path': None,
+                                'image_path': image_jpeg,
+                                'is_image_fallback': True,
+                                'slack_rate': round(recovered_bytes / len(data) * 100, 2),
+                                'slack_size': bytes_to_unit(recovered_bytes)
+                            }
+                            has_output = True
+                        else:
+                            logger.warning(f"[{label}] 프레임 1장 케이스에서 이미지 추출 실패")
+                    else:
+                        slack_mp4 = os.path.join(ch_dir, f"{basename}_{label}_slack.{target_format}")
+                        convert_video(slack_h264, slack_mp4, extra_args=common_args)
+
+                        try:
+                            os.remove(slack_h264)
+                        finally:
+                            try:
+                                os.remove(slack_h264)
+                            except OSError:
+                                pass
+                        
+                        if os.path.exists(slack_mp4):
+                            fcount = get_video_frame_count(slack_mp4)
+                            duration = get_video_duration_sec(slack_mp4)
+                            need_jpeg = (
+                                (fcount is not None and fcount <= 1) or
+                                (fcount is None and duration is not None and duration >= 0 and duration < SLACK_IMAGE_THRESHOLD_SEC)
+                            )
+
+                            if need_jpeg:
+                                ok = extract_first_frame(slack_mp4, image_jpeg, force_input_format=None)
+                                if ok:
+                                    try:
+                                        os.remove(slack_mp4)
+                                    except OSError:
+                                        pass
+                                    results[label] = {
+                                        'recovered': True,
+                                        'video_path': None,
+                                        'image_path': image_jpeg,
+                                        'is_image_fallback': True,
+                                        'slack_rate': round(recovered_bytes / len(data) * 100, 2),
+                                        'slack_size': bytes_to_unit(recovered_bytes)
+                                    }
+                                else:
+                                    results[label] = {
+                                        'recovered': True,
+                                        'video_path': slack_mp4,
+                                        'image_path': None,
+                                        'is_image_fallback': False,
+                                        'slack_rate': round(recovered_bytes / len(data) * 100, 2),
+                                        'slack_size': bytes_to_unit(recovered_bytes)
+                                    }
+                            else:
+                                results[label] = {
+                                    'recovered': True,
+                                    'video_path': slack_mp4,
+                                    'image_path': image_jpeg if os.path.exists(image_jpeg) else None,
+                                    'is_image_fallback': False,
+                                    'slack_rate': round(recovered_bytes / len(data) * 100, 2),
+                                    'slack_size': bytes_to_unit(recovered_bytes)
+                                }
+                            has_output = True
 
         full_raw = extract_full_channel_bytes(data, label)
-        full_count = full_raw.count(CHUNK_SIG[label])
-        if full_count > 0:
+        if len(full_raw) > 0:
             raw_fn = os.path.join(ch_dir, f"{label}_full.raw")
             with open(raw_fn, 'wb') as rf:
                 rf.write(full_raw)
 
             full_mp4 = os.path.join(ch_dir, f"{basename}_{label}.{target_format}")
-            convert_video(raw_fn, full_mp4, extra_args=common_args)
+            try:
+                convert_video(raw_fn, full_mp4, extra_args=common_args)
+            finally:
+                try:
+                    os.remove(raw_fn)
+                except OSError:
+                    pass
 
             if label not in results:
                 results[label] = {
                     'recovered': False,
                     'video_path': None,
+                    'image_path': None,
+                    'is_image_fallback': False,
                     'slack_rate': 0.0,
                     'slack_size': "0 B"
                 }
-            results[label]['full_video_path'] = full_mp4
-            has_output = True
-        
+
+            if os.path.exists(full_mp4):
+                results[label]['full_video_path'] = full_mp4
+                has_output = True
+            
         if not has_output:
             shutil.rmtree(ch_dir, ignore_errors=True)
 

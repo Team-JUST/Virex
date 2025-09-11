@@ -1,4 +1,23 @@
 const { app, BrowserWindow, Menu, ipcMain, dialog, protocol } = require('electron');
+// 개발 환경에서 핫리로드 적용
+
+if (process.env.NODE_ENV === 'development') {
+  try {
+    require('electron-reload')(__dirname, {
+      electron: require(`${__dirname}/node_modules/electron`),
+      // src, public, main.js 등도 감시
+      watch: [
+        path.join(__dirname, 'main.js'),
+        path.join(__dirname, 'preload.js'),
+        path.join(__dirname, 'src'),
+        path.join(__dirname, 'public')
+      ]
+    });
+    console.log('[Debug] electron-reload enabled');
+  } catch (e) {
+    console.warn('[Debug] electron-reload not installed or failed:', e);
+  }
+}
 const path = require('path');
 const { spawn } = require('child_process');
 const readline = require('readline');
@@ -17,6 +36,12 @@ function classifyDrive(drive) {
   if (drive.isSystem) return 'internal';
   return 'external';
 }
+
+ ipcMain.handle('check-disk-space', async (_event, targetPath, requiredBytes) => {
+   const root = path.parse(targetPath).root || targetPath; // D:\ 같은 루트
+   const { free, size } = await checkDiskSpace(root);
+   return { ok: free >= requiredBytes, free, size };
+ });
 
 // Label formatting
 function makeDriveLabel(drive, mountPath) {
@@ -108,9 +133,12 @@ function createWindow() {
     },
   });
 
-  mainWindow.loadFile(path.join(__dirname, 'dist', 'index.html')); // ✅
+  if (process.env.NODE_ENV === 'development') {
+    mainWindow.loadURL('http://localhost:5173');
+  } else {
+    mainWindow.loadFile(path.join(__dirname, 'dist', 'index.html'));
+  }
 }
-
 
 
 // view
@@ -168,58 +196,83 @@ ipcMain.on('file-selected', (_event, filePath) => {
   console.log("[Debug] selected E01 file path : ", filePath);
 });
 
-ipcMain.handle('start-recovery', (_event, e01FilePath) => {
+
+ipcMain.handle('start-recovery', async (event, e01FilePath) => {
   console.log("[Debug] start-recovery called with : ", e01FilePath);
 
-  return new Promise((resolve, reject) => {
+  // 1) 시작 전 프리플라이트
+  const REQUIRED_BYTES = 5 * 1024 * 1024 * 1024;
+  const target = os.tmpdir(); 
+  const root = path.parse(target).root || target;
+
+  try {
+    const { free } = await checkDiskSpace(root);
+    if (free < REQUIRED_BYTES) {
+      // 렌더러로 알림 전송 (초기부터 부족한 케이스)
+      const win = BrowserWindow.fromWebContents(event.sender);
+      win?.webContents.send('recovery-disk-full', { free, needed: REQUIRED_BYTES, phase: 'preflight' });
+      // 시작 자체를 중단
+      return { started: false, reason: 'disk_full' };
+    }
+  } catch (e) {
+    console.warn('[Debug] preflight disk check failed:', e);
+    // 보수적으로 막고 알림 띄움
+    const win = BrowserWindow.fromWebContents(event.sender);
+    win?.webContents.send('recovery-disk-full', { free: null, needed: REQUIRED_BYTES, phase: 'preflight_error' });
+    return { started: false, reason: 'disk_check_failed' };
+  }
+
+  // 2) (통과 시) 기존 파이썬 spawn 로직 실행
+  return await new Promise((resolve, reject) => {
     let abortedByDiskFull = false;
     const scriptPath = path.join(__dirname, 'python_engine', 'main.py');
-    const env = { ...process.env, PYTHONPATH: __dirname};
-    
+    const env = {...process.env, PYTHONPATH: __dirname, PYTHONIOENCODING: 'utf-8',PYTHONUTF8: '1',  };
+
     const python = spawn('python', [scriptPath, e01FilePath], {
       cwd: path.join(__dirname, 'python_engine'),
       shell: true,
       env,
     });
 
-
     const rl = readline.createInterface({ input: python.stdout });
     rl.on('line', async line => {
       try {
         const data = JSON.parse(line);
 
-        // 용량 부족 이벤트 처리
+        // (중간) 용량 부족 이벤트
         if (data.event === 'disk_full') {
           abortedByDiskFull = true;
           console.warn('[Debug] disk_full:', data);
 
-          // 렌더러로 알림 전송 (프론트에서 Alert 띄우고 롤백)
-          console.warn('[Main] sending recovery-disk-full to renderer');
-          mainWindow.webContents.send('recovery-disk-full', {
+          const win = BrowserWindow.fromWebContents(event.sender);
+          win?.webContents.send('recovery-disk-full', {
             free: data.free ?? null,
             needed: data.needed ?? null,
+            phase: 'during',
           });
 
-          // 파이썬 프로세스 종료
           try { python.kill(); } catch (_) {}
-
           return; // 진행률/분석 처리 안 함
         }
 
-        // 1) 진행률 이벤트
+        // 진행률
         if (data.processed !== undefined && data.total !== undefined) {
-          mainWindow.webContents.send('recovery-progress', {
+          const win = BrowserWindow.fromWebContents(event.sender);
+          win?.webContents.send('recovery-progress', {
             processed: data.processed,
             total: data.total
           });
           return;
         }
 
-        // 2) analysisPath 이벤트
+        // analysisPath
         if (data.analysisPath) {
           console.log("[Debug] got analysisPath : ", data.analysisPath);
           const tempDir = path.dirname(data.analysisPath);
-          mainWindow.webContents.send('analysis-path', tempDir);
+
+          const win = BrowserWindow.fromWebContents(event.sender);
+          win?.webContents.send('analysis-path', tempDir);
+
           try {
             const raw = await fs.readFile(data.analysisPath, 'utf8');
             const results = JSON.parse(raw);
@@ -228,10 +281,11 @@ ipcMain.handle('start-recovery', (_event, e01FilePath) => {
             results.forEach((result, index) => {
               console.log(`[Debug] result ${index} : name=${result.name}, slack_info = `, result.slack_info);
             });
-            mainWindow.webContents.send('recovery-results', results);
+            win?.webContents.send('recovery-results', results);
           } catch (err) {
             console.error("[Debug] failed to read analysis.json : ", err);
-            mainWindow.webContents.send('recovery-results', { error: err.message });
+            const win = BrowserWindow.fromWebContents(event.sender);
+            win?.webContents.send('recovery-results', { error: err.message });
           }
           return;
         }
@@ -242,28 +296,31 @@ ipcMain.handle('start-recovery', (_event, e01FilePath) => {
     });
 
     python.stderr.on('data', buf => {
-      console.error("[Debug] python stderr : ", buf.toString());
-      mainWindow.webContents.send('recovery-error', buf.toString());
-    });
+    const msg = buf.toString(); 
+    console.error("[Debug] python stderr : ", msg);
+    const win = BrowserWindow.fromWebContents(event.sender);
+    win?.webContents.send('recovery-error', msg);
+  });
 
     python.on('close', code => {
-    console.log("[Debug] python exited with code : ", code);
-    rl.close();
+      console.log("[Debug] python exited with code : ", code);
+      rl.close();
 
-    if (abortedByDiskFull) {
-      // 용량 부족으로 중단된 케이스: done 신호 보내지 않음
-      return reject(new Error('aborted: disk_full'));
-    }
+      if (abortedByDiskFull) {
+        return reject(new Error('aborted: disk_full'));
+      }
 
-    mainWindow.webContents.send('recovery-done');
-    code === 0 ? resolve() : reject(new Error(`exit ${code}`));
-  });
+      const win = BrowserWindow.fromWebContents(event.sender);
+      win?.webContents.send('recovery-done');
+      code === 0 ? resolve() : reject(new Error(`exit ${code}`));
+    });
   });
 });
 
-ipcMain.handle('run-download', (_event, { e01Path, choice, downloadDir }) => {
+
+ipcMain.handle('run-download', async (_event, { e01Path, choice, downloadDir, files }) => {
   // 1) 호출된 인자 찍기
-  console.log("[Debug] run-download called with : ", { e01Path, choice, downloadDir });
+  console.log("[Debug] run-download called with : ", { e01Path, choice, downloadDir, files });
 
   // 2) 인자 유효성 검사
   if (
@@ -284,10 +341,21 @@ ipcMain.handle('run-download', (_event, { e01Path, choice, downloadDir }) => {
     throw new Error('run-download: invalid args');
   }
 
+  if (!Array.isArray(files) || files.length === 0) {
+    const msg = 'No files selected';
+    console.error('[Debug] run-download:', msg);
+    mainWindow.webContents.send('download-error', msg);
+   throw new Error(msg);
+  }
+
+  const baseNames = files.map(p => path.basename(p));
+  const selectedJsonPath = path.join(e01Path, 'selected_files.json');
+  await fs.writeFile(selectedJsonPath, JSON.stringify(baseNames, null, 2), 'utf-8');
+
   return new Promise((resolve, reject) => {
     const scriptPath = path.join(__dirname, 'python_engine', 'main.py');
     const env = { ...process.env, PYTHONPATH: __dirname };
-    const args = [scriptPath, e01Path, choice, downloadDir];
+    const args = [scriptPath, e01Path, choice, downloadDir, selectedJsonPath];
 
     console.log("[Debug] spawning python with args : ", args);
 
@@ -304,10 +372,10 @@ ipcMain.handle('run-download', (_event, { e01Path, choice, downloadDir }) => {
     });
 
     python.stderr.on('data', buf => {
-      const msg = buf.toString();
-      console.error("[Debug] python stderr (download) : ", msg);
-      mainWindow.webContents.send('download-error', msg);
-    });
+    const msg = buf.toString();
+    console.error("[Debug] python stderr (download) : ", msg);
+    mainWindow.webContents.send('download-error', msg);
+  });
 
     python.on('close', code => {
       console.log("[Debug] download python exited with code : ", code);
@@ -324,6 +392,7 @@ ipcMain.handle('run-download', (_event, { e01Path, choice, downloadDir }) => {
   });
 });
 
+
 ipcMain.handle('dialog:openDirectory', async (_event, options = {}) => {
   const { canceled, filePaths } = await dialog.showOpenDialog({
     properties: ['openDirectory'],
@@ -332,6 +401,7 @@ ipcMain.handle('dialog:openDirectory', async (_event, options = {}) => {
   if (canceled) return null;
   return filePaths[0];
 });
+
 
 ipcMain.handle('clear-cache', async () => {
   const tempDir = os.tmpdir();
@@ -351,6 +421,8 @@ ipcMain.handle('clear-cache', async () => {
   return deleted;
 });
 
+
+
 ipcMain.handle('dialog:openE01File', async () => {
   const { canceled, filePaths } = await dialog.showOpenDialog({
     title: 'E01 파일 선택',
@@ -360,4 +432,5 @@ ipcMain.handle('dialog:openE01File', async () => {
   if (canceled) return null;
   return filePaths[0];  // 선택된 파일 경로 하나 반환
 });
+
 

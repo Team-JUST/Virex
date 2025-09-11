@@ -4,8 +4,9 @@ const Box = ({ children, isDarkMode }) => {
   const boxStyle = {
     position: 'relative',
     width: '960px',
+    maxWidth: '930px',
     margin: '1.3rem 1rem 1rem 0rem',
-    padding: '1rem',
+    padding: '1rem 2rem',
     height: '555px',
     background: isDarkMode ? '#1e293b' : 'white',
     borderRadius: '0.6rem',

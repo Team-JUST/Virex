@@ -84,14 +84,12 @@ def handle_mp4_file(name, filepath, data, file_obj, output_dir, category):
     with open(original_path, 'wb') as wf:
         wf.write(data)
 
-    raw_dir = os.path.join(orig_dir, 'raw')
     slack_dir = os.path.join(orig_dir, 'slack')
-    os.makedirs(raw_dir, exist_ok=True)
     os.makedirs(slack_dir, exist_ok=True)
 
     slack_info = recover_mp4_slack(
         filepath=original_path,
-        output_h264_dir=raw_dir,
+        output_h264_dir=slack_dir,
         output_video_dir=slack_dir,
         target_format="mp4"
     )
@@ -108,7 +106,8 @@ def handle_mp4_file(name, filepath, data, file_obj, output_dir, category):
     }
 
 def handle_avi_file(name, filepath, data, file_obj, output_dir, category):
-    orig_dir = os.path.join(output_dir, category)
+    video_stem = os.path.splitext(name)[0]
+    orig_dir = os.path.join(output_dir, category, video_stem)
     os.makedirs(orig_dir, exist_ok=True)
 
     original_path = os.path.join(orig_dir, name)
@@ -145,6 +144,7 @@ def extract_video_files(fs_info, output_dir, path="/", total_count=None, progres
         name_str = name.decode('utf-8', 'ignore')
         filepath = path.rstrip('/') + '/' + name_str
 
+
         if entry.info.meta.type == pytsk3.TSK_FS_META_TYPE_DIR:
             results += extract_video_files(fs_info, output_dir, filepath, total_count, progress)
             continue
@@ -158,7 +158,7 @@ def extract_video_files(fs_info, output_dir, path="/", total_count=None, progres
 
         file_obj = fs_info.open(filepath)
         data = read_file_content(file_obj)
-        category = path.lstrip('/').split('/',1)[0] or "root"
+        category = path.lstrip('/').split('/', 1)[0] or "root"
 
         if name_str.lower().endswith('.mp4'):
             result = handle_mp4_file(name_str, filepath, data, file_obj, output_dir, category)
