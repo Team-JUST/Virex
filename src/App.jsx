@@ -66,7 +66,7 @@ function App() {
           <Route path="/information" element={<Information isDarkMode={isDarkMode} />} />
         </Routes>
       </main>
-   {showStopRecoverPopup && (
+    {showStopRecoverPopup && (
       <Alert
         icon={<RecoveryPauseIcon className="recoveryPause-icon" />}
         title="복구 중단 알림"
@@ -79,7 +79,7 @@ function App() {
           </>
         }
       >
-        <div style={{ marginTop: '1rem', display: 'flex', gap: '10px' }}>
+        <div className="alert-buttons">
           <Button
             variant="gray"
             onClick={() => {
