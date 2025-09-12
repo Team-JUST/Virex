@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect, useMemo } from 'react';
+import React, { useRef, useState, useEffect, useMemo, use } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 
 import { useSessionStore } from '../session.js';
@@ -88,6 +88,7 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
   const [showDiskFullAlert, setShowDiskFullAlert] = useState(false);
   const navigate = useNavigate();
   const [selectAll, setSelectAll] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
   
   const rollbackRef = useRef(() => {});
   const [selectedChannel, setSelectedChannel] = useState(null);
@@ -308,9 +309,9 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
     if (progress >= 100) {
       setIsRecovering(false);
       setRecoveryDone(true);
+      setView('result');
+      setHistory(prev => [...prev, 'result']);
     }
-    setHistory(prev => [...prev, 'result']);
-    setView('result');
   }, [progress]);
 
 // 11) 카테고리 아이콘 매핑 및 아이콘 선택 헬퍼
@@ -354,7 +355,17 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
       setIsRecovering(false);
       setRecoveryDone(true);
     });
-    return () => { offProg(); offDone(); };
+    const offCancelled = window.api.onCancelled?.(() => {
+      resetSession();
+      setShowComplete(false);
+      setSelectedAnalysisFile(null);
+      setIsRecovering(false);
+      setRecoveryDone(false);
+      setProgress(0);
+      setView('upload');
+      setHistory(['upload']);
+    })
+    return () => { offProg(); offDone(); offCancelled?.(); };
   }, []);
 
 // 13) 결과 수신 리스너
@@ -844,7 +855,16 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
                 <Badge label="진행중" />
                 <span className="file-name">{selectedFile?.name}</span>
               </div>
-              <button className="close-btn" onClick={() => setIsRecovering(false)}>✕</button>
+              <button 
+                className="close-btn"
+                onClick={() => {
+                  if (!isRecovering || progress >= 100) {
+                    setIsRecovering(false);
+                    return;
+                  }
+                  setShowStopRecoverPopup(true);
+                }}
+              >✕</button>
             </div>
             <div style={{ display: "flex", justifyContent: "center" }}>
               <Loading />
@@ -1567,6 +1587,35 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
               }}
             >
               확인
+            </Button>
+          </div>
+        </Alert>
+      )}
+
+      {showStopRecoverPopup && (
+        <Alert
+          icon={<RecoveryPauseIcon style={{ color: '#eab308' }} />}
+          title="복원 종료"
+          isDarkMode={isDarkMode}
+          description={
+            <>
+              복원을 종료할까요?<br />
+              진행 중인 작업이 즉시 중지됩니다.
+            </>
+          }
+        >
+          <div className="alert-buttons">
+            <Button variant="gray" onClick={() => setShowStopRecoverPopup(false)}>취소</Button>
+            <Button
+              variant="dark"
+              onClick={async () => {
+                try {
+                  await window.api.cancelRecovery();
+                } catch {}
+                setShowStopRecoverPopup(false);
+              }}
+            >
+              종료
             </Button>
           </div>
         </Alert>

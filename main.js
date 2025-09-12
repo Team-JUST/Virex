@@ -29,6 +29,8 @@ const os = require('os');
 
 
 let mainWindow = null;
+let currentRecoveryProc = null;
+let isCancellingRecovery = false;
 
 // Classify drive type
 function classifyDrive(drive) {
@@ -233,6 +235,8 @@ ipcMain.handle('start-recovery', async (event, e01FilePath) => {
       shell: true,
       env,
     });
+    currentRecoveryProc = python;
+    isCancellingRecovery = false;
 
     const rl = readline.createInterface({ input: python.stdout });
     rl.on('line', async line => {
@@ -306,17 +310,47 @@ ipcMain.handle('start-recovery', async (event, e01FilePath) => {
       console.log("[Debug] python exited with code : ", code);
       rl.close();
 
+      const win = BrowserWindow.fromWebContents(event.sender);
+      currentRecoveryProc = null;
+
+      if (isCancellingRecovery) {
+        isCancellingRecovery = false;
+        try {
+          win?.webContents.send('recovery-cancelled');
+        } catch {}
+        return resolve();
+      }
+
       if (abortedByDiskFull) {
         return reject(new Error('aborted: disk_full'));
       }
 
-      const win = BrowserWindow.fromWebContents(event.sender);
       win?.webContents.send('recovery-done');
-      code === 0 ? resolve() : reject(new Error(`exit ${code}`));
+      return code === 0 ? resolve() : reject(new Error(`exit ${code}`));
     });
   });
 });
 
+ipcMain.handle('cancel-recovery', async () => {
+  if (!currentRecoveryProc) return { ok: true, note: 'no-active-process' };
+  if (isCancellingRecovery) return { ok: true, note: 'already-cancelling' };
+  isCancellingRecovery = true;
+  const proc = currentRecoveryProc;
+  try {
+    if (process.platform === 'win32') {
+      const { spawn } = require('child_process');
+      spawn('taskkill', ['/PID', String(proc.pid), '/T', '/F']);
+    } else {
+      process.kill(proc.pid, 'SIGTERM');
+      setTimeout(() => { try { process.kill(proc.pid, 'SIGKILL'); } catch {} }, 1500);
+    }
+    return { ok: true };
+  } catch (e) {
+    console.error('[Debug] cancel-recovery failed:', e);
+    try { proc.kill(); } catch {}
+    return { ok: false, error: String(e?.message || e) };
+  }
+});
 
 ipcMain.handle('run-download', async (_event, { e01Path, choice, downloadDir, files }) => {
   // 1) 호출된 인자 찍기
@@ -345,7 +379,7 @@ ipcMain.handle('run-download', async (_event, { e01Path, choice, downloadDir, fi
     const msg = 'No files selected';
     console.error('[Debug] run-download:', msg);
     mainWindow.webContents.send('download-error', msg);
-   throw new Error(msg);
+  throw new Error(msg);
   }
 
   const baseNames = files.map(p => path.basename(p));
@@ -391,7 +425,6 @@ ipcMain.handle('run-download', async (_event, { e01Path, choice, downloadDir, fi
     });
   });
 });
-
 
 ipcMain.handle('dialog:openDirectory', async (_event, options = {}) => {
   const { canceled, filePaths } = await dialog.showOpenDialog({
