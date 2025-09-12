@@ -27,9 +27,29 @@ const fs = require('fs').promises;
 const fssync = require('fs');
 const os = require('os');
 
+const isSafeTempDir = (dir) => {
+  if (!dir) return false;
+  const tmp= path.resolve(os.tmpdir());
+  const abs = path.resolve(dir);
+  return abs.startsWith(tmp) && path.basename(abs).startsWith('Virex_');
+}
+
+const removeDirWithRetry = (dir, tries = 2, delay = 150) => {
+  const attempt = () => {
+    try {
+      if (dir && fssync.existsSync(dir)) {
+        fssync.rmSync(dir, { recursive: true, force: true });
+      }
+    } catch (e) {
+      if (tries > 0) setTimeout(() => removeDirWithRetry(dir, tries - 1, delay), delay);
+    }
+  };
+  attempt();
+}
 
 let mainWindow = null;
 let currentRecoveryProc = null;
+let currentTempDir = null;
 let isCancellingRecovery = false;
 
 // Classify drive type
@@ -243,6 +263,12 @@ ipcMain.handle('start-recovery', async (event, e01FilePath) => {
       try {
         const data = JSON.parse(line);
 
+        if (data.tempDir) {
+          currentTempDir = data.tempDir;
+          console.log("[Debug] tempDir from python:", currentTempDir);
+          return;
+        }
+
         // (중간) 용량 부족 이벤트
         if (data.event === 'disk_full') {
           abortedByDiskFull = true;
@@ -273,6 +299,7 @@ ipcMain.handle('start-recovery', async (event, e01FilePath) => {
         if (data.analysisPath) {
           console.log("[Debug] got analysisPath : ", data.analysisPath);
           const tempDir = path.dirname(data.analysisPath);
+          currentTempDir = tempDir;
 
           const win = BrowserWindow.fromWebContents(event.sender);
           win?.webContents.send('analysis-path', tempDir);
@@ -311,21 +338,34 @@ ipcMain.handle('start-recovery', async (event, e01FilePath) => {
       rl.close();
 
       const win = BrowserWindow.fromWebContents(event.sender);
-      currentRecoveryProc = null;
+      const wasCancelling = isCancellingRecovery;
+      const wasDiskFull = abortedByDiskFull;
 
-      if (isCancellingRecovery) {
-        isCancellingRecovery = false;
-        try {
-          win?.webContents.send('recovery-cancelled');
-        } catch {}
+      currentRecoveryProc = null;
+      isCancellingRecovery = false;
+
+      if (wasCancelling) {
+        const dir = currentTempDir;
+        if (isSafeTempDir(dir)) {
+          setTimeout(() => removeDirWithRetry(dir), 50);
+        }
+        currentTempDir = null;
+
+        try { win?.webContents.send('recovery-cancelled'); } catch {}
         return resolve();
       }
 
-      if (abortedByDiskFull) {
+      if (wasDiskFull) {
+        const dir = currentTempDir;
+        if (isSafeTempDir(dir)) {
+          setTimeout(() => removeDirWithRetry(dir), 50);
+        }
+        currentTempDir = null;
+
         return reject(new Error('aborted: disk_full'));
       }
 
-      win?.webContents.send('recovery-done');
+      try { win?.webContents.send('recovery-done'); } catch {}
       return code === 0 ? resolve() : reject(new Error(`exit ${code}`));
     });
   });
@@ -346,7 +386,6 @@ ipcMain.handle('cancel-recovery', async () => {
     }
     return { ok: true };
   } catch (e) {
-    console.error('[Debug] cancel-recovery failed:', e);
     try { proc.kill(); } catch {}
     return { ok: false, error: String(e?.message || e) };
   }

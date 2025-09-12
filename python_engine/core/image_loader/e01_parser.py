@@ -190,6 +190,7 @@ def extract_videos_from_e01(e01_path):
         return [], None, 0
 
     output_dir = tempfile.mkdtemp(prefix="Virex_", dir=temp_base)
+    print(json.dumps({"tempDir": output_dir}), flush=True)
 
     for partition in volume:
         if partition.flags == pytsk3.TSK_VS_PART_FLAG_UNALLOC or partition.start == 0:
