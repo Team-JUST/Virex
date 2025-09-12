@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Routes, Route, useNavigate } from 'react-router-dom';
+import { useSessionStore } from './session.js';
 import Button from './components/Button.jsx';
 import Alert from './components/Alert.jsx';
 import Sidebar from './components/Sidebar';
@@ -15,6 +16,21 @@ function App() {
   const [showStopRecoverPopup, setShowStopRecoverPopup] = useState(false);
   const [pendingPath, setPendingPath] = useState(null);
   const [isDarkMode, setIsDarkMode] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
+
+  const resetSession = useSessionStore((state) => state.resetSession);
+
+  const waitForCancelled = (timeoutMs = 150) =>
+    new Promise((resolve) => {
+      const off = window.api?.onCancelled?.(() => {
+        off?.();
+        resolve(true);
+      });
+      setTimeout(() => {
+        off?.();
+        resolve(false);
+      }, timeoutMs);
+    });
 
   const openRef = useRef(false);
   useEffect(() => {
@@ -82,6 +98,7 @@ function App() {
         <div className="alert-buttons">
           <Button
             variant="gray"
+            disabled={isCancelling}
             onClick={() => {
               setShowStopRecoverPopup(false);
               setPendingPath(null);
@@ -91,10 +108,19 @@ function App() {
           </Button>
           <Button
             variant="dark"
-            onClick={() => {
+            onClick={async () => {
+              try {
+                setIsCancelling(true);
+                await window.api?.cancelRecovery?.();
+                const got = await waitForCancelled(150);
+                if (!got) {
+                  resetSession();
+                }
+              } catch {}
               if (pendingPath) navigate(pendingPath);
               setPendingPath(null);
               setShowStopRecoverPopup(false);
+              setIsCancelling(false);
             }}
           >
             이동하기
@@ -105,7 +131,5 @@ function App() {
     </div>
   );
 }
-
-
 
 export default App;

@@ -88,7 +88,6 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
   const [showDiskFullAlert, setShowDiskFullAlert] = useState(false);
   const navigate = useNavigate();
   const [selectAll, setSelectAll] = useState(false);
-  const [isCancelling, setIsCancelling] = useState(false);
   
   const rollbackRef = useRef(() => {});
   const [selectedChannel, setSelectedChannel] = useState(null);
