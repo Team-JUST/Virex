@@ -14,6 +14,27 @@ from python_engine.core.analyzer.integrity import get_integrity_info
 from python_engine.core.analyzer.struc import get_structure_info
 from python_engine.core.recovery.utils.unit import bytes_to_unit
 
+SECTOR_SIZE_DEFAULT = 512
+
+def _detect_sector_size(img_info, volume):
+    try:
+        bs = getattr(volume.info, "block_size", None)
+        if bs and bs > 0:
+            return int(bs)
+    except Exception:
+        pass
+    try:
+        ewf = getattr(img_info, "_ewf_handle", None)
+        if ewf:
+            s = getattr(ewf, "get_bytes_per_sector", None)
+            if callable(s):
+                v = s()
+                if v and v > 0:
+                    return int(v)
+    except Exception:
+        pass
+    return SECTOR_SIZE_DEFAULT
+
 logger = logging.getLogger(__name__)
 VIDEO_EXTENSIONS = ('.mp4', '.avi')
 
@@ -176,14 +197,16 @@ def extract_videos_from_e01(e01_path):
     try:
         img_info = open_image_file(e01_path)
         volume = pytsk3.Volume_Info(img_info)
+
+        sector_size = _detect_sector_size(img_info, volume)
+
     except Exception as e:
         logger.error(f"이미지 열기 실패: {e}")
         return [], None, 0
 
     temp_base = tempfile.gettempdir()
-    e01_size = os.stat(e01_path).st_size
-    needed = int(e01_size * 1.2) + 1_000_000_000
     free = shutil.disk_usage(temp_base).free
+    needed = int(img_info.get_size() * 0.2) + 1_000_000_000
 
     if free < needed:
         print(json.dumps({"event": "disk_full", "free": free, "needed": needed}), flush=True)
@@ -191,21 +214,196 @@ def extract_videos_from_e01(e01_path):
 
     output_dir = tempfile.mkdtemp(prefix="Virex_", dir=temp_base)
 
+    # --- 볼륨 슬랙 계산/저장 섹션 (교체본) ---
+    media_size = img_info.get_size()
+    allocated = _collect_allocated_ranges(volume, sector_size)
+    # 보호 영역 제외: 처음/끝 1 섹터(보호/백업 GPT 등) 제거
+    gaps = _subtract_reserved(
+        _compute_gaps(allocated, media_size),
+        [(0, sector_size), (media_size - sector_size, media_size)]
+    )
+
+
+    # 크기 일관성 검증 이벤트
+    allocated_total = _sum_ranges(allocated)
+    expected_slack = max(0, media_size - allocated_total)
+    actual_slack = sum(length for (_, length) in gaps)
+    print(json.dumps({
+        "event": "vol_check",
+        "media_size": media_size,
+        "allocated_total": allocated_total,
+        "expected_slack": expected_slack,
+        "actual_slack": actual_slack
+    }), flush=True)
+    if actual_slack != expected_slack:
+        print(json.dumps({
+            "event": "vol_mismatch",
+            "reason": "size_mismatch",
+            "expected_slack": expected_slack,
+            "actual_slack": actual_slack
+        }), flush=True)
+
+    print(json.dumps({"event": "vol_start", "output_dir": output_dir, "total": len(gaps)}), flush=True)
+
+    if actual_slack > 0 and len(gaps) > 0:
+        slack_dir = os.path.join(output_dir, "vol_slack")
+        os.makedirs(slack_dir, exist_ok=True)
+
+        meta = {
+            "image_path": e01_path,
+            "media_size": media_size,
+            "sector_size": sector_size,
+            "partitions": [{"start": s, "end": e} for (s, e) in allocated],
+            "partition_count": len(allocated),
+            "gaps": [],
+            "allocated_total": allocated_total,
+            "slack_total": actual_slack
+        }
+
+        for idx, (off, length) in enumerate(gaps):
+            gap_file = _dump_gap(img_info, off, length, slack_dir, idx)  # 001.bin, 002.bin...
+            meta["gaps"].append({
+                "index": idx, "offset": off, "length": length, "file": gap_file
+            })
+            print(json.dumps({
+                "event": "vol_gap", "index": idx, "offset": off, "length": length
+            }), flush=True)
+
+        meta_path = os.path.join(slack_dir, "volume_slack.json")
+        with open(meta_path, "w", encoding="utf-8") as wf:
+            json.dump(meta, wf, ensure_ascii=False, indent=2)
+
+        print(json.dumps({"event": "vol_done", "gaps": len(gaps), "meta": meta_path}), flush=True)
+    else:
+        # 갭이 없으면 폴더/메타 생성 안 함
+        print(json.dumps({"event": "vol_done", "gaps": 0, "meta": None}), flush=True)
+    # --- 볼륨 슬랙 섹션 끝 ---
+
+    try:
+        vol_slack_dir = os.path.join(output_dir, "vol_slack")
+        meta_json = os.path.join(vol_slack_dir, "volume_slack.json")
+        if os.path.isfile(meta_json):
+            print(json.dumps({"event": "carve_start", "dir": vol_slack_dir}), flush=True)
+            from python_engine.core.vol_carver import auto_carve_and_rebuild_from_vol_slack
+            carve_summary = auto_carve_and_rebuild_from_vol_slack(vol_slack_dir)
+            print(json.dumps({"event": "carve_done", **carve_summary}), flush=True)
+        else:
+            print(json.dumps({"event": "carve_skip", "reason": "no_vol_slack_meta"}), flush=True)
+    except Exception as e:
+        print(json.dumps({"event": "carve_error", "error": str(e)}), flush=True)
+
+
+    all_results = []
+    all_total = 0
+
     for partition in volume:
-        if partition.flags == pytsk3.TSK_VS_PART_FLAG_UNALLOC or partition.start == 0:
+        if partition.flags == pytsk3.TSK_VS_PART_FLAG_UNALLOC:
             logger.info(f"건너뜀: Unallocated 파티션 (offset: {partition.start})")
             continue
 
-        fs_info = pytsk3.FS_Info(img_info, offset=partition.start * 512)
+        try:
+            fs_info = pytsk3.FS_Info(img_info, offset=partition.start * sector_size)
+        except Exception as e:
+            print(json.dumps({
+                "event": "fs_mount_fail",
+                "start": partition.start,
+                "len": partition.len,
+                "error": str(e)
+            }), flush=True)
+            continue
+
         total = count_video_files(fs_info)
-        print(json.dumps({"processed": 0, "total": total}), flush=True)
+        all_total += total
+        print(json.dumps({"processed": 0, "total": total, "part_start": partition.start}), flush=True)
 
-        results = extract_video_files(fs_info, output_dir, path="/", total_count=total, progress=[0])
+        part_results = extract_video_files(fs_info, output_dir, path="/", total_count=total, progress=[0])
+        all_results.extend(part_results)
 
-        elapsed = int(time.time() - start_time)
-        h, m = divmod(elapsed, 60)
-        logger.info(f"소요 시간: {h // 60}시간 {m % 60}분 {m}초")
+    elapsed = int(time.time() - start_time)
+    h, m = divmod(elapsed, 60)
+    logger.info(f"소요 시간: {h // 60}시간 {m % 60}분 {m}초")
 
-        return results, output_dir, total
+    return all_results, output_dir, all_total
 
-    return [], output_dir, 0
+
+# 볼륨 슬랙 
+
+def _collect_allocated_ranges(volume, sector_size):
+    """할당된 파티션 범위를 (start_byte, end_byte) 리스트로 반환하고 병합한다."""
+    ranges = []
+    for part in volume:
+        if part.flags == pytsk3.TSK_VS_PART_FLAG_UNALLOC:
+            continue
+        if part.len == 0:
+            continue
+        s = part.start * sector_size
+        e = (part.start + part.len) * sector_size
+        ranges.append((s, e))
+    ranges.sort()
+    merged = []
+    for s, e in ranges:
+        if not merged or s > merged[-1][1]:
+            merged.append((s, e))
+        else:
+            ps, pe = merged[-1]
+            merged[-1] = (ps, max(pe, e))
+    return merged
+
+
+def _compute_gaps(allocated_ranges, media_size):
+    """[0, media_size)에서 allocated_ranges의 빈 공간들을 (offset, length)로 반환."""
+    gaps = []
+    cursor = 0
+    for s, e in allocated_ranges:
+        if cursor < s:
+            gaps.append((cursor, s - cursor))
+        cursor = max(cursor, e)
+    if cursor < media_size:
+        gaps.append((cursor, media_size - cursor))
+    return gaps
+
+def _sum_ranges(ranges):
+    return sum(e - s for (s, e) in ranges)
+
+def _subtract_reserved(gaps, reserved_ranges):
+    def subtract(seg, cut):
+        s, l = seg
+        e = s + l
+        cs, ce = cut
+        # 겹침 없으면 그대로
+        if ce <= s or e <= cs:
+            return [seg]
+        out = []
+        if s < cs:
+            out.append((s, max(0, cs - s)))
+        if ce < e:
+            out.append((ce, max(0, e - ce)))
+        return [(ss, ll) for (ss, ll) in out if ll > 0]
+
+    out = []
+    for g in gaps:
+        frags = [g]
+        for r in reserved_ranges:
+            nxt = []
+            for f in frags:
+                nxt.extend(subtract(f, r))
+            frags = nxt
+        out.extend(frags)
+    return out
+
+
+def _dump_gap(img_info, offset, length, outdir, index, chunk_size=4*1024*1024):
+    """갭을 chunk로 읽어 001.bin 같은 이름으로 저장하고 파일 경로를 반환."""
+    fn = os.path.join(outdir, f"{index+1:03d}.bin")
+    remaining = length
+    cur = offset
+    with open(fn, "wb") as wf:
+        while remaining > 0:
+            n = min(remaining, chunk_size)
+            data = img_info.read(cur, n)
+            if not data:
+                break
+            wf.write(data)
+            cur += len(data)
+            remaining -= len(data)
+    return fn
