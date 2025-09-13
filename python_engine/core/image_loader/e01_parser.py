@@ -113,6 +113,13 @@ def handle_mp4_file(name, filepath, data, file_obj, output_dir, category):
         else origin_video_path
     )
 
+    try:
+        has_slack_output = bool(slack_info.get('video_path') or slack_info.get('image_path'))
+        if not has_slack_output and os.path.exists(slack_dir):
+            os.rmdir(slack_dir)
+    except Exception:
+        pass
+
     return {
         'name': name,
         'path': filepath,
