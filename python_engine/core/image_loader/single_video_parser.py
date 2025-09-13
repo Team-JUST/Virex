@@ -49,13 +49,21 @@ def handle_single_video_file(filepath, output_dir):
             use_gpu=False
         )
         origin_video_path = slack_info.get('source_path', original_path)
+        recovered_mp4 = slack_info.get('video_path')
+
+        analysis_target = (
+            recovered_mp4
+            if (slack_info.get('recovered') and recovered_mp4 and os.path.exists(recovered_mp4))
+            else origin_video_path
+        )
+        
         result = {
             'name': name,
             'path': filepath,
             'size': bytes_to_unit(len(data)),
             'origin_video': origin_video_path,
             'slack_info': slack_info,
-            'analysis': build_analysis(origin_video_path, meta)
+            'analysis': build_analysis(analysis_target, meta)
         }
     elif ext == '.avi':
         avi_info = recover_avi_slack(
