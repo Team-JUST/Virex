@@ -12,7 +12,16 @@ def convert_video(input_path, output_path, fps=30, extra_args=None, use_gpu=True
     wrapping_mode = want_copy or is_raw_h264
 
     if wrapping_mode:
-        cmd += ['-r', str(fps), '-f', 'h264', '-i', input_path, '-c:v', 'copy', '-movflags', '+faststart']
+        # JDR 파일의 디코딩 에러 방지를 위해 재인코딩 모드로 변경
+        # 손상된 프레임을 건너뛰고 안정적인 MP4 생성
+        cmd += [
+            '-r', str(fps), '-f', 'h264', '-i', input_path,
+            '-err_detect', 'ignore_err',  # 에러 무시
+            '-fflags', '+genpts',         # PTS 재생성
+            '-avoid_negative_ts', 'make_zero',  # 음수 타임스탬프 방지
+        ]
+            
+        cmd += ['-movflags', '+faststart']
     else:
         if use_gpu:
             cmd += [
