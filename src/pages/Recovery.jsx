@@ -258,11 +258,14 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
       return toFileUrl(path || f.origin_video || '');
     }
 
-    const damagedAndRecovered = 
-      Boolean(analysis?.integrity?.damaged) &&
-      Boolean(slack_info?.recovered);
-    const prefer = damagedAndRecovered ? (slack_info?.video_path || f.origin_video) : f.origin_video;
-    return toFileUrl(prefer || '');
+    const isDamaged = Boolean(f?.analysis?.integrity?.damaged);
+    const isRecovered = Boolean(f?.slack_info?.recovered);
+    
+    if (isDamaged && isRecovered) {
+      return toFileUrl(f.slack_info?.video_path || f.origin_video || '');
+    }
+
+    return toFileUrl(f.origin_video || '');
   }, [selectedResultFile, selectedChannel]);
 
   const totalBytes = unitToBytes(selectedResultFile?.size || '0 B');
