@@ -242,6 +242,8 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
     return ['front','rear','side'].filter((ch) => !!f.channels?.[ch]?.full_video_path);
   }, [selectedResultFile]);
 
+  const slack_info = selectedResultFile?.slack_info ?? { recovered: false, slack_size: '0 B', slack_rate: 0,  };
+  
   const currentVideoSrc = useMemo(() => {
     const f = selectedResultFile;
     if (!f) return '';
@@ -256,12 +258,17 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
       return toFileUrl(path || f.origin_video || '');
     }
 
-    return toFileUrl(f.origin_video || '');
+    const damagedAndRecovered = 
+      Boolean(analysis?.integrity?.damaged) &&
+      Boolean(slack_info?.recovered);
+    const prefer = damagedAndRecovered ? (slack_info?.video_path || f.origin_video) : f.origin_video;
+    return toFileUrl(prefer || '');
   }, [selectedResultFile, selectedChannel]);
 
-  const slack_info = selectedResultFile?.slack_info ?? { recovered: false, slack_size: '0 B', slack_rate: 0,  };
   const totalBytes = unitToBytes(selectedResultFile?.size || '0 B');
   const isAVI = selectedResultFile?.name?.toLowerCase().endsWith('.avi');
+  const isMP4 = selectedResultFile?.name?.toLowerCase().endsWith('.mp4');
+  const isDamagedAndRecovered = Boolean(analysis?.integrity?.damaged && slack_info?.recovered && isMP4);
   const aviSlackBytes = isAVI && selectedResultFile?.channels
     ? Object.values(selectedResultFile.channels)
       .filter(Boolean)
@@ -1102,29 +1109,55 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
                       <span className="parser-info-label">전체 크기</span>
                       <span className="parser-info-value">{totalLabel}</span>
                     </div>
-                    <div className="parser-info-row">
-                      <span className="parser-info-label">원본 영상 크기</span>
-                      <span className="parser-info-value">{usedLabel}</span>
-                    </div>
-                    <div className="parser-info-row">
-                      <span className="parser-info-label">슬랙 영상 크기</span>
-                      <span className="parser-info-value">{slackLabel}</span>
-                    </div>
-                    <div className="parser-info-row parser-info-row--withbar">
-                      <div className="data-bar-flex-row-between">
-                        <span className="parser-info-label">전체 영상 대비 슬랙 영상 비율</span>
-                        {slackPercent > 0 && (
-                          <div className="data-bar-wrapper is-single is-narrow">
-                            <div
-                              className="data-bar-used"
-                              style={{ width: `${slackPercent}%`, minWidth: '44px' }}
-                            >
-                              <span className="data-bar-text">{slackPercent} %</span>
-                            </div>
+                    {isDamagedAndRecovered ? (
+                      <>
+                        <div className="parser-info-row">
+                          <span className="parser-info-label">복원된 영상 크기</span>
+                          <span className="parser-info-value">{slackLabel}</span>
+                        </div>
+                        <div className="parser-info-row parser-info-row--withbar">
+                          <div className="data-bar-flex-row-between">
+                            <span className="parser-info-label">전체 대비 복원 비율</span>
+                            {slackPercent > 0 && (
+                              <div className="data-bar-wrapper is-single is-narrow">
+                                <div
+                                  className="data-bar-used"
+                                  style={{ width: `${slackPercent}%`, minWidth: '44px' }}
+                                >
+                                  <span className="data-bar-text">{slackPercent} %</span>
+                                </div>
+                              </div>
+                            )}
                           </div>
-                        )}
-                      </div>
-                    </div>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="parser-info-row">
+                          <span className="parser-info-label">원본 영상 크기</span>
+                          <span className="parser-info-value">{usedLabel}</span>
+                        </div>
+                        <div className="parser-info-row">
+                          <span className="parser-info-label">슬랙 영상 크기</span>
+                          <span className="parser-info-value">{slackLabel}</span>
+                        </div>
+                        <div className="parser-info-row parser-info-row--withbar">
+                          <div className="data-bar-flex-row-between">
+                            <span className="parser-info-label">전체 영상 대비 슬랙 영상 비율</span>
+                            {slackPercent > 0 && (
+                              <div className="data-bar-wrapper is-single is-narrow">
+                                <div
+                                  className="data-bar-used"
+                                  style={{ width: `${slackPercent}%`, minWidth: '44px' }}
+                                >
+                                  <span className="data-bar-text">{slackPercent} %</span>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </>
+                    )}                    
                   </div>
                 </div>
 
