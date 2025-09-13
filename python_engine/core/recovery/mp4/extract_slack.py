@@ -282,6 +282,16 @@ def recover_mp4_slack(filepath, output_h264_dir, output_video_dir, target_format
                 h264_path=h264_path, mp4_path=mp4_path, jpeg_path=jpeg_path,
                 use_gpu=use_gpu
             )
+
+        if not slack:
+            return {
+                "recovered": False,
+                "slack_size": "0 B",
+                "video_path": None,
+                "image_path": None,
+                "is_image_fallback": False,
+                "slack_rate": 0.0,
+            }
         
         sps_pps = extract_sps_pps(moov_data)
         if not sps_pps:
@@ -297,15 +307,19 @@ def recover_mp4_slack(filepath, output_h264_dir, output_video_dir, target_format
         slack_rate = round((recovered_bytes / len(data) * 100), 2) if len(data) else 0.0
 
         if frame_count == 0:
-            logger.info(f"{filename} → 슬랙 내 유효 프레임 없음 → 전체 스캔 fallback")
-            try: os.remove(h264_path)
-            except: pass
-            h264_path, mp4_path, jpeg_path = _paths_for(filename, output_h264_dir, output_video_dir, "damaged")
-            return _fallback_wholefile(
-                data=data, filename=filename,
-                h264_path=h264_path, mp4_path=mp4_path, jpeg_path=jpeg_path,
-                use_gpu=use_gpu
-            )
+            try:
+                if os.path.exists(h264_path):
+                    os.remove(h264_path)
+            except Exception:
+                pass
+            return {
+                "recovered": False,
+                "slack_size": "0 B",
+                "video_path": None,
+                "image_path": None,
+                "is_image_fallback": False,
+                "slack_rate": slack_rate
+            }
 
         try:
             convert_video(h264_path, mp4_path, extra_args=['-c:v', 'copy'], use_gpu=use_gpu, wait=True)
@@ -326,11 +340,11 @@ def recover_mp4_slack(filepath, output_h264_dir, output_video_dir, target_format
             # 1초 미만 영상이면 mp4 삭제, jpeg 생성
             if duration is not None and duration < 1.0:
                 ok = extract_first_frame(mp4_path, jpeg_path)
-                try:
-                    os.remove(mp4_path)
-                except Exception:
-                    pass
                 if ok:
+                    try:
+                        os.remove(mp4_path)
+                    except Exception:
+                        pass
                     final_size = os.path.getsize(jpeg_path) if os.path.exists(jpeg_path) else recovered_bytes
                     return {
                         "recovered": True,
@@ -342,7 +356,7 @@ def recover_mp4_slack(filepath, output_h264_dir, output_video_dir, target_format
                     }
                 else:
                     # jpeg 추출 실패 시 mp4 경로 반환
-                    final_size = os.path.getsize(mp4_path)
+                    final_size = os.path.getsize(mp4_path) if os.path.exists(mp4_path) else recovered_bytes
                     return {
                         "recovered": True,
                         "slack_size": bytes_to_unit(int(final_size)),
@@ -351,17 +365,6 @@ def recover_mp4_slack(filepath, output_h264_dir, output_video_dir, target_format
                         "is_image_fallback": False,
                         "slack_rate": slack_rate
                     }
-            else:
-                # 1초 이상이면 mp4 경로 반환
-                final_size = os.path.getsize(mp4_path)
-                return {
-                    "recovered": True,
-                    "slack_size": bytes_to_unit(int(final_size)),
-                    "video_path": mp4_path,
-                    "image_path": None,
-                    "is_image_fallback": False,
-                    "slack_rate": slack_rate
-                }
         else:
             logger.error(f"{filename} → mp4 파일 미생성")
             return _fail_result()
@@ -412,11 +415,11 @@ def _fallback_wholefile(data, filename, h264_path, mp4_path, jpeg_path, use_gpu)
         # 1초 미만 영상이면 mp4 삭제, jpeg 생성
         if duration is not None and duration < 1.0:
             ok = extract_first_frame(mp4_path, jpeg_path)
-            try:
-                os.remove(mp4_path)
-            except Exception:
-                pass
             if ok:
+                try:
+                    os.remove(mp4_path)
+                except Exception:
+                    pass
                 final_size = os.path.getsize(jpeg_path) if os.path.exists(jpeg_path) else recovered_bytes
                 return {
                     "recovered": True,
@@ -428,7 +431,7 @@ def _fallback_wholefile(data, filename, h264_path, mp4_path, jpeg_path, use_gpu)
                 }
             else:
                 # jpeg 추출 실패 시 mp4 경로 반환
-                final_size = os.path.getsize(mp4_path)
+                final_size = os.path.getsize(mp4_path) if os.path.exists(mp4_path) else recovered_bytes
                 return {
                     "recovered": True,
                     "slack_size": bytes_to_unit(int(final_size)),
@@ -437,17 +440,6 @@ def _fallback_wholefile(data, filename, h264_path, mp4_path, jpeg_path, use_gpu)
                     "is_image_fallback": False,
                     "slack_rate": slack_rate
                 }
-        else:
-            # 1초 이상이면 mp4 경로 반환
-            final_size = os.path.getsize(mp4_path)
-            return {
-                "recovered": True,
-                "slack_size": bytes_to_unit(int(final_size)),
-                "video_path": mp4_path,
-                "image_path": None,
-                "is_image_fallback": False,
-                "slack_rate": slack_rate
-            }
     
     logger.info(f"[fallback] {filename} → mp4 생성 실패")
     return _fail_result()
