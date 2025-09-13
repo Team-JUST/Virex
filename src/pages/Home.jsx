@@ -67,7 +67,7 @@ function ExplorerView({
   mountPath,
   currentPath,
   entries,
-  selectedE01,
+  selectedFile,
   onBack,
   onSelectDrive,
   onOpenDir,
@@ -83,7 +83,7 @@ function ExplorerView({
     navigate('/recovery', {
       state: {
         autoStart: true,
-        e01File: selectedE01
+        file: selectedFile
       }
     });
   };
@@ -132,16 +132,16 @@ function ExplorerView({
           </div>
 
           <div id="selected_file_info">
-            {selectedE01 && (
+            {selectedFile && (
               <div className="selected_box">
                 <h4 style={{ marginLeft: '10px' }}>선택된 파일</h4>
-                <p style={{ marginLeft: '10px' }}><strong>파일명:</strong> {selectedE01.name}</p>
-                <p style={{ marginLeft: '10px' }}><strong>크기:</strong> {bytesToGB(selectedE01.size)}</p>
-                <p style={{ marginLeft: '10px' }}><strong>경로:</strong> {selectedE01.path}</p>
+                <p style={{ marginLeft: '10px' }}><strong>파일명:</strong> {selectedFile.name}</p>
+                <p style={{ marginLeft: '10px' }}><strong>크기:</strong> {bytesToGB(selectedFile.size)}</p>
+                <p style={{ marginLeft: '10px' }}><strong>경로:</strong> {selectedFile.path}</p>
                 <Button
                   variant="dark"
                   onClick={handleStart}
-                  disabled={!selectedE01 || !selectedE01.path || !selectedE01.name}
+                  disabled={!selectedFile || !selectedFile.path || !selectedFile.name}
                 >
                   복원 시작
                 </Button>
@@ -174,7 +174,7 @@ const Home = ({ isDarkMode }) => {
   const [drives, setDrives] = useState([]);
   const [currentPath, setCurrentPath] = useState('');
   const [entries, setEntries] = useState([]);
-  const [selectedE01, setSelectedE01] = useState(null);
+  const [selectedFile, setSelectedFile] = useState(null);
   const [mountPath, setMountPath] = useState('');
 
   useEffect(() => {
@@ -193,14 +193,14 @@ const Home = ({ isDarkMode }) => {
 
   const loadFolder = useCallback(async (folderPath) => {
     setCurrentPath(folderPath);
-    setSelectedE01(null);
+    setSelectedFile(null);
     const raw = await window.api.readFolder(folderPath);
     raw.sort((a, b) => {
       if (a.isDirectory && !b.isDirectory) return -1;
       if (!a.isDirectory && b.isDirectory) return 1;
       return a.name.localeCompare(b.name);
     });
-    setEntries(raw.filter((e) => e.isDirectory || e.isE01));
+    setEntries(raw.filter((e) => e.isDirectory || e.isSupported));
   }, []);
 
   const handleDriveClick = (mount) => {
@@ -222,7 +222,7 @@ const Home = ({ isDarkMode }) => {
   };
 
   const handleOpenDir = (p) => loadFolder(p);
-  const handleSelectE01 = (entry) => setSelectedE01(entry);
+  const handleSelectFile = (entry) => setSelectedFile(entry);
 
   return (
     <div className={`main_content ${isDarkMode ? 'dark-mode' : ''}`}>
@@ -255,11 +255,11 @@ const Home = ({ isDarkMode }) => {
           mountPath={mountPath}
           currentPath={currentPath}
           entries={entries}
-          selectedE01={selectedE01}
+          selectedFile={selectedFile}
           onBack={handleBack}
           onSelectDrive={handleSelectDrive}
           onOpenDir={handleOpenDir}
-          onSelectE01={handleSelectE01}
+          onSelectFile={handleSelectFile}
           isDarkMode={isDarkMode}
         />
       )}
