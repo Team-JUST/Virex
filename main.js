@@ -52,6 +52,17 @@ let currentRecoveryProc = null;
 let currentTempDir = null;
 let isCancellingRecovery = false;
 
+function openFileDialog(extensions) {
+  return dialog.showOpenDialog({
+    title: '복구할 파일 선택',
+    properties: ['openFile'],
+    filters: [
+      { name: 'Supported', extensions },
+      { name: 'All Files', extensions: ['*'] },
+    ],
+  });
+}
+
 // Classify drive type
 function classifyDrive(drive) {
   if (drive.isUSB || drive.isCard || drive.isRemovable) return 'removable';
@@ -188,6 +199,7 @@ ipcMain.handle('read-folder', async (_event, folderPath) => {
     const dirents = await fs.readdir(folderPath, { withFileTypes: true });
     dirents.sort((a, b) => a.name.localeCompare(b.name, 'en', { sensitivity: 'base' }));
 
+    const SUPPORTED_EXTS = ['.e01', '.001', '.mp4', '.avi', '.jdr'];
     const items = [];
     for (const e of dirents) {
       const full = path.join(folderPath, e.name);
@@ -199,11 +211,15 @@ ipcMain.handle('read-folder', async (_event, folderPath) => {
           try { size = fssync.statSync(full).size; } catch { }
         }
       }
+      const lower = e.name.toLowerCase();
+      const ext = path.extname(lower);
+      const isSupported = SUPPORTED_EXTS.includes(ext);
+
       items.push({
         name: e.name,
         path: full,
         isDirectory: e.isDirectory(),
-        isE01: e.name.toLowerCase().endsWith('.e01'),
+        isSupported,
         size,
       });
     }
@@ -493,16 +509,12 @@ ipcMain.handle('clear-cache', async () => {
   return deleted;
 });
 
-
-
-ipcMain.handle('dialog:openE01File', async () => {
-  const { canceled, filePaths } = await dialog.showOpenDialog({
-    title: 'E01 파일 선택',
-    filters: [{ name: 'E01 Files', extensions: ['e01'] }],
-    properties: ['openFile'],
-  });
-  if (canceled) return null;
-  return filePaths[0];  // 선택된 파일 경로 하나 반환
+ipcMain.handle('dialog:openSupportedFile', async () => {
+  const { canceled, filePaths } = await openFileDialog(['e01','001','mp4','avi','jdr']);
+  return canceled || !filePaths?.[0] ? null : filePaths[0];
 });
 
-
+ipcMain.handle('dialog:openE01File', async () => {
+  const { canceled, filePaths } = await openFileDialog(['e01']);
+  return canceled || !filePaths?.[0] ? null : filePaths[0];
+});
