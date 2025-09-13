@@ -9,7 +9,7 @@ contextBridge.exposeInMainWorld('api', {
   openE01File: () => ipcRenderer.invoke('dialog:openE01File'),
   startRecovery: (e01Path) => ipcRenderer.invoke('start-recovery', e01Path),
   cancelRecovery: () => ipcRenderer.invoke('cancel-recovery'),
-  onCancelled: (cb) => { const h = () => cb(); ipcRenderer.on('recovery-cancelled', h); return () => ipcRenderer.removeListener('recovery-cancelled', h); },
+  readCarvedIndex: (outDir) => ipcRenderer.invoke('readCarvedIndex', outDir),
   clearCache: () => ipcRenderer.invoke('clear-cache'),
   
   onDiskFull: (cb) => {

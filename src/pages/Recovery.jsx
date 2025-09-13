@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect, useMemo, use } from 'react';
+import React, { useRef, useState, useEffect, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 
 import { useSessionStore } from '../session.js';
@@ -34,6 +34,10 @@ import IntegrityGreen from '../images/integrity_g.svg?react';
 import IntegrityRed from '../images/integrity_r.svg?react';
 import CompleteIcon from '../images/complete.svg?react';
 import StorageFullIcon from '../images/storageFullIcon.svg?react';
+
+import fs from 'fs';
+import path from 'path';
+
 
 const Recovery = ({ isDarkMode }) => {
 
@@ -396,12 +400,44 @@ const totalCount = results.length + volumeSlackCount;
 
 // 14) 분석 경로/다운로드 로그·에러 리스너
   useEffect(() => {
-    const offPath = window.api.onAnalysisPath(path => {
-      console.log("[Debug] analysis path : ", path);
-      setTempOutputDir(path);
-    });
-    return () => offPath();
-  }, []);
+  const offPath = window.api.onAnalysisPath(async (dir) => {
+    console.log("[Debug] analysis path :", dir);
+    setTempOutputDir(dir);
+
+    try {
+      // 백엔드가 항상 파일을 만들어 두므로 한번만 읽으면 됨
+      const idx = await window.api.readCarvedIndex(dir); // 최소 {items: []}
+
+      const list = (idx?.items || []).flatMap(it => {
+        const rebuilt = (it.rebuilt || [])
+          .filter(x => (x?.rebuilt && x?.ok) || x?.raw)
+          .map(x => ({
+            name: basename(x.rebuilt || x.raw),
+            path: (x.rebuilt || x.raw),
+            size: Number(x?.probe?.format?.size || 0),
+            _remuxFailed: !x?.rebuilt || !x?.ok
+          }));
+
+        const jdr = (it.jdr || [])
+          .filter(x => x?.ok && x?.rebuilt)
+          .map(x => ({
+            name: basename(x.rebuilt),
+            path: x.rebuilt,
+            size: Number(x?.probe?.format?.size || 0),
+          }));
+
+        return [...rebuilt, ...jdr];
+      });
+
+      setVolumeSlack(list);
+    } catch (e) {
+      console.warn("[Debug] readCarvedIndex failed:", e);
+      setVolumeSlack([]); // 실패 시 빈 배열
+    }
+  });
+  return () => offPath();
+}, []);
+
 
   useEffect(() => {
     const offLog = window.api.onDownloadLog(line => {
@@ -561,14 +597,6 @@ const totalCount = results.length + volumeSlackCount;
     }
     setSelectAll(!selectAll);
   };
-
-
-  useEffect(() => {
-    setSelectAll(
-      results.length > 0 && selectedFilesForDownload.length === results.length
-    );
-  }, [results, selectedFilesForDownload]);
-
 
   // 다운로드 백엔드
   const handleDownloadConfirm = async () => {
@@ -822,7 +850,6 @@ const totalCount = results.length + volumeSlackCount;
   const [showClosePopup, setShowClosePopup] = useState(false);
 
   // 23) 볼륨 슬랙 리스트
-
   useEffect(() => {
     const total = results.length + volumeSlack.length; 
     setSelectAll(
@@ -842,27 +869,41 @@ const totalCount = results.length + volumeSlackCount;
 
   useEffect(() => {
     if (!window.api?.readCarvedIndex) return;
-
+    if (!recoveryDone) return;
+    if (!tempOutputDir) return;
     (async () => {
       try {
-        const idx = await window.api.readCarvedIndex(); 
+        const idx = await window.api.readCarvedIndex(tempOutputDir);
+
         const list =
-          idx?.items
-            ?.flatMap(it =>
-              (it.rebuilt || [])
-                .filter(x => x?.ok && x?.rebuilt) 
-                .map(x => ({
-                  name: basename(x.rebuilt),
-                  path: x.rebuilt,
-                  size: Number(x?.probe?.format?.size || 0),
-                }))
-            ) || [];
+          idx?.items?.flatMap(it => {
+            const rebuilt = (it.rebuilt || [])
+              .filter(x => (x?.rebuilt && x?.ok) || x?.raw)    // rebuilt가 없더라도 raw가 있으면 보여주기
+              .map(x => ({
+                name: basename(x.rebuilt || x.raw),
+                path: (x.rebuilt || x.raw),
+                size: Number(x?.probe?.format?.size || 0),
+                _remuxFailed: !x?.rebuilt || !x?.ok
+              }))
+
+            const jdr = (it.jdr || [])
+              .filter(x => x?.ok && x?.rebuilt)
+              .map(x => ({
+                name: basename(x.rebuilt),
+                path: x.rebuilt,
+                size: Number(x?.probe?.format?.size || 0), // JDR은 보통 probe 없음 → 0
+              }));
+
+            return [...rebuilt, ...jdr];
+          }) || [];
+
         setVolumeSlack(list);
       } catch (e) {
         console.warn("readCarvedIndex failed:", e);
       }
     })();
-  }, []);
+  }, [recoveryDone, tempOutputDir])
+
 
   return (
     <div className={`recovery-page ${isDarkMode ? 'dark-mode' : ''}`}>

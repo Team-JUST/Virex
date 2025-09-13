@@ -1,3 +1,4 @@
+const path = require('path');
 const { app, BrowserWindow, Menu, ipcMain, dialog, protocol } = require('electron');
 // 개발 환경에서 핫리로드 적용
 
@@ -18,7 +19,7 @@ if (process.env.NODE_ENV === 'development') {
     console.warn('[Debug] electron-reload not installed or failed:', e);
   }
 }
-const path = require('path');
+
 const { spawn } = require('child_process');
 const readline = require('readline');
 const drivelist = require('drivelist');
@@ -173,6 +174,7 @@ app.whenReady().then(() => {
   });
 
   createWindow();
+  startDrivePolling();
 });
 
 app.on('window-all-closed', () => {
@@ -247,6 +249,7 @@ ipcMain.handle('start-recovery', async (event, e01FilePath) => {
   // 2) (통과 시) 기존 파이썬 spawn 로직 실행
   return await new Promise((resolve, reject) => {
     let abortedByDiskFull = false;
+    let sentResults = false;
     const scriptPath = path.join(__dirname, 'python_engine', 'main.py');
     const env = {...process.env, PYTHONPATH: __dirname, PYTHONIOENCODING: 'utf-8',PYTHONUTF8: '1',  };
 
@@ -260,12 +263,25 @@ ipcMain.handle('start-recovery', async (event, e01FilePath) => {
 
     const rl = readline.createInterface({ input: python.stdout });
     rl.on('line', async line => {
+
       try {
         const data = JSON.parse(line);
 
+
         if (data.tempDir) {
           currentTempDir = data.tempDir;
-          console.log("[Debug] tempDir from python:", currentTempDir);
+          const win = BrowserWindow.fromWebContents(event.sender);
+          win?.webContents.send('analysis-path', data.tempDir); // 하이픈(-) 채널명
+          return;
+        }
+
+
+        if (data.event === 'extract_done') {
+          currentTempDir = data.output_dir || currentTempDir;
+          const win = BrowserWindow.fromWebContents(event.sender);
+          if (currentTempDir) win?.webContents.send('analysis-path', currentTempDir);
+          win?.webContents.send('recovery-results', Array.isArray(data.results) ? data.results : []);
+          sentResults = true; 
           return;
         }
 
@@ -317,6 +333,7 @@ ipcMain.handle('start-recovery', async (event, e01FilePath) => {
             console.error("[Debug] failed to read analysis.json : ", err);
             const win = BrowserWindow.fromWebContents(event.sender);
             win?.webContents.send('recovery-results', { error: err.message });
+            sentResults = true;
           }
           return;
         }
@@ -338,6 +355,11 @@ ipcMain.handle('start-recovery', async (event, e01FilePath) => {
       rl.close();
 
       const win = BrowserWindow.fromWebContents(event.sender);
+
+      if (!sentResults) {
+        console.log('[Debug] no results were sent; sending empty array');
+        try { win?.webContents.send('recovery-results', []); } catch {}
+      }
       const wasCancelling = isCancellingRecovery;
       const wasDiskFull = abortedByDiskFull;
 
@@ -472,6 +494,45 @@ ipcMain.handle('dialog:openDirectory', async (_event, options = {}) => {
   });
   if (canceled) return null;
   return filePaths[0];
+});
+
+ipcMain.handle('readCarvedIndex', async (_e, outDir) => {
+  const tryRead = async (p) => {
+    try { return JSON.parse(await fs.readFile(p, 'utf8')); }
+    catch { return null; }
+  };
+
+  const candidates = [
+    path.join(outDir, 'carved_index.json'),
+    path.join(outDir, 'carved', 'carved_index.json'),
+    path.join(outDir, 'carving', 'carved_index.json'),
+    path.join(outDir, 'results', 'carved_index.json'),
+  ];
+  for (const p of candidates) {
+    const j = await tryRead(p);
+    if (j) return j;
+  }
+
+  // BFS 탐색
+  const maxDepth = 3;
+  const queue = [{ dir: outDir, depth: 0 }];
+  while (queue.length) {
+    const { dir, depth } = queue.shift();
+    if (depth > maxDepth) continue;
+    let entries = [];
+    try { entries = await fs.readdir(dir, { withFileTypes: true }); } catch { continue; }
+    for (const e of entries) {
+      const full = path.join(dir, e.name);
+      if (e.isDirectory()) queue.push({ dir: full, depth: depth + 1 });
+      else if (e.isFile() && e.name.toLowerCase() === 'carved_index.json') {
+        const j = await tryRead(full);
+        if (j) return j;
+      }
+    }
+  }
+
+  // 못 찾으면 빈 구조 반환
+  return { items: [] };
 });
 
 
