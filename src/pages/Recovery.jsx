@@ -1291,27 +1291,40 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
                                     </button>
                                     
                                     {hasSlackBadge && (
-                                      <Badge
-                                        label="슬랙"
-                                        style={{ cursor: 'pointer' }}
-                                        onClick={() => {
-                                          setSelectedSlackFile(file);
-                                          if (isAVI) {
-                                            const [ch, media] = pickFirstAvailableChannel(file);
-                                            setSlackChannel(ch);
-                                            setSlackMedia(media || { type: null, src: '' });
-                                          } else {
-                                            setSlackChannel(null);
-                                            setSlackMedia(mp4Media || { type: null, src: '' });
-                                          }
-                                          setShowSlackPopup(true);
-                                        }}
-                                      />
+                                      file?.analysis?.integrity?.damaged
+                                        ? (
+                                            file?.slack_info?.recovered ? (
+                                              <Badge label="복원 완료" variant="yellow" />
+                                            ) : (
+                                              <Badge label="손상" variant="red" />
+                                            )
+                                          )
+                                        : (
+                                            <Badge
+                                              label="슬랙"
+                                              style={{ cursor: 'pointer' }}
+                                              onClick={() => {
+                                                setSelectedSlackFile(file);
+                                                if (isAVI) {
+                                                  const [ch, media] = pickFirstAvailableChannel(file);
+                                                  setSlackChannel(ch);
+                                                  setSlackMedia(media || { type: null, src: '' });
+                                                } else {
+                                                  setSlackChannel(null);
+                                                  setSlackMedia(mp4Media || { type: null, src: '' });
+                                                }
+                                                setShowSlackPopup(true);
+                                              }}
+                                              variant="blue"
+                                            />
+                                          )
                                     )}
                                   </div>
                                     
                                   <div className="file-meta">
-                                    {sizeLabel} ・ 슬랙비율: {slackRatePercent} %
+                                    {sizeLabel} ・ {file?.analysis?.integrity?.damaged && file?.slack_info?.recovered
+                                      ? `복원 비율: ${slackRatePercent} %`
+                                      : `슬랙 비율: ${slackRatePercent} %`}
                                   </div>
                                 </div>
                               </div>
