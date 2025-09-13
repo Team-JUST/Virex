@@ -80,6 +80,15 @@ const setSaveFrames = (b) => patchSession({ saveFrames: b });
 const openGroups = session.openGroups || {};
 const setOpenGroups = (next) => patchSession({ openGroups: next });
 
+// volume list
+const [volumeSlack, setVolumeSlack] = useState([]);
+const volumeSlackCount = volumeSlack?.length || 0;
+const volumeSlackBytes = (volumeSlack || []).reduce((s, f) => s + Number(f.size || 0), 0);
+
+const totalCount = results.length + volumeSlackCount;
+
+
+
 // 1) 화면 제어 상태 정의
   const startedRef = useRef(false);      
   const diskFullHandledRef = useRef(false); 
@@ -181,6 +190,13 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
     const u = m[2].toUpperCase();
     const mul = u === 'TB' ? 1024**4 : u === 'GB' ? 1024**3 : u === 'MB' ? 1024**2 : u === 'KB' ? 1024 : 1;
     return Math.floor(n * mul);
+  };
+
+  const basename = (p) => {
+    if (!p) return '';
+    const s = String(p);
+    const parts = s.split(/[\\/]/); 
+    return parts[parts.length - 1] || '';
   };
 
   const formatCodec = (codec) =>
@@ -512,12 +528,30 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
       // 전체 해제
       setSelectedFilesForDownload([]);
     } else {
-      // 전체 선택: 모든 파일 path 수집
-      const all = results.map(f => f.path);
+      // 전체 선택: results와 volumeSlack 각각의 path 전부 모으기
+      const all = [];
+
+      // results 배열 순회
+      for (let i = 0; i < results.length; i++) {
+        const file = results[i];
+        if (file && file.path) {
+          all.push(file.path);
+        }
+      }
+
+      // volumeSlack 배열 순회
+      for (let j = 0; j < volumeSlack.length; j++) {
+        const file = volumeSlack[j];
+        if (file && file.path) {
+          all.push(file.path);
+        }
+      }
+
       setSelectedFilesForDownload(all);
     }
     setSelectAll(!selectAll);
   };
+
 
   useEffect(() => {
     setSelectAll(
@@ -776,6 +810,49 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
   // 22) 리셋 팝업 핸들러
   const [showRestartPopup, setShowRestartPopup] = useState(false);
   const [showClosePopup, setShowClosePopup] = useState(false);
+
+  // 23) 볼륨 슬랙 리스트
+
+  useEffect(() => {
+    const total = results.length + volumeSlack.length; 
+    setSelectAll(
+      total > 0 && selectedFilesForDownload.length === total
+    );
+  }, [results, volumeSlack, selectedFilesForDownload]);
+
+  const mergedGroups = useMemo(() => {
+    if (volumeSlack && volumeSlack.length > 0) {
+      return {
+        ...groupedResults,
+        "Volume Slack": volumeSlack,
+      };
+    }
+    return groupedResults;
+  }, [groupedResults, volumeSlack]);
+
+  useEffect(() => {
+    if (!window.api?.readCarvedIndex) return;
+
+    (async () => {
+      try {
+        const idx = await window.api.readCarvedIndex(); 
+        const list =
+          idx?.items
+            ?.flatMap(it =>
+              (it.rebuilt || [])
+                .filter(x => x?.ok && x?.rebuilt) 
+                .map(x => ({
+                  name: basename(x.rebuilt),
+                  path: x.rebuilt,
+                  size: Number(x?.probe?.format?.size || 0),
+                }))
+            ) || [];
+        setVolumeSlack(list);
+      } catch (e) {
+        console.warn("readCarvedIndex failed:", e);
+      }
+    })();
+  }, []);
 
   return (
     <div className={`recovery-page ${isDarkMode ? 'dark-mode' : ''}`}>
@@ -1137,15 +1214,15 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
               </div>
               <div className="result-wrapper">
                 <p className="result-summary">
-                  총 {results.length}개의 파일, 용량 {
+                  총 {totalCount}개의 파일, 용량 {
                     bytesToUnit(
-                      results.reduce((sum, f) => sum + unitToBytes(f.size), 0)
+                      results.reduce((sum, f) => sum + unitToBytes(f.size), 0) + volumeSlackBytes
                     )
                   }
                 </p>
 
                 <div className="result-scroll-area" style={{ position: 'relative' }}>
-                  {Object.entries(groupedResults).map(([category, files]) => (
+                  {Object.entries(mergedGroups).map(([category, files]) => (
                     <div className="result-group" key={category}>
 
                       <div
