@@ -69,11 +69,11 @@ def read_file_content(file_obj):
         offset += len(chunk)
     return buffer.getvalue()
 
-def build_analysis(origin_video_path, meta):
+def build_analysis(basic_target_path, origin_video_path, meta):
     return {
-        'basic': get_basic_info_with_meta(origin_video_path, meta),
+        'basic': get_basic_info_with_meta(basic_target_path, meta),
         'integrity': get_integrity_info(origin_video_path),
-        'structure': get_structure_info(origin_video_path),
+        'structure': get_structure_info(basic_target_path),
     }
 
 def handle_mp4_file(name, filepath, data, file_obj, output_dir, category):
@@ -109,7 +109,7 @@ def handle_mp4_file(name, filepath, data, file_obj, output_dir, category):
         'size': bytes_to_unit(len(data)),
         'origin_video': origin_video_path,
         'slack_info': slack_info,
-        'analysis': build_analysis(analysis_target, file_obj.info.meta)
+        'analysis': build_analysis(analysis_target, origin_video_path, file_obj.info.meta)
     }
 
 def handle_avi_file(name, filepath, data, file_obj, output_dir, category):

@@ -11,11 +11,11 @@ from python_engine.core.recovery.utils.unit import bytes_to_unit
 
 VIDEO_EXTENSIONS = ('.mp4', '.avi', '.jdr')
 
-def build_analysis(origin_video_path, meta=None):
+def build_analysis(basic_target_path, origin_video_path, meta=None):
     return {
-        'basic': get_basic_info_with_meta(origin_video_path, meta),
+        'basic': get_basic_info_with_meta(basic_target_path, meta),
         'integrity': get_integrity_info(origin_video_path),
-        'structure': get_structure_info(origin_video_path),
+        'structure': get_structure_info(basic_target_path),
     }
 
 def handle_single_video_file(filepath, output_dir):
@@ -63,7 +63,7 @@ def handle_single_video_file(filepath, output_dir):
             'size': bytes_to_unit(len(data)),
             'origin_video': origin_video_path,
             'slack_info': slack_info,
-            'analysis': build_analysis(analysis_target, meta)
+            'analysis': build_analysis(analysis_target, origin_video_path, meta)
         }
     elif ext == '.avi':
         avi_info = recover_avi_slack(
