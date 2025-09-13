@@ -5,6 +5,7 @@ import shutil
 from typing import Optional, List, Iterable, Set
 from python_engine.core.image_loader.e01_parser import extract_videos_from_e01
 from python_engine.core.output.download_frame import download_frames
+from python_engine.core.image_loader.single_video_parser import extract_from_single_video
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -36,6 +37,7 @@ def main(e01_path: str,
     tmp_json_path: Optional[str] = None
     output_dir: Optional[str] = None
 
+    ext = os.path.splitext(e01_path)[1].lower()
     is_cached_analysis = (
         os.path.isdir(e01_path) and
         os.path.isfile(os.path.join(e01_path, "analysis.json"))
@@ -47,13 +49,20 @@ def main(e01_path: str,
         with open(os.path.join(output_dir, "analysis.json"), "r", encoding="utf-8") as rf:
             results = json.load(rf)
         total_files = len(results)
-    else:
-        results, output_dir, total_files = extract_videos_from_e01(e01_path)
-
+    elif ext in ('.mp4', '.avi', '.jdr'):
+        results, output_dir, total_files = extract_from_single_video(e01_path)
         if total_files == 0 or not results:
             print(json.dumps([]), flush=True)
             return
-
+        os.makedirs(output_dir, exist_ok=True)
+        tmp_json_path = os.path.join(output_dir, "analysis.json")
+        with open(tmp_json_path, "w", encoding="utf-8") as wf:
+            json.dump(results, wf, ensure_ascii=False, indent=2)
+    else:
+        results, output_dir, total_files = extract_videos_from_e01(e01_path)
+        if total_files == 0 or not results:
+            print(json.dumps([]), flush=True)
+            return
         os.makedirs(output_dir, exist_ok=True)
         tmp_json_path = os.path.join(output_dir, "analysis.json")
         with open(tmp_json_path, "w", encoding="utf-8") as wf:

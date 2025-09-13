@@ -158,7 +158,7 @@ def extract_first_frame(video_path, out_jpeg, force_input_format):
     except Exception:
         return False
 
-def recover_avi_slack(input_avi, base_dir, target_format='mp4'):
+def recover_avi_slack(input_avi, base_dir, target_format='mp4', use_gpu=False):
     os.makedirs(base_dir, exist_ok=True)
     with open(input_avi, "rb") as f:
         data = f.read()
@@ -225,7 +225,7 @@ def recover_avi_slack(input_avi, base_dir, target_format='mp4'):
                             logger.warning(f"[{label}] 프레임 1장 케이스에서 이미지 추출 실패")
                     else:
                         slack_mp4 = os.path.join(ch_dir, f"{basename}_{label}_slack.{target_format}")
-                        convert_video(slack_h264, slack_mp4, extra_args=common_args)
+                        convert_video(slack_h264, slack_mp4, extra_args=common_args, use_gpu=use_gpu)
 
                         try:
                             os.remove(slack_h264)
@@ -286,7 +286,7 @@ def recover_avi_slack(input_avi, base_dir, target_format='mp4'):
 
             full_mp4 = os.path.join(ch_dir, f"{basename}_{label}.{target_format}")
             try:
-                convert_video(raw_fn, full_mp4, extra_args=common_args)
+                convert_video(raw_fn, full_mp4, extra_args=common_args, use_gpu=use_gpu)
             finally:
                 try:
                     os.remove(raw_fn)

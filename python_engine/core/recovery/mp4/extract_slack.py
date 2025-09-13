@@ -27,7 +27,7 @@ def _process_one_mp4(path: str, h264_root: str, out_root: str):
     out_dir  = os.path.join(out_root,  base)
     os.makedirs(h264_dir, exist_ok=True)
     os.makedirs(out_dir,  exist_ok=True)
-    return recover_mp4_slack(path, h264_dir, out_dir, target_format="mp4")
+    return recover_mp4_slack(path, h264_dir, out_dir, target_format="mp4", use_gpu=False)
 
 def _choose_workers(max_cap=4):
     cpu = os.cpu_count() or 4
@@ -182,7 +182,7 @@ def extract_first_frame(video_path, out_jpeg):
     except Exception:
         return False
     
-def recover_mp4_slack(filepath, output_h264_dir, output_video_dir, target_format="mp4"):
+def recover_mp4_slack(filepath, output_h264_dir, output_video_dir, target_format="mp4", use_gpu=False):
     os.makedirs(output_h264_dir, exist_ok=True)
     os.makedirs(output_video_dir, exist_ok=True)
 
@@ -229,7 +229,7 @@ def recover_mp4_slack(filepath, output_h264_dir, output_video_dir, target_format
             return _fail_result()
 
         try:
-            convert_video(h264_path, mp4_path, extra_args=['-c:v', 'copy'])
+            convert_video(h264_path, mp4_path, extra_args=['-c:v', 'copy'], use_gpu=use_gpu, wait=True)
             logger.info(f"{filename} → mp4 변환 완료")
         except Exception as convert_err:
             logger.error(f"{filename} → mp4 변환 실패: {convert_err}")
