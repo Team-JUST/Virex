@@ -213,6 +213,7 @@ def extract_videos_from_e01(e01_path):
         return [], None, 0
 
     output_dir = tempfile.mkdtemp(prefix="Virex_", dir=temp_base)
+    print(json.dumps({"tempDir": output_dir}), flush=True)
 
     # --- 볼륨 슬랙 계산/저장 섹션 (교체본) ---
     media_size = img_info.get_size()

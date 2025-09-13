@@ -27,8 +27,30 @@ const fs = require('fs').promises;
 const fssync = require('fs');
 const os = require('os');
 
+const isSafeTempDir = (dir) => {
+  if (!dir) return false;
+  const tmp= path.resolve(os.tmpdir());
+  const abs = path.resolve(dir);
+  return abs.startsWith(tmp) && path.basename(abs).startsWith('Virex_');
+}
+
+const removeDirWithRetry = (dir, tries = 2, delay = 150) => {
+  const attempt = () => {
+    try {
+      if (dir && fssync.existsSync(dir)) {
+        fssync.rmSync(dir, { recursive: true, force: true });
+      }
+    } catch (e) {
+      if (tries > 0) setTimeout(() => removeDirWithRetry(dir, tries - 1, delay), delay);
+    }
+  };
+  attempt();
+}
 
 let mainWindow = null;
+let currentRecoveryProc = null;
+let currentTempDir = null;
+let isCancellingRecovery = false;
 
 // Classify drive type
 function classifyDrive(drive) {
@@ -233,11 +255,19 @@ ipcMain.handle('start-recovery', async (event, e01FilePath) => {
       shell: true,
       env,
     });
+    currentRecoveryProc = python;
+    isCancellingRecovery = false;
 
     const rl = readline.createInterface({ input: python.stdout });
     rl.on('line', async line => {
       try {
         const data = JSON.parse(line);
+
+        if (data.tempDir) {
+          currentTempDir = data.tempDir;
+          console.log("[Debug] tempDir from python:", currentTempDir);
+          return;
+        }
 
         // (중간) 용량 부족 이벤트
         if (data.event === 'disk_full') {
@@ -269,6 +299,7 @@ ipcMain.handle('start-recovery', async (event, e01FilePath) => {
         if (data.analysisPath) {
           console.log("[Debug] got analysisPath : ", data.analysisPath);
           const tempDir = path.dirname(data.analysisPath);
+          currentTempDir = tempDir;
 
           const win = BrowserWindow.fromWebContents(event.sender);
           win?.webContents.send('analysis-path', tempDir);
@@ -306,17 +337,59 @@ ipcMain.handle('start-recovery', async (event, e01FilePath) => {
       console.log("[Debug] python exited with code : ", code);
       rl.close();
 
-      if (abortedByDiskFull) {
+      const win = BrowserWindow.fromWebContents(event.sender);
+      const wasCancelling = isCancellingRecovery;
+      const wasDiskFull = abortedByDiskFull;
+
+      currentRecoveryProc = null;
+      isCancellingRecovery = false;
+
+      if (wasCancelling) {
+        const dir = currentTempDir;
+        if (isSafeTempDir(dir)) {
+          setTimeout(() => removeDirWithRetry(dir), 50);
+        }
+        currentTempDir = null;
+
+        try { win?.webContents.send('recovery-cancelled'); } catch {}
+        return resolve();
+      }
+
+      if (wasDiskFull) {
+        const dir = currentTempDir;
+        if (isSafeTempDir(dir)) {
+          setTimeout(() => removeDirWithRetry(dir), 50);
+        }
+        currentTempDir = null;
+
         return reject(new Error('aborted: disk_full'));
       }
 
-      const win = BrowserWindow.fromWebContents(event.sender);
-      win?.webContents.send('recovery-done');
-      code === 0 ? resolve() : reject(new Error(`exit ${code}`));
+      try { win?.webContents.send('recovery-done'); } catch {}
+      return code === 0 ? resolve() : reject(new Error(`exit ${code}`));
     });
   });
 });
 
+ipcMain.handle('cancel-recovery', async () => {
+  if (!currentRecoveryProc) return { ok: true, note: 'no-active-process' };
+  if (isCancellingRecovery) return { ok: true, note: 'already-cancelling' };
+  isCancellingRecovery = true;
+  const proc = currentRecoveryProc;
+  try {
+    if (process.platform === 'win32') {
+      const { spawn } = require('child_process');
+      spawn('taskkill', ['/PID', String(proc.pid), '/T', '/F']);
+    } else {
+      process.kill(proc.pid, 'SIGTERM');
+      setTimeout(() => { try { process.kill(proc.pid, 'SIGKILL'); } catch {} }, 1500);
+    }
+    return { ok: true };
+  } catch (e) {
+    try { proc.kill(); } catch {}
+    return { ok: false, error: String(e?.message || e) };
+  }
+});
 
 ipcMain.handle('run-download', async (_event, { e01Path, choice, downloadDir, files }) => {
   // 1) 호출된 인자 찍기
@@ -345,7 +418,7 @@ ipcMain.handle('run-download', async (_event, { e01Path, choice, downloadDir, fi
     const msg = 'No files selected';
     console.error('[Debug] run-download:', msg);
     mainWindow.webContents.send('download-error', msg);
-   throw new Error(msg);
+  throw new Error(msg);
   }
 
   const baseNames = files.map(p => path.basename(p));
@@ -391,7 +464,6 @@ ipcMain.handle('run-download', async (_event, { e01Path, choice, downloadDir, fi
     });
   });
 });
-
 
 ipcMain.handle('dialog:openDirectory', async (_event, options = {}) => {
   const { canceled, filePaths } = await dialog.showOpenDialog({

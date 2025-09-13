@@ -14,8 +14,7 @@ body {
 }
 
 .upload-subtitle {
-  margin-left: 1rem;
-  margin-top: 2rem;
+  margin-top: 1rem;
   font-size: 1.3rem;
   font-weight: 400;
   color: #6b7280;
@@ -29,7 +28,7 @@ body {
   border: 3.5px dashed #d1d5db;
   border-radius: 0.6rem;
   background-color: #f9fafb;
-  margin: 2rem 4rem;
+  margin: 3rem 4rem;
   width: 70%;
   height: 40%;
   padding: 4rem;
