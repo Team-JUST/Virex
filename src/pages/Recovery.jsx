@@ -152,7 +152,7 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
 
 // 6) 라우팅/초기파일 자동시작 상태
   const location = useLocation();
-  const initialFile = location.state?.e01File || null;
+  const initialFile = location.state?.file || null;
   const autoStart = location.state?.autoStart || false;
 
 // 7) 슬랙 영상 소스 등 슬랙 관련 상태
@@ -442,10 +442,14 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
 
 // 16) 파일/다운로드 등 핸들러
   const handleFile = (file) => {
-  if (!file.name.toLowerCase().endsWith('.e01')) {
-    setShowAlert(true);
-    return;
-  }
+    const lower = file.name.toLowerCase();
+    const ok =
+      lower.endsWith('.e01') ||
+      lower.endsWith('.001') ||
+      lower.endsWith('.mp4') ||
+      lower.endsWith('.avi') ||
+      lower.endsWith('.jdr');
+    if (!ok) { setShowAlert(true); return; }
   setShowAlert(false);
   startSession(file);           
   setTotalFiles(0);
@@ -463,7 +467,7 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
   };
 
   const handleClick = async () => {
-    const filePath = await window.api.openE01File();
+    const filePath = await window.api.openSupportedFile();
     if (filePath) {
       const parts = filePath.split(/[/\\]/);
       const fileName = parts[parts.length - 1];
@@ -885,7 +889,7 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
           <>
           {/* 파일 업로드 후 복원 중 화면 */}
             <h1 className="upload-title">File Upload</h1>
-            <p className="upload-subtitle">E01 파일을 업로드 해주세요</p>
+            <p className="upload-subtitle">E01 / 001 / MP4 / AVI / JDR 파일을 업로드 해주세요</p>
             <div
               className="dropzone"
               id="dadDrop"
@@ -893,23 +897,26 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
               onDragOver={(e) => e.preventDefault()}
               onClick={handleClick}
             >
-              <p className="dropzone-title">복구할 블랙박스 이미지(E01) 선택</p>
+              <p className="dropzone-title">복구할 파일(E01 / 001 / MP4 / AVI / JDR) 선택</p>
               <p className="dropzone-desc">
-                E01 파일을 업로드해주세요<br />
-                분할된 E01 파일(.E01, E02, E03 ...)을 자동으로 인식합니다
+                E01 / 001 / MP4 / AVI / JDR 파일을 업로드해주세요<br />
+                분할된 E01 파일(.E01, E02, E03 ...)과<br />
+                분할된 001 파일(.001, .002, .003 ...)은 자동으로 인식합니다.
               </p>
 
               <input
                 type="file"
                 id="dadFile"
-                accept=".E01"
+                accept=".E01,.001,.mp4,.avi,.jdr"
                 ref={inputRef}
                 onChange={handleFileChange}
                 hidden
               />
-              <Button variant="gray">
-                ⭱ <span>업로드</span>
-              </Button>
+              {!showAlert && (
+                <Button variant="gray">
+                  ⭱ <span>업로드</span>
+                </Button>
+              )}
             </div>
           </>
         ) : recoveryDone ? (
@@ -1312,13 +1319,15 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
           isDarkMode={isDarkMode}
           description={
             <>
-              선택한 파일은 E01 이미지 형식이 아닙니다<br />
-              해당 도구는 .E01 형식만 지원됩니다<br />
+              선택한 파일은 지원하지 않는 형식입니다<br />
+              지원 확장자: .E01, .001, .MP4, .AVI, .JDR<br />
               올바른 파일을 다시 선택해 주세요
             </>
           }
         >
-          <Button variant="dark" onClick={() => setShowAlert(false)}>다시 선택</Button>
+          <div className="alert-buttons">
+            <Button variant="dark" onClick={() => setShowAlert(false)}>다시 선택</Button>
+          </div>
         </Alert>
       )}
 
@@ -1335,7 +1344,7 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
             </>
           }
         >
-          <div style={{ display: 'flex', gap: '12px', marginTop: '1rem', justifyContent: 'center' }}>
+          <div className="alert-buttons" style={{ display: 'flex', gap: '12px', marginTop: '1rem', justifyContent: 'center' }}>
             <Button
               variant="gray"
               onClick={() => {
