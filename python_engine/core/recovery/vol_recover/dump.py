@@ -22,8 +22,14 @@ def dump_fs_unalloc(img_info, fs_info, out_dir, max_file_bytes=128*1024*1024, ov
     # 1) 비할당 블록 걷어서 "연속 구간"으로 합치기
     ranges = []
     cur = None
-    for blk in fs_info.block_walk(flags=pytsk3.TSK_FS_BLOCK_FLAG_UNALLOC):
-        baddr = int(blk.addr)  # 블록 인덱스
+    # ⭐ 반드시 시작/끝 범위 지정 + AONLY 플래그 추가
+    UNALLOC = (pytsk3.TSK_FS_BLOCK_FLAG_UNALLOC |
+               pytsk3.TSK_FS_BLOCK_FLAG_AONLY)
+    first = 0
+    last  = int(fs_info.info.block_count) - 1
+    for blk in fs_info.block_walk(first, last, UNALLOC):
+        # pytsk3는 튜플/객체 두 경우가 있음 → 모두 대응
+        baddr = int(getattr(blk, "addr", getattr(blk, 0)))
         if cur and baddr == cur["end"]:
             cur["end"] += 1
         else:

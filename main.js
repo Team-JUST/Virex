@@ -1,6 +1,81 @@
-const path = require('path');
 const { app, BrowserWindow, Menu, ipcMain, dialog, protocol } = require('electron');
 // 개발 환경에서 핫리로드 적용
+const fs = require('fs').promises; 
+
+const fssync = require('fs');     
+const path = require('path');
+const { spawn } = require('child_process');
+const readline = require('readline');
+const drivelist = require('drivelist');
+const checkDiskSpace = require('check-disk-space').default;
+const os = require('os');
+
+
+const VOL_CARVER = path.join(__dirname, 'python_engine', 'tools', 'vol_carver.py');
+const FFMPEG_DIR = path.join(__dirname, 'bin'); // 폴더(파일 아님)
+
+function hasBinFiles(dir) {
+  try {
+    const list = fssync.readdirSync(dir);
+    return list.some(n => n.toLowerCase().endsWith('.bin'));
+  } catch { return false; }
+}
+
+function waitForUnallocReady(baseDir, { timeoutMs = 120000, intervalMs = 800 } = {}) {
+  const unalloc = path.join(baseDir, 'p2_fs_unalloc');
+  const start = Date.now();
+  return new Promise((resolve, reject) => {
+    const tick = () => {
+      if (Date.now() - start > timeoutMs) {
+        return reject(new Error('waitForUnallocReady: timeout'));
+      }
+      if (fssync.existsSync(unalloc) && hasBinFiles(unalloc)) {
+        return resolve({ baseDir, unalloc });
+      }
+      setTimeout(tick, intervalMs);
+    };
+    tick();
+  });
+}
+
+function runVolCarver(baseDir, sender) {
+  return new Promise((resolve) => {
+    const args = [VOL_CARVER, baseDir, '--ffmpeg-dir', FFMPEG_DIR];
+    const child = spawn('python', args, {
+      cwd: path.dirname(VOL_CARVER),
+      shell: true,
+      env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' },
+    });
+    child.stderr.on('data', b => console.warn('[vol_carver]', b.toString()));
+    child.on('close', async (code) => {
+      const win = BrowserWindow.fromWebContents(sender);
+      // 프론트: baseDir 알려주고 → carved_index.json 읽게 함
+      win?.webContents.send('analysis-path', baseDir);
+
+      // (선택) 바로 결과도 푸시하고 싶으면 carved_index.json 읽어서 전송
+      try {
+        const idxPath = path.join(baseDir, 'carved_index.json');
+        const raw = await fs.readFile(idxPath, 'utf-8');
+        const j = JSON.parse(raw);
+        const items = (j?.items || []).flatMap(it => {
+          const rebuilt = (it.rebuilt || [])
+            .filter(x => (x?.rebuilt && x?.ok) || x?.raw)
+            .map(x => ({ name: path.basename(x.rebuilt || x.raw), path: (x.rebuilt || x.raw), size: Number(x?.probe?.format?.size || 0), _remuxFailed: !x?.rebuilt || !x?.ok }));
+          const jdr = (it.jdr || [])
+            .filter(x => x?.ok && x?.rebuilt)
+            .map(x => ({ name: path.basename(x.rebuilt), path: x.rebuilt, size: Number(x?.probe?.format?.size || 0) }));
+          return [...rebuilt, ...jdr];
+        });
+        win?.webContents.send('recovery-results', items);
+      } catch (e) {
+        console.warn('[vol_carver] no carved_index yet:', e?.message || e);
+      }
+
+      resolve(code);
+    });
+  });
+}
+
 
 if (process.env.NODE_ENV === 'development') {
   try {
@@ -20,13 +95,7 @@ if (process.env.NODE_ENV === 'development') {
   }
 }
 
-const { spawn } = require('child_process');
-const readline = require('readline');
-const drivelist = require('drivelist');
-const checkDiskSpace = require('check-disk-space').default;
-const fs = require('fs').promises;
-const fssync = require('fs');
-const os = require('os');
+
 
 const isSafeTempDir = (dir) => {
   if (!dir) return false;
@@ -52,6 +121,7 @@ let mainWindow = null;
 let currentRecoveryProc = null;
 let currentTempDir = null;
 let isCancellingRecovery = false;
+let volCarverStarted = false;
 
 // Classify drive type
 function classifyDrive(drive) {
@@ -267,11 +337,18 @@ ipcMain.handle('start-recovery', async (event, e01FilePath) => {
       try {
         const data = JSON.parse(line);
 
-
         if (data.tempDir) {
           currentTempDir = data.tempDir;
           const win = BrowserWindow.fromWebContents(event.sender);
-          win?.webContents.send('analysis-path', data.tempDir); // 하이픈(-) 채널명
+
+          // UI가 tempDir 알 수 있게 즉시 알려주기
+          win?.webContents.send('analysis-path', data.tempDir);
+
+          // 비할당 .bin 준비 감시 후 vol_carver 실행
+          waitForUnallocReady(currentTempDir)
+            .then(() => runVolCarver(currentTempDir, event.sender))
+            .catch(err => console.warn('[waitForUnallocReady]', err.message));
+
           return;
         }
 
@@ -354,6 +431,8 @@ ipcMain.handle('start-recovery', async (event, e01FilePath) => {
       console.log("[Debug] python exited with code : ", code);
       rl.close();
 
+      volCarverStarted = false;
+
       const win = BrowserWindow.fromWebContents(event.sender);
 
       if (!sentResults) {
@@ -400,7 +479,6 @@ ipcMain.handle('cancel-recovery', async () => {
   const proc = currentRecoveryProc;
   try {
     if (process.platform === 'win32') {
-      const { spawn } = require('child_process');
       spawn('taskkill', ['/PID', String(proc.pid), '/T', '/F']);
     } else {
       process.kill(proc.pid, 'SIGTERM');
@@ -496,11 +574,19 @@ ipcMain.handle('dialog:openDirectory', async (_event, options = {}) => {
   return filePaths[0];
 });
 
-ipcMain.handle('readCarvedIndex', async (_e, outDir) => {
-  const tryRead = async (p) => {
-    try { return JSON.parse(await fs.readFile(p, 'utf8')); }
-    catch { return null; }
-  };
+
+// carved_index.json 탐색 함수
+const tryRead = async (p) => {
+  try {
+    const raw = await fs.readFile(p, 'utf-8');
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+};
+
+ipcMain.handle('readCarvedIndex', async (_event, outDir) => {
+  if (!outDir) return { items: [] };
 
   const candidates = [
     path.join(outDir, 'carved_index.json'),
@@ -519,12 +605,19 @@ ipcMain.handle('readCarvedIndex', async (_e, outDir) => {
   while (queue.length) {
     const { dir, depth } = queue.shift();
     if (depth > maxDepth) continue;
+
     let entries = [];
-    try { entries = await fs.readdir(dir, { withFileTypes: true }); } catch { continue; }
+    try {
+      entries = await fs.readdir(dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+
     for (const e of entries) {
       const full = path.join(dir, e.name);
-      if (e.isDirectory()) queue.push({ dir: full, depth: depth + 1 });
-      else if (e.isFile() && e.name.toLowerCase() === 'carved_index.json') {
+      if (e.isDirectory()) {
+        queue.push({ dir: full, depth: depth + 1 });
+      } else if (e.isFile() && e.name.toLowerCase() === 'carved_index.json') {
         const j = await tryRead(full);
         if (j) return j;
       }
@@ -534,7 +627,6 @@ ipcMain.handle('readCarvedIndex', async (_e, outDir) => {
   // 못 찾으면 빈 구조 반환
   return { items: [] };
 });
-
 
 ipcMain.handle('clear-cache', async () => {
   const tempDir = os.tmpdir();

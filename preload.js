@@ -8,8 +8,10 @@ contextBridge.exposeInMainWorld('api', {
   openDirectory: () => ipcRenderer.invoke('dialog:openDirectory'),
   openE01File: () => ipcRenderer.invoke('dialog:openE01File'),
   startRecovery: (e01Path) => ipcRenderer.invoke('start-recovery', e01Path),
+
+
   cancelRecovery: () => ipcRenderer.invoke('cancel-recovery'),
-  readCarvedIndex: (outDir) => ipcRenderer.invoke('readCarvedIndex', outDir),
+  readCarvedIndex: (dir) => ipcRenderer.invoke('readCarvedIndex', dir),
   clearCache: () => ipcRenderer.invoke('clear-cache'),
   
   onDiskFull: (cb) => {
@@ -77,6 +79,8 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.on('download-complete', l);
     return () => ipcRenderer.removeListener('download-complete', l);
   },
+
+  
 
   
   onRecoveryError: (cb) => {
