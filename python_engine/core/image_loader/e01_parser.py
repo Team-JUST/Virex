@@ -155,7 +155,7 @@ def handle_avi_file(name, filepath, data, file_obj, output_dir, category):
         'size': bytes_to_unit(len(data)),
         'origin_video': origin_video_path,
         'channels': channels_only,
-        'analysis': build_analysis(origin_video_path, file_obj.info.meta)
+        'analysis': build_analysis(origin_video_path, origin_video_path, file_obj.info.meta)
     }
 
 def extract_video_files(fs_info, output_dir, path="/", total_count=None, progress=None):

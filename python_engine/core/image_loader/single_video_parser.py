@@ -80,7 +80,7 @@ def handle_single_video_file(filepath, output_dir):
             'size': bytes_to_unit(len(data)),
             'origin_video': origin_video_path,
             'channels': channels_only,
-            'analysis': build_analysis(origin_video_path, meta)
+            'analysis': build_analysis(origin_video_path, origin_video_path, meta)
         }
     elif ext == '.jdr':
         result = {
