@@ -93,6 +93,16 @@ def handle_mp4_file(name, filepath, data, file_obj, output_dir, category):
         output_video_dir=slack_dir,
         target_format="mp4"
     )
+    if not slack_info:
+        slack_info = {
+            "recovered": False,
+            "video_path": None,
+            "image_path": None,
+            "is_image_fallback": False,
+            "slack_size": "0 B",
+            "slack_rate": 0.0,
+            "source_path": original_path
+        }
 
     origin_video_path = slack_info.get('source_path', original_path)
     recovered_mp4 = slack_info.get('video_path')
@@ -102,6 +112,13 @@ def handle_mp4_file(name, filepath, data, file_obj, output_dir, category):
         if (slack_info.get('recovered') and recovered_mp4 and os.path.exists(recovered_mp4))
         else origin_video_path
     )
+
+    try:
+        has_slack_output = bool(slack_info.get('video_path') or slack_info.get('image_path'))
+        if not has_slack_output and os.path.exists(slack_dir):
+            os.rmdir(slack_dir)
+    except Exception:
+        pass
 
     return {
         'name': name,
