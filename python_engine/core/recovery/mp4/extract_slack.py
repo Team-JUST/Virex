@@ -362,9 +362,20 @@ def recover_mp4_slack(filepath, output_h264_dir, output_video_dir, target_format
                         "slack_size": bytes_to_unit(int(final_size)),
                         "video_path": mp4_path,
                         "image_path": None,
-                        "is_image_fallback": False,
+                        "is_image_fallback": False, 
                         "slack_rate": slack_rate
                     }
+
+            final_size = os.path.getsize(mp4_path) if os.path.exists(mp4_path) else recovered_bytes
+            return {
+                "recovered": True,
+                "slack_size": bytes_to_unit(int(final_size)),
+                "video_path": mp4_path,
+                "image_path": None,
+                "is_image_fallback": False,
+                "slack_rate": slack_rate,
+            }
+        
         else:
             logger.error(f"{filename} → mp4 파일 미생성")
             return _fail_result()
@@ -440,6 +451,17 @@ def _fallback_wholefile(data, filename, h264_path, mp4_path, jpeg_path, use_gpu)
                     "is_image_fallback": False,
                     "slack_rate": slack_rate
                 }
+            
+        final_size = os.path.getsize(mp4_path) if os.path.exists(mp4_path) else recovered_bytes
+        return {
+            "recovered": True,
+            "slack_size": bytes_to_unit(int(final_size)),
+            "video_path": mp4_path,
+            "image_path": None,
+            "is_image_fallback": False,
+            "slack_rate": slack_rate,
+        }
     
-    logger.info(f"[fallback] {filename} → mp4 생성 실패")
-    return _fail_result()
+    else: 
+        logger.info(f"[fallback] {filename} → mp4 생성 실패")
+        return _fail_result()
