@@ -1015,7 +1015,11 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
                     onClick={() => handleTabClick('slack')}
                   >
                     <SlackIcon className='tab-icon' />
-                    <span>슬랙 정보</span>
+                    <span>
+                      {selectedResultFile?.analysis?.integrity?.damaged && selectedResultFile?.slack_info?.recovered
+                        ? '복원 정보'
+                        : '슬랙 정보'}
+                    </span>
                   </button>
                   <button
                     className={`parser-tab-button ${activeTab === 'structure' ? 'active' : ''}`}
