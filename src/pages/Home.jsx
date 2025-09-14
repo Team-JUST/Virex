@@ -71,7 +71,7 @@ function ExplorerView({
   onBack,
   onSelectDrive,
   onOpenDir,
-  onSelectE01,
+  onSelectFile,
   isDarkMode,
 }) {
   const displayPath = formatDrivePath(currentPath, mountPath);
@@ -115,7 +115,9 @@ function ExplorerView({
               <div
                 key={entry.path}
                 className="folder_item"
-                onClick={() => (entry.isDirectory ? onOpenDir(entry.path) : onSelectE01(entry))}
+                onClick={() => (entry.isDirectory 
+                  ? onOpenDir(entry.path) 
+                  : typeof onSelectFile === 'function' && onSelectFile(entry))}
                 style={{ fontWeight: entry.isDirectory ? 'bold' : 'normal', cursor: 'pointer' }}
               >
                 {entry.isDirectory ? (
@@ -124,7 +126,7 @@ function ExplorerView({
                   <FileIcon className="file_icon" />
                 )}
                 <span>{entry.name}</span>
-                {entry.isE01 && entry.size ? (
+                {entry.isSupported && entry.size ? (
                   <span className="file_size">({bytesToGB(entry.size)})</span>
                 ) : null}
               </div>
