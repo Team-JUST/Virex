@@ -1120,7 +1120,7 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
                         </div>
                         <div className="parser-info-row parser-info-row--withbar">
                           <div className="data-bar-flex-row-between">
-                            <span className="parser-info-label">전체 대비 복원 비율</span>
+                            <span className="parser-info-label">전체 영상 대비 복원 영상 비율</span>
                             {slackPercent > 0 && (
                               <div className="data-bar-wrapper is-single is-narrow">
                                 <div
