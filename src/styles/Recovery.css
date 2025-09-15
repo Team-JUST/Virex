@@ -406,11 +406,17 @@ input[type="checkbox"] {
   height: 18px;
   filter: grayscale(100%) brightness(0.5);
   transition: filter 0.2s;
+  color: #666;
 }
 
 .parser-tab-button.active {
   color: #3B82F6;
   border-bottom: 3px solid #3B82F6;
+}
+
+.parser-tab-button.active .tab-icon {
+  filter: none;
+  color: #3b82f6;
 }
 
 .parser-tab-content {
