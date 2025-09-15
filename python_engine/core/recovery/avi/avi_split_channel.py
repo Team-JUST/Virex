@@ -1,13 +1,14 @@
 import re
 import struct
 
-MAX_CHUNK = 10 * 1024 * 1024
+MAX_REASONABLE_CHUNK_SIZE = 10 * 1024 * 1024
+MIN_REASONABLE_CHUNK_SIZE = 16  # 최소 청크 크기(0x10). idx 무시
 
 CHUNK_SIG = {
     'front': b'00dc',
     'rear':  b'01dc',
     'side':  b'02dc',
-}
+}   
 
 PATTERNS = {
     'H264': {
@@ -64,7 +65,7 @@ def split_channel_bytes(data, label):
         end = start + size
         offset = end
 
-        if size > MAX_CHUNK or end > len(data):
+        if size > MAX_REASONABLE_CHUNK_SIZE or end > len(data):
             continue
 
         chunk = data[start:end]
@@ -80,13 +81,17 @@ def split_channel_bytes(data, label):
 def extract_full_channel_bytes(data, label):
     sig = CHUNK_SIG[label]
     offset = 0
-    file_end = len(data)
-
+    frame_count = 0
     out = bytearray()
 
-    while True:
-        idx = data.find(sig, offset)
-        if idx < 0 or idx + 8 > file_end:
+    if not data.startswith(b'RIFF'):
+        return b'', 0
+    real_file_size = struct.unpack('<I', data[4:8])[0]
+    valid_end = 8 + real_file_size
+
+    while offset < valid_end:
+        idx = data.find(sig, offset, valid_end)
+        if idx < 0 or idx + 8 > valid_end:
             break
 
         size = struct.unpack('<I', data[idx + 4:idx + 8])[0]
@@ -94,11 +99,18 @@ def extract_full_channel_bytes(data, label):
         end = start + size
 
         # 손상된 청크 건너뛰기
-        if size > MAX_CHUNK or end > file_end:
-            offset = idx + 1
+        if size > MAX_REASONABLE_CHUNK_SIZE:
+            offset = idx + 4
+            continue
+        elif size <= MIN_REASONABLE_CHUNK_SIZE:
+            offset = idx + 4
+            continue
+        if end > valid_end:
+            offset = idx + 4
             continue
 
         out += data[start:end]
+        frame_count += 1
         offset = end
 
-    return bytes(out)
+    return bytes(out), frame_count
