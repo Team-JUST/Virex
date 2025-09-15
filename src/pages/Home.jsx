@@ -45,12 +45,12 @@ function DriveCard({ drive, onClick }) {
       title={drive.mount}
     >
       <div className="info">
-        <div className="drive_title">
+        <div className="drive_title" style = {{ marginBottom: '8px' }}>
           <DriveIcon className="drive_icon" />
           <strong>{drive.label || drive.mount}</strong>
         </div>
         <div>
-          <div>{sizeText}</div>
+          <div style={{ marginBottom: '8px' }}>{sizeText}</div>
           <div className="bar">
             <div
               className="bar_fill"
@@ -111,44 +111,43 @@ function ExplorerView({
 
         <div className="folder_wrapper">
           <div className="folder_list">
-            {entries.map((entry) => (
-              <div
-                key={entry.path}
-                className="folder_item"
-                onClick={() => (entry.isDirectory 
-                  ? onOpenDir(entry.path) 
-                  : typeof onSelectFile === 'function' && onSelectFile(entry))}
-                style={{ fontWeight: entry.isDirectory ? 'bold' : 'normal', cursor: 'pointer' }}
-              >
-                {entry.isDirectory ? (
-                  <FolderIcon className="folder_icon" />
-                ) : (
-                  <FileIcon className="file_icon" />
-                )}
-                <span>{entry.name}</span>
-                {entry.isSupported && entry.size ? (
-                  <span className="file_size">({bytesToGB(entry.size)})</span>
-                ) : null}
-              </div>
-            ))}
-          </div>
+            {entries.map((entry) => {
+              const isSelected = selectedFile?.path === entry.path;
 
-          <div id="selected_file_info">
-            {selectedFile && (
-              <div className="selected_box">
-                <h4 style={{ marginLeft: '10px' }}>선택된 파일</h4>
-                <p style={{ marginLeft: '10px' }}><strong>파일명:</strong> {selectedFile.name}</p>
-                <p style={{ marginLeft: '10px' }}><strong>크기:</strong> {bytesToGB(selectedFile.size)}</p>
-                <p style={{ marginLeft: '10px' }}><strong>경로:</strong> {selectedFile.path}</p>
-                <Button
-                  variant="dark"
-                  onClick={handleStart}
-                  disabled={!selectedFile || !selectedFile.path || !selectedFile.name}
-                >
-                  복원 시작
-                </Button>
-              </div>
-            )}
+              return (
+                <React.Fragment key={entry.path}>
+                  <div
+                    className="folder_item"
+                    onClick={() =>
+                      entry.isDirectory
+                        ? onOpenDir(entry.path)
+                        : typeof onSelectFile === 'function' && onSelectFile(entry)
+                    }
+                  >
+                    <div className="folder_inner" style={{ fontWeight: entry.isDirectory ? 'bold' : 'normal', cursor: 'pointer' }}>
+                      {entry.isDirectory ? <FolderIcon className="folder_icon" /> : <FileIcon className="file_icon" />}
+                      <span>{entry.name}</span>
+                      {entry.isSupported && entry.size ? <span className="file_size">({bytesToGB(entry.size)})</span> : null}
+                    </div>
+                  </div>
+                  {isSelected && (
+                    <div id="selected_file_info" className="selected_box">
+                      <h4>선택된 파일</h4>
+                      <p><strong>파일명:</strong> {selectedFile.name}</p>
+                      <p><strong>크기:</strong> {bytesToGB(selectedFile.size)}</p>
+                      <p><strong>경로:</strong> {selectedFile.path}</p>
+                      <Button
+                        variant="dark"
+                        onClick={handleStart}
+                        disabled={!selectedFile || !selectedFile.path || !selectedFile.name}
+                      >
+                        복원 시작
+                      </Button>
+                    </div>
+                  )}
+                </React.Fragment>
+              );
+            })}
           </div>
         </div>
       </div>
