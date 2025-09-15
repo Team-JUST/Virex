@@ -158,15 +158,20 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
     jdrFiles.forEach(file => {
       if (file.channels) {
         Object.entries(file.channels).forEach(([channelName, channelData]) => {
-          if (channelName !== 'audio' && channelData.recovered_files) {
-            channelData.recovered_files.forEach(recoveredFile => {
-              channels[channelName]?.push({
-                originalFile: file,
-                channelName,
-                recoveredPath: recoveredFile,
-                fileName: recoveredFile.split(/[/\\]/).pop() || recoveredFile
+          if (channelName !== 'audio') {
+            // merge 채널은 merged_files 사용, 나머지는 video_path 사용
+            const files = channelName === 'merge' ? channelData.merged_files : channelData.video_path;
+            
+            if (files && Array.isArray(files)) {
+              files.forEach(recoveredFile => {
+                channels[channelName]?.push({
+                  originalFile: file,
+                  channelName,
+                  recoveredPath: recoveredFile,
+                  fileName: recoveredFile.split(/[/\\]/).pop() || recoveredFile
+                });
               });
-            });
+            }
           }
         });
       }
@@ -288,7 +293,11 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
     if (lowerCaseName.endsWith('.jdr')) {
       return ['front','rear','side','merge'].filter((ch) => {
         const channelData = f.channels?.[ch];
-        return channelData?.recovered_files && channelData.recovered_files.length > 0;
+        if (ch === 'merge') {
+          return channelData?.merged_files && channelData.merged_files.length > 0;
+        } else {
+          return channelData?.video_path && channelData.video_path.length > 0;
+        }
       });
     }
     
@@ -315,14 +324,22 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
         if (selectedJDRFilePath) {
           path = selectedJDRFilePath;
         } else {
-          // 폴백: recovered_files에서 첫 번째 파일 가져오기
+          // 폴백: video_path 또는 merged_files에서 첫 번째 파일 가져오기
           const pref = selectedChannel || ['front', 'rear', 'side', 'merge'].find((ch) => {
             const channelData = f.channels?.[ch];
-            return channelData?.recovered_files && channelData.recovered_files.length > 0;
+            if (ch === 'merge') {
+              return channelData?.merged_files && channelData.merged_files.length > 0;
+            } else {
+              return channelData?.video_path && channelData.video_path.length > 0;
+            }
           });
-          
-          if (pref && f.channels?.[pref]?.recovered_files) {
-            path = f.channels[pref].recovered_files[0];
+
+          if (pref && f.channels?.[pref]) {
+            if (pref === 'merge' && f.channels[pref].merged_files) {
+              path = f.channels[pref].merged_files[0];
+            } else if (f.channels[pref].video_path) {
+              path = f.channels[pref].video_path[0];
+            }
           }
         }
       } else if (isAVI) {
@@ -666,13 +683,17 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
     const isAVI = lowerCaseName.endsWith('.avi');
     const isMultiChannel = isJDR || isAVI;
 
-    if (isMultiChannel && f?.channels) {
+    if (isJDR && availableChannels.length > 0) {
       let first = null;
       
       if (isJDR) {
         first = ['front','rear','side','merge'].find(ch => {
           const channelData = f.channels?.[ch];
-          return channelData?.recovered_files && channelData.recovered_files.length > 0;
+          if (ch === 'merge') {
+            return channelData?.merged_files && channelData.merged_files.length > 0;
+          } else {
+            return channelData?.video_path && channelData.video_path.length > 0;
+          }
         }) ?? null;
       } else if (isAVI) {
         first = ['front','rear','side'].find(ch => f.channels?.[ch]?.full_video_path) ?? null;
