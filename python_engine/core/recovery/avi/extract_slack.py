@@ -3,11 +3,15 @@ import logging
 import shutil
 import subprocess
 import json
+import struct
 from python_engine.core.recovery.avi.avi_split_channel import (
     split_channel_bytes,
     extract_full_channel_bytes,
     CHUNK_SIG)
-from python_engine.core.recovery.utils.ffmpeg_wrapper import convert_video
+from python_engine.core.recovery.avi.recover_audio import (
+    extract_original_audio,
+    extract_slack_audio)
+from python_engine.core.recovery.utils.ffmpeg_wrapper import convert_video, convert_audio, merge_video_audio
 from python_engine.core.recovery.utils.unit import bytes_to_unit
 
 logger = logging.getLogger(__name__)
@@ -172,6 +176,26 @@ def recover_avi_slack(input_avi, base_dir, target_format='mp4', use_gpu=False):
         logger.error(f"{input_avi} AVI 헤더가 올바르지 않습니다. 건너뜁니다. 헤더: {data[:16]!r}")
         shutil.rmtree(base_dir, ignore_errors=True)
         return None
+        
+    audio_dir = os.path.join(base_dir, "audio")
+    os.makedirs(audio_dir, exist_ok=True)
+    basename = os.path.splitext(os.path.basename(input_avi))[0]
+    
+    original_chunks = extract_original_audio(data)
+    if original_chunks:
+        original_audio = os.path.join(audio_dir, f"{basename}_original_audio.raw")
+        with open(original_audio, 'wb') as af:
+            for chunk in original_chunks:
+                af.write(chunk)
+        logger.info(f"Original audio saved to {original_audio}")
+    
+    slack_chunks = extract_slack_audio(data)
+    if slack_chunks:
+        slack_audio = os.path.join(audio_dir, f"{basename}_slack_audio.raw")
+        with open(slack_audio, 'wb') as af:
+            for chunk in slack_chunks:
+                af.write(chunk)
+        logger.info(f"Slack audio saved to {slack_audio}")
 
     origin_filename = os.path.basename(input_avi)
     basename = os.path.splitext(origin_filename)[0]
@@ -198,7 +222,7 @@ def recover_avi_slack(input_avi, base_dir, target_format='mp4', use_gpu=False):
         if frame_count > 0:
             sps_pps = extract_sps_pps_from_raw(channel_data, codec, label)
             if sps_pps:
-                slack_h264 = os.path.join(ch_dir, f"{basename}_{label}_slack.h264")
+                slack_h264 = os.path.join(ch_dir, f"{basename}_{label}_slack.vrx")
                 slack_nal_count, recovered_bytes = extract_frames_from_raw(channel_data, sps_pps, slack_h264)
 
                 if slack_nal_count > 0:
@@ -311,4 +335,119 @@ def recover_avi_slack(input_avi, base_dir, target_format='mp4', use_gpu=False):
             shutil.rmtree(ch_dir, ignore_errors=True)
 
     results['source_path'] = origin_path
+    
+    original_audio_raw = os.path.join(base_dir, "audio", f"{basename}_original_audio.raw")
+    slack_audio_raw = os.path.join(base_dir, "audio", f"{basename}_slack_audio.raw")
+    original_audio_wav = os.path.join(base_dir, "audio", f"{basename}_original_audio.wav")
+    slack_audio_wav = os.path.join(base_dir, "audio", f"{basename}_slack_audio.wav")
+    
+    results['audio'] = {
+        'original': None,
+        'slack': None
+    }
+    
+    try:
+        audio_rate = 24000 
+        probe_out = subprocess.check_output([
+            FFPROBE, "-v", "quiet",
+            "-print_format", "json",
+            "-show_streams",
+            input_avi
+        ], stderr=subprocess.DEVNULL)
+        probe_data = json.loads(probe_out.decode('utf-8', 'ignore'))
+        
+        for stream in probe_data.get('streams', []):
+            if stream.get('codec_type') == 'audio':
+                audio_rate = int(stream.get('sample_rate', 48000))
+                break
+    except Exception:
+        logger.warning("오디오 샘플레이트 정보를 가져오는데 실패했습니다. 기본값 48000Hz를 사용합니다.")
+    
+    if os.path.exists(original_audio_raw):
+        try:
+            convert_audio(original_audio_raw, original_audio_wav, sample_rate=audio_rate)
+            try:
+                os.remove(original_audio_raw)  # 변환 성공 시 RAW 파일 삭제
+            except OSError:
+                pass
+            
+            size = os.path.getsize(original_audio_wav)
+            results['audio']['original'] = {
+                'path': original_audio_wav,
+                'size': bytes_to_unit(size)
+            }
+        except Exception as e:
+            logger.error(f"원본 오디오 변환 실패: {e}")
+            results['audio']['original'] = {
+                'path': original_audio_raw,
+                'size': bytes_to_unit(os.path.getsize(original_audio_raw))
+            }
+        
+    if os.path.exists(slack_audio_raw):
+        try:
+            convert_audio(slack_audio_raw, slack_audio_wav, sample_rate=audio_rate)
+            try:
+                os.remove(slack_audio_raw)  # 변환 성공 시 RAW 파일 삭제
+            except OSError:
+                pass
+            
+            size = os.path.getsize(slack_audio_wav)
+            results['audio']['slack'] = {
+                'path': slack_audio_wav,
+                'size': bytes_to_unit(size)
+            }
+        except Exception as e:
+            logger.error(f"슬랙 오디오 변환 실패: {e}")
+            results['audio']['slack'] = {
+                'path': slack_audio_raw,
+                'size': bytes_to_unit(os.path.getsize(slack_audio_raw))
+            }
+
+    # 오리지널만 소리+음성 병합
+    merged_dir = os.path.join(base_dir, "merged")
+    os.makedirs(merged_dir, exist_ok=True)
+    
+    # 원본 오디오가 있는 경우에만 병합 진행
+    if results['audio']['original'] and results['audio']['original']['path']:
+        original_audio_path = results['audio']['original']['path']
+        logger.info(f"오리지널 오디오를 사용한 병합 시작: {original_audio_path}")
+        
+        # 각 채널별로 full 영상과 오리지널 오디오 병합
+        for channel in ['front', 'rear', 'side']:
+            if channel in results and results[channel].get('full_video_path'):
+                video_path = results[channel]['full_video_path']
+                merged_filename = f"{basename}_{channel}_with_audio.{target_format}"
+                merged_path = os.path.join(merged_dir, merged_filename)
+                
+                logger.info(f"[{channel}] 영상과 오디오 병합 중: {video_path} + {original_audio_path}")
+                
+                try:
+                    # ffmpeg로 영상과 오디오 병합
+                    merge_video_audio(video_path, original_audio_path, merged_path)
+                    
+                    if os.path.exists(merged_path):
+                        # 병합된 파일의 크기 확인
+                        merged_size = os.path.getsize(merged_path)
+                        logger.info(f"[{channel}] 병합 완료: {merged_path} ({bytes_to_unit(merged_size)})")
+                        
+                        # results에 병합된 파일 정보 추가
+                        results[channel]['merged_video_path'] = merged_path
+                        results[channel]['merged_video_size'] = bytes_to_unit(merged_size)
+                    else:
+                        logger.warning(f"[{channel}] 병합 파일이 생성되지 않았습니다: {merged_path}")
+                        
+                except Exception as e:
+                    logger.error(f"[{channel}] 영상-오디오 병합 실패: {e}")
+                    # 병합 실패해도 계속 진행
+                    continue
+    else:
+        logger.info("오리지널 오디오가 없어 병합을 건너뜁니다.")
+    
+    # merged 디렉토리가 비어있으면 제거
+    try:
+        if not os.listdir(merged_dir):
+            os.rmdir(merged_dir)
+    except OSError:
+        pass
+    
     return results
