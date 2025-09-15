@@ -961,7 +961,7 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
                 </div>
               </div>
 
-              <div className="result-scroll-area">
+              <div className="result-scroll-area scrollbar-area">
                 {/* 뷰 */}
                 <div className="video-container">
                   <video
@@ -1210,7 +1210,7 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
                   }
                 </p>
 
-                <div className="result-scroll-area" style={{ position: 'relative' }}>
+                <div className="result-scroll-area scrollbar-area" style={{ position: 'relative' }}>
                   {Object.entries(groupedResults).map(([category, files]) => (
                     <div className="result-group" key={category}>
 
@@ -1346,7 +1346,7 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
                 <div
                   style={{
                     position: 'absolute',
-                    bottom: '1.5rem',
+                    bottom: '1rem',
                     right: '2rem',
                     display: 'flex',
                     justifyContent: 'flex-end',

@@ -806,37 +806,3 @@ input[type="checkbox"] {
   background: #1e293b;
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.06);
 }
-
-/* ++ 스크롤바 공통 ++ */
-.result-scroll-area::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-
-.result-scroll-area::-webkit-scrollbar-track {
-  background: transparent;
-  margin-top: 50px;
-  margin-bottom: 50px;
-}
-
-.result-scroll-area::-webkit-scrollbar-thumb {
-  border-radius: 10px;
-}
-
-/* ++ 스크롤바 라이트 모드 ++ */
-.result-scroll-area::-webkit-scrollbar-thumb {
-  background-color: rgba(160, 160, 160, 0.4);
-}
-
-.result-scroll-area::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(120, 120, 120, 0.6);
-}
-
-/* ++ 스크롤바 다크 모드 ++ */
-.recovery-page.dark-mode .result-scroll-area::-webkit-scrollbar-thumb {
-  background-color: rgba(200, 200, 200, 0.3);
-}
-
-.recovery-page.dark-mode .result-scroll-area::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(220, 220, 220, 0.5);
-}

@@ -2,6 +2,7 @@ import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import '../styles/Home.css';
 import '../styles/Button.css';
+import '../styles/Scrollbar.css';
 import Button from '../components/Button.jsx';
 import DriveIcon from '../images/drive.svg?react';
 import FolderIcon from '../images/folder.svg?react';
@@ -90,7 +91,7 @@ function ExplorerView({
 
   return (
     <div id="explorer" className={isDarkMode ? 'dark-mode' : ''}>
-      <div className={`drive_category ${isDarkMode ? 'dark-mode' : ''}`}>
+      <div className={`drive_category ${isDarkMode ? 'dark-mode' : ''} scrollbar-area`}>
         <div className="drive_header">
           <div className="drive_header_left">
             <DriveIcon className="drive_icon" />
@@ -109,7 +110,7 @@ function ExplorerView({
           </div>
         </div>
 
-        <div className="folder_wrapper">
+        <div className="folder_wrapper scrollbar-area">
           <div className="folder_list">
             {entries.map((entry) => {
               const isSelected = selectedFile?.path === entry.path;
@@ -231,7 +232,7 @@ const Home = ({ isDarkMode }) => {
         <>
           <h1 className={`home_title${isDarkMode ? ' dark-mode' : ''}`}>드라이브를 선택해 복원을 시작하세요</h1>
 
-          <div className={`drive_wrapper${isDarkMode ? ' dark-mode' : ''}`}>
+          <div className={`drive_wrapper${isDarkMode ? ' dark-mode' : ''} scrollbar-area`}>
             <DriveSection
               title="내장 드라이브"
               drives={categorized.internal}
