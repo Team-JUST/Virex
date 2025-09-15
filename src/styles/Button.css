@@ -38,20 +38,18 @@
 }
 
 .dark-mode .button.dark {
-  background-color: #f1f5f9;
-  color: #1e293b;
+  background-color: #475569;
+  color: #f8fafc;
 }
 .dark-mode .button.dark:hover {
-  background-color: #e5e7eb;
-  color: #1e293b;
+  background-color: #64748b;
 }
 .dark-mode .button.gray {
   background-color: #374151;
   color: #f1f5f9;
 }
 .dark-mode .button.gray:hover {
-  background-color: #374151;
-  color: #f1f5f9;
+  background-color: #4b5563;
 }
 
 .button:disabled,
