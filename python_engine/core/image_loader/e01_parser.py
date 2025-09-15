@@ -7,6 +7,8 @@ import shutil
 import json
 import time
 import struct
+import subprocess
+import sys
 from io import BytesIO
 from python_engine.core.recovery.mp4.extract_slack import recover_mp4_slack
 from python_engine.core.recovery.avi.extract_slack import recover_avi_slack
@@ -206,7 +208,6 @@ def extract_videos_from_e01(e01_path):
             logger.warning(f"FS mount 실패 (offset={partition.start*512}): {e}")
             continue
 
-        # ✅ FAT32 비할당 덤프 먼저 시도
         fat_res = dump_unalloc_fat32(
             img_info,
             part_start_sector=partition.start,
@@ -220,13 +221,25 @@ def extract_videos_from_e01(e01_path):
                 "chunks": fat_res["chunks"],
                 "bytes": fat_res["bytes"]
             }), flush=True)
+
+            try:
+                ffmpeg_dir = os.environ.get("VIREX_FFMPEG_DIR")  # Electron main에서 세팅해주면 좋음
+                cmd = [sys.executable,  # 현재 파이썬으로 vol_carver.py 실행
+                       os.path.join(os.path.dirname(__file__), "tools", "vol_carver.py"),
+                       os.path.join(output_dir, f"p{partition.addr}_fs_unalloc")]
+                if ffmpeg_dir:
+                    cmd += ["--ffmpeg-dir", ffmpeg_dir]
+                # 블로킹 호출(완료 후 파일 생성됨). 로그 필요시 text=True로 Popen 사용 가능
+                subprocess.run(cmd, check=True)
+            except Exception as e:
+                logger.warning(f"vol_carver run failed: {e}")
+
         else:
             print(json.dumps({
                 "event": "fs_unalloc_skip",
                 "reason": fat_res.get("reason", "unknown")
             }), flush=True)
 
-        # 🎥 이후 비디오 파일 추출
         total = count_video_files(fs_info)
         all_total += total
         print(json.dumps({"processed": 0, "total": total}), flush=True)

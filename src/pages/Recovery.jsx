@@ -91,8 +91,6 @@ const volumeSlackBytes = (volumeSlack || []).reduce((s, f) => s + Number(f.size 
 
 const totalCount = results.length + volumeSlackCount;
 
-
-
 // 1) 화면 제어 상태 정의
   const startedRef = useRef(false);      
   const diskFullHandledRef = useRef(false); 
@@ -633,10 +631,12 @@ const totalCount = results.length + volumeSlackCount;
   };
 
   const handleFileClick = (filename) => {
+    const f = results.find((r) => r.name === filename);
+    if (!f) return;
+
     setSelectedAnalysisFile(filename);
     setActiveTab('basic');
 
-    const f = results.find((r) => r.name === filename);
     const isAVI = filename.toLowerCase().endsWith('.avi');
     if (isAVI && f?.channels) {
       const first = ['front','rear','side'].find(ch => f.channels?.[ch]?.full_video_path) ?? null;
@@ -849,7 +849,8 @@ const totalCount = results.length + volumeSlackCount;
   const [showRestartPopup, setShowRestartPopup] = useState(false);
   const [showClosePopup, setShowClosePopup] = useState(false);
 
-  // 23) 볼륨 슬랙 리스트
+  // 23) 볼륨 슬랙 리스트/핸들러
+  const resultNameSet = useMemo(() => new Set(results.map(r => r.name)), [results]);
   useEffect(() => {
     const total = results.length + volumeSlack.length; 
     setSelectAll(
@@ -1020,7 +1021,7 @@ const totalCount = results.length + volumeSlackCount;
               <input
                 type="file"
                 id="dadFile"
-                accept=".E01"
+                accept=".E01,.e01"
                 ref={inputRef}
                 onChange={handleFileChange}
                 hidden
@@ -1364,9 +1365,13 @@ const totalCount = results.length + volumeSlackCount;
 
                                 <div className="result-file-info">
                                   <div className="result-file-title-row">              
-                                    <button className="text-button" onClick={() => handleFileClick(file.name)}>
-                                      {file.name}
-                                    </button>
+                                      {resultNameSet.has(file.name) ? (
+                                        <button className="text-button" onClick={() => handleFileClick(file.name)}>
+                                          {file.name}
+                                        </button>
+                                      ) : (
+                                        <span className="text-button disabled" title="미분석 항목">{file.name}</span>
+                                      )}
                                     
                                     {hasSlackBadge && (
                                       <Badge

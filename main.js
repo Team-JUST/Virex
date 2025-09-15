@@ -10,9 +10,12 @@ const drivelist = require('drivelist');
 const checkDiskSpace = require('check-disk-space').default;
 const os = require('os');
 
-
 const VOL_CARVER = path.join(__dirname, 'python_engine', 'tools', 'vol_carver.py');
-const FFMPEG_DIR = path.join(__dirname, 'bin'); // 폴더(파일 아님)
+const FFMPEG_DIR = path.join(__dirname, 'bin');
+
+process.env.SystemRoot = process.env.SystemRoot || 'C:\\Windows';
+process.env.ComSpec    = process.env.ComSpec    || path.join(process.env.SystemRoot, 'System32', 'cmd.exe');
+process.env.PATH       = [process.env.PATH, path.join(process.env.SystemRoot, 'System32')].filter(Boolean).join(';');
 
 function hasBinFiles(dir) {
   try {
@@ -46,6 +49,12 @@ function runVolCarver(baseDir, sender) {
       shell: true,
       env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' },
     });
+    child.on('error', (err) => {
+      console.error('[spawn error:runVolCarver]', err);
+      BrowserWindow.fromWebContents(sender)
+        ?.webContents.send('recovery-error', String(err?.message || err));
+    });
+
     child.stderr.on('data', b => console.warn('[vol_carver]', b.toString()));
     child.on('close', async (code) => {
       const win = BrowserWindow.fromWebContents(sender);
@@ -328,6 +337,10 @@ ipcMain.handle('start-recovery', async (event, e01FilePath) => {
       shell: true,
       env,
     });
+    python.on('error', (err) => {
+    console.error('[spawn error:run-download]', err);
+    mainWindow?.webContents.send('download-error', String(err?.message || err));
+  });
     currentRecoveryProc = python;
     isCancellingRecovery = false;
 
@@ -537,6 +550,10 @@ ipcMain.handle('run-download', async (_event, { e01Path, choice, downloadDir, fi
       shell: true,
       env,
     });
+    python.on('error', (err) => {
+    console.error('[spawn error:run-download]', err);
+    mainWindow?.webContents.send('download-error', String(err?.message || err));
+  });
 
     const rl = readline.createInterface({ input: python.stdout });
     rl.on('line', line => {

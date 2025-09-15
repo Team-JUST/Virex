@@ -181,15 +181,32 @@ def _h264_type(b0): return b0 & 0x1F
 def _h265_type(b0,b1): return (b0 & 0x7E)>>1
 
 def _sniff_codec(buf: bytes) -> str:
-    for off in _iter_startcodes(buf[:2_000_000]):
-        sc = 4 if buf[off:off+4]==START4 else 3
-        if off+sc >= len(buf): continue
-        b0, b1 = buf[off+sc], buf[off+sc+1] if off+sc+1<len(buf) else 0
+    window = min(len(buf), 16_000_000)
+    head = buf[:window]
+    for off in _iter_startcodes(head):
+        sc = 4 if head[off:off+4]==START4 else 3
+        if off+sc >= len(head): continue
+        b0 = head[off+sc]
+        b1 = head[off+sc+1] if off+sc+1 < len(head) else 0
         if _h264_type(b0) in (5,7,8): return "h264"
         if _h265_type(b0,b1) in (19,20,32,33,34): return "h265"
+
+    L = len(buf)
+    for s in (L//3, (L*2)//3, max(0, L-2_000_000)):
+        e = min(L, s + 2_000_000)
+        if e - s < 8: continue
+        seg = buf[s:e]
+        for off in _iter_startcodes(seg):
+            sc = 4 if seg[off:off+4]==START4 else 3
+            if off+sc >= len(seg): continue
+            b0 = seg[off+sc]
+            b1 = seg[off+sc+1] if off+sc+1 < len(seg) else 0
+            if _h264_type(b0) in (5,7,8): return "h264"
+            if _h265_type(b0,b1) in (19,20,32,33,34): return "h265"
     return "unknown"
 
-def _carve_annexb_segments(buf: bytes, min_bytes=200_000):
+
+def _carve_annexb_segments(buf: bytes, min_bytes=64_000):
     segs, cur = [], None
     seen_sps=seen_pps=False
     for off in _iter_startcodes(buf):
@@ -220,7 +237,7 @@ def carve_jdr_from_bin(bin_path, out_dir=None, max_segments=1000):
     fixed_dir=_ensure_sibling_dir(bin_path,"carved_fixed")
     f,mm=_open_mmap(bin_path)
     try:
-        codec=_sniff_codec(bytes(mm[:2_000_000]))
+        codec = _sniff_codec(bytes(mm))
         if codec not in ("h264","h265"): return out
         segs=_carve_annexb_segments(bytes(mm))
         for i,(s,e) in enumerate(segs[:max_segments]):
@@ -265,10 +282,16 @@ def rebuild_carved_videos(bin_path,carved_list):
         rebuilt = remux_avi_to_mp4(raw,fixed_dir) if ext==".avi" else \
                   fix_or_remux_mp4(raw,fixed_dir) if ext==".mp4" else None
         probe=ffprobe_json(rebuilt) if rebuilt else None
-        results.append({"offset":item.get("offset"),"length":item.get("length"),
-                        "raw":raw,"rebuilt":rebuilt,
-                        "ok":rebuilt is not None and probe is not None})
+        results.append({
+            "offset": item.get("offset"),
+            "length": item.get("length"),
+            "raw": raw,
+            "rebuilt": rebuilt,
+            "ok": (rebuilt is not None and probe is not None),
+            "probe": probe,       
+        })
     return results
+
 
 # =========================================================
 # Auto pipelines
