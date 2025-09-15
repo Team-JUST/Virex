@@ -202,7 +202,7 @@ const Home = ({ isDarkMode }) => {
       if (!a.isDirectory && b.isDirectory) return 1;
       return a.name.localeCompare(b.name);
     });
-    setEntries(raw.filter((e) => e.isDirectory || e.isSupported));
+    setEntries(raw.filter((e) => !e.isHidden && (e.isDirectory || e.isSupported)));
   }, []);
 
   const handleDriveClick = (mount) => {

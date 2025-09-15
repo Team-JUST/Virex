@@ -26,6 +26,7 @@ const checkDiskSpace = require('check-disk-space').default;
 const fs = require('fs').promises;
 const fssync = require('fs');
 const os = require('os');
+const winattr = require('winattr');
 
 const isSafeTempDir = (dir) => {
   if (!dir) return false;
@@ -200,6 +201,15 @@ ipcMain.handle('read-folder', async (_event, folderPath) => {
     dirents.sort((a, b) => a.name.localeCompare(b.name, 'en', { sensitivity: 'base' }));
 
     const SUPPORTED_EXTS = ['.e01', '.001', '.mp4', '.avi', '.jdr'];
+
+    const isKnownSystemFolder = (name) => {
+          const lower = name.toLowerCase();
+          if (lower === 'system volume information') return true;
+          if (lower === '$recycle.bin' || lower === 'recycler') return true;
+          if (/^found\.\d{3}$/i.test(name)) return true;
+          return false;
+        };
+
     const items = [];
     for (const e of dirents) {
       const full = path.join(folderPath, e.name);
@@ -215,12 +225,27 @@ ipcMain.handle('read-folder', async (_event, folderPath) => {
       const ext = path.extname(lower);
       const isSupported = SUPPORTED_EXTS.includes(ext);
 
+      let isHidden = false;
+      try {
+        const attr = await new Promise((resolve, reject) => 
+          winattr.get(full, (err, result) => err ? reject(err) : resolve(result))
+        );
+        if (attr.hidden || attr.system) isHidden = true;
+      } catch (err) {
+        if (isKnownSystemFolder(e.name)) {
+          isHidden = true;
+        } else {
+          console.warn('[HiddenAttrFallback] attr check failed:', full, err?.message || err);
+        }
+      }
+
       items.push({
         name: e.name,
         path: full,
         isDirectory: e.isDirectory(),
         isSupported,
         size,
+        isHidden,
       });
     }
     return items;
