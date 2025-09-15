@@ -92,28 +92,25 @@ class AudioChunk:
 
 def calculate_fps(chunks):
     """I-frame부터 다음 I-frame까지의 프레임 수를 세서 fps 계산"""
-    frame_counts = []  # 각 구간별 프레임 수를 저장
+    frame_counts = []
     count = 0
-    
+
     for i in range(len(chunks)):
-        # 현재 청크가 I-frame인 경우
         if chunks[i].data.startswith(b'\x00\x00\x00\x01\x67'):
-            if count > 0:  # 이전 구간의 프레임 수 저장
+            if count > 0:
                 frame_counts.append(count)
-            count = 1  # 현재 I-frame부터 다시 카운트 시작
+            count = 1
         else:
             count += 1
-    
-    # 마지막 구간의 프레임 수도 저장
+
     if count > 0:
         frame_counts.append(count)
-    
-    # 가장 많이 나온 프레임 수를 fps로 사용
+
     if frame_counts:
         return max(set(frame_counts), key=frame_counts.count)
     return 30  # 기본값
 
-def _recover_channel_data(data, label, output_dir):
+def _recover_channel_data(data, label, output_dir, save_audio=True):
     video_sigs = CHUNK_SIG[label]
     audio_sigs = CHUNK_SIG['audio']
     codec = detect_codec(data)
@@ -141,29 +138,29 @@ def _recover_channel_data(data, label, output_dir):
     cur_video_first_ts = None
     cur_audio_first_ts = None
 
-    def save_video_file(ts, data):
-        if not data:
+    def save_video_file(ts, data_bytes):
+        if not data_bytes:
             return None
         video_filename = f"{channel_prefix}{format_datetime(ts)}.vrx" if ts else f"{channel_prefix}unknown_time_video.vrx"
         video_path = os.path.join(output_dir, video_filename)
         with open(video_path, "wb") as f:
-            f.write(data)
+            f.write(data_bytes)
         video_paths.append(video_path)
         return video_path
 
-    def save_audio_file(ts, data):
-        if not data:
+    def save_audio_file(ts, data_bytes):
+        if not data_bytes:
             return None
-        audio_filename = f"{channel_prefix}{format_datetime(ts)}.bin" if ts else f"{channel_prefix}unknown_time_audio.bin"
+        audio_filename = f"A_{format_datetime(ts)}.bin" if ts else f"{channel_prefix}unknown_time_audio.bin"
         audio_path = os.path.join(output_dir, audio_filename)
         with open(audio_path, "wb") as f:
-            f.write(data)
+            f.write(data_bytes)
         audio_paths.append(audio_path)
         return audio_path
 
     # 모든 청크 찾기
     while True:
-        sig, idx = find_next(data, offset, video_sigs + audio_sigs)
+        sig, idx = find_next(data, offset, video_sigs + (audio_sigs if save_audio else []))
         if idx == -1 or idx + 8 > len(data):
             break
 
@@ -186,27 +183,26 @@ def _recover_channel_data(data, label, output_dir):
                 if not found_start and pats['start'].match(chunk):
                     found_start = True
                 if found_start:
-                    # 분리 조건: 이전 프레임과 1초 이상 차이
+                    # 비디오 분리 조건: 이전 프레임과 1초 이상 차이
                     if prev_video_ts and timestamp and (timestamp - prev_video_ts).total_seconds() > 1:
-                        # 현재까지 모은 비디오/오디오 저장
                         save_video_file(cur_video_first_ts, cur_video_data)
-                        save_audio_file(cur_audio_first_ts, cur_audio_data)
                         cur_video_data = bytearray()
-                        cur_audio_data = bytearray()
-                        cur_video_first_ts = timestamp
-                        cur_audio_first_ts = timestamp
+                        cur_video_first_ts = None
                         found_start = False
-                        # SPS로 시작하는지 다시 체크
                         if pats['start'].match(chunk):
                             found_start = True
-                    if cur_video_first_ts is None:
+                            cur_video_first_ts = timestamp
+                    if cur_video_first_ts is None and timestamp:
                         cur_video_first_ts = timestamp
-                    cur_video_data.extend(chunk)
-                    video_chunks.append(VideoChunk(chunk, timestamp))
-                    prev_video_ts = timestamp
-        elif sig in audio_sigs:
+                    if found_start:
+                        cur_video_data.extend(chunk)
+                        video_chunks.append(VideoChunk(chunk, timestamp))
+                    if timestamp:
+                        prev_video_ts = timestamp
+
+        elif save_audio and sig in audio_sigs:
+            # 오디오는 save_audio=True일 때만 처리/저장
             if found_start:
-                # 오디오도 비디오 분리 기준에 맞춰 분리
                 if prev_audio_ts and timestamp and (timestamp - prev_audio_ts).total_seconds() > 1:
                     save_audio_file(cur_audio_first_ts, cur_audio_data)
                     cur_audio_data = bytearray()
@@ -220,17 +216,17 @@ def _recover_channel_data(data, label, output_dir):
     # 마지막 남은 데이터 저장
     if cur_video_data:
         save_video_file(cur_video_first_ts, cur_video_data)
-    if cur_audio_data:
+    if save_audio and cur_audio_data:
         save_audio_file(cur_audio_first_ts, cur_audio_data)
 
     # fps 계산
     fps = calculate_fps(video_chunks) if video_chunks else 30
 
     return {
-        "recovered": len(video_chunks) > 0 or len(audio_chunks) > 0,
+        "recovered": len(video_chunks) > 0 or (save_audio and len(audio_chunks) > 0),
         "video_size": bytes_to_unit(sum(len(chunk.data) for chunk in video_chunks)),
         "video_paths": video_paths if output_dir else [],
-        "audio_paths": audio_paths if output_dir else [],
+        "audio_paths": (audio_paths if (output_dir and save_audio) else []),
         "fps": fps
     }
 
@@ -246,144 +242,131 @@ def recover_jdr(input_jdr, base_dir, target_format='mp4'):
         return {}
 
     output_root = base_dir
-    video_output_dir = os.path.join(output_root, 'video')
-    audio_output_dir = os.path.join(output_root, 'audio')
-    merge_output_dir = os.path.join(output_root, 'merge')
-    
-    os.makedirs(video_output_dir, exist_ok=True)
-    os.makedirs(audio_output_dir, exist_ok=True)
-    os.makedirs(merge_output_dir, exist_ok=True)
-
-    # 원본 JDR 파일이 output_root 안에 없을 때만 복사
-    dest_path = os.path.join(output_root, os.path.basename(input_jdr))
-    if os.path.normpath(input_jdr) != os.path.normpath(dest_path):
-        try:
-            import shutil
-            shutil.copy(input_jdr, dest_path)
-        except Exception as e:
-            logger.warning(f"Could not copy original JDR file: {e}")
 
     results = {}
     labels = ['front', 'rear', 'side']
-    all_audio_files = []
+    all_audio_bin_files = []
+    audio_saved = False
     first_timestamp_str = None
 
     temp_base_dir = os.path.join(output_root, 'temp')
+    os.makedirs(temp_base_dir, exist_ok=True)
 
     for label in labels:
         logger.info(f"Recovering channel: {label}")
-        
-        temp_dir = os.path.join(temp_base_dir, label)
-        os.makedirs(temp_dir, exist_ok=True)
 
-        channel_result = _recover_channel_data(data, label, temp_dir)
+        channel_result = _recover_channel_data(
+            data=data,
+            label=label,
+            output_dir=temp_base_dir,
+            save_audio=(not audio_saved)
+        )
+
+        if not audio_saved and channel_result.get("audio_paths"):
+            all_audio_bin_files.extend(channel_result["audio_paths"])
+            audio_saved = True
 
         if not channel_result["recovered"]:
             logger.warning(f"No data recovered for channel: {label}")
+            results[label] = {
+                "recovered": False,
+                "video_path": None,
+                "video_size": "0 B"
+            }
             continue
 
         final_video_paths = []
-        for i, video_path in enumerate(channel_result["video_paths"]):
+        for i, video_path in enumerate(channel_result.get("video_paths", [])):
             try:
                 output_filename = os.path.basename(video_path).replace('.vrx', f'.{target_format}')
-                output_path = os.path.join(video_output_dir, output_filename)
-                
-                ffmpeg_wrapper.convert_video(video_path, output_path, fps=channel_result["fps"])
-                
+                output_path = os.path.join(output_root, output_filename)
+
+                ffmpeg_wrapper.convert_video(video_path, output_path, fps=channel_result.get("fps", 30))
                 final_video_paths.append(output_path)
                 logger.info(f"Successfully created {output_path}")
 
+                # 첫 비디오의 타임스탬프 문자열 확보
                 if i == 0 and not first_timestamp_str:
-                    # Extract timestamp from filename like 'F_2025_01_06_08_10_48_video.vrx'
                     match = re.search(r'\d{4}_\d{2}_\d{2}_\d{2}_\d{2}_\d{2}', os.path.basename(video_path))
                     if match:
                         first_timestamp_str = match.group(0)
-
             except Exception as e:
                 logger.error(f"Failed to process video for {video_path}: {e}")
-        
-        all_audio_files.extend(channel_result.get("audio_paths", []))
 
         results[label] = {
-            "recovered_files": final_video_paths,
-            "video_size": channel_result["video_size"]
+            "recovered": True,
+            "video_path": final_video_paths,
+            "video_size": channel_result.get("video_size", "0 B")
         }
 
-    # Convert and save audio
-    audio_file_path = None  # Initialize audio file path
-    if all_audio_files:
+    audio_mp3_paths = []
+    if all_audio_bin_files:
         try:
-            # Use the timestamp from the first video file for the audio filename
-            if not first_timestamp_str:
-                first_timestamp_str = "unknown_time"
-            
-            audio_output_filename = f"A_{first_timestamp_str}.mp3"
-            final_audio_path = os.path.join(audio_output_dir, audio_output_filename)
+            for bin_file in all_audio_bin_files:
+                base_name = os.path.basename(bin_file).replace(".bin", "")
+                audio_output_filename = f"{base_name}.mp3"
+                final_audio_path = os.path.join(output_root, audio_output_filename)
 
-            # 첫 번째 채널(00AD)의 오디오 파일만 사용
-            front_channel_audio = next(
-                (f for f in all_audio_files if "00AD" in f),
-                all_audio_files[0]  # 없으면 첫 번째 파일 사용
-            )
-            
-            logger.info("Converting audio file to MP3.")
-            ffmpeg_wrapper.convert_audio(front_channel_audio, final_audio_path, extra_args=['-c:a', 'mp3', '-b:a', '128k'])
-            logger.info(f"Successfully created audio file {final_audio_path}")
-            
-            # Audio file created but not stored in JSON - use direct file path for merging
-            audio_file_path = final_audio_path
-
-            # 각 채널의 비디오와 오디오를 병합
-            for channel in ['front', 'rear', 'side']:
-                if channel in results:
-                    merged_files = []
-                    for video_path in results[channel]['recovered_files']:
-                        try:
-                            # 비디오 파일명에서 날짜 추출
-                            video_name = os.path.basename(video_path)
-                            date_match = re.search(r'\d{4}_\d{2}_\d{2}_\d{2}_\d{2}_\d{2}', video_name)
-                            if date_match:
-                                date_str = date_match.group(0)
-                                # 같은 날짜의 오디오 파일 찾기 (직접 파일 경로 사용)
-                                if audio_file_path and os.path.exists(audio_file_path) and date_str in audio_file_path:
-                                    matching_audio = audio_file_path
-                                else:
-                                    matching_audio = None
-                                    
-                                if matching_audio:
-                                    channel_prefix = {'front': 'F', 'rear': 'R', 'side': 'S'}[channel]
-                                    merged_filename = f"{channel_prefix}_{date_str}_merged.mp4"
-                                    merged_path = os.path.join(merge_output_dir, merged_filename)
-                                    
-                                    ffmpeg_wrapper.merge_video_audio(
-                                        video_path, matching_audio, merged_path
-                                    )
-                                    
-                                    merged_files.append(merged_path)
-                                    logger.info(f"Created merged file: {merged_path}")
-                        except Exception as e:
-                            logger.error(f"Failed to merge video and audio: {e}")
-                    
-                    if merged_files:
-                        if 'merge' not in results:
-                            results['merge'] = {'recovered_files': [], 'file_sizes': {}}
-                        results['merge']['recovered_files'].extend(merged_files)
-                        
-                        # 각 merge 파일의 개별 크기 저장
-                        for merged_file in merged_files:
-                            try:
-                                if os.path.exists(merged_file):
-                                    file_size = os.path.getsize(merged_file)
-                                    filename = os.path.basename(merged_file)
-                                    results['merge']['file_sizes'][filename] = bytes_to_unit(file_size)
-                            except Exception as e:
-                                logger.warning(f"Could not get size of merged file {merged_file}: {e}")
-
+                logger.info(f"Converting {bin_file} to {final_audio_path}")
+                ffmpeg_wrapper.convert_audio(
+                    bin_file,
+                    final_audio_path,
+                    extra_args=['-c:a', 'mp3', '-b:a', '128k']
+                )
+                logger.info(f"Successfully created audio file {final_audio_path}")
+                audio_mp3_paths.append(final_audio_path)
         except Exception as e:
-            logger.error(f"Failed to process combined audio: {e}")
+            logger.error(f"Failed to process audio files: {e}")
 
+    audio_by_date = {}
+    for mp3_path in audio_mp3_paths:
+        m = re.search(r'(\d{4}_\d{2}_\d{2}_\d{2}_\d{2}_\d{2})', os.path.basename(mp3_path))
+        if m:
+            date_key = m.group(1)
+            audio_by_date.setdefault(date_key, mp3_path)
 
-    # Clean up temp directory
+    # 채널별 비디오에 대해 같은 날짜의 오디오가 있으면 머지
+    merged_any = False
+    for channel in ['front', 'rear', 'side']:
+        if channel in results and results[channel].get('video_path'):
+            merged_files = []
+            for video_path in results[channel]['video_path']:
+                try:
+                    video_name = os.path.basename(video_path)
+                    vdate = re.search(r'(\d{4}_\d{2}_\d{2}_\d{2}_\d{2}_\d{2})', video_name)
+                    if not vdate:
+                        continue
+                    date_str = vdate.group(1)
+                    matching_audio = audio_by_date.get(date_str)
+                    if not matching_audio:
+                        # 동일 타임스탬프를 못 찾으면 머지 생략
+                        continue
+
+                    channel_prefix = {'front': 'F', 'rear': 'R', 'side': 'S'}[channel]
+                    merged_filename = f"{channel_prefix}_{date_str}_merged.mp4"
+                    merged_path = os.path.join(output_root, merged_filename)
+
+                    ffmpeg_wrapper.merge_video_audio(video_path, matching_audio, merged_path)
+                    merged_files.append(merged_path)
+                    logger.info(f"Created merged file: {merged_path}")
+                except Exception as e:
+                    logger.error(f"Failed to merge video and audio: {e}")
+
+            if merged_files:
+                merged_any = True
+                if 'merge' not in results:
+                    results['merge'] = {'merged_files': [], 'file_sizes': {}}
+                results['merge']['merged_files'].extend(merged_files)
+                # 파일 크기 기록
+                for merged_file in merged_files:
+                    try:
+                        if os.path.exists(merged_file):
+                            file_size = os.path.getsize(merged_file)
+                            filename = os.path.basename(merged_file)
+                            results['merge']['file_sizes'][filename] = bytes_to_unit(file_size)
+                    except Exception as e:
+                        logger.warning(f"Could not get size of merged file {merged_file}: {e}")
+
     try:
         import shutil
         if os.path.exists(temp_base_dir):
