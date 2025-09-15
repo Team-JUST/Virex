@@ -8,9 +8,18 @@ import DriveIcon from '../images/drive.svg?react';
 import FolderIcon from '../images/folder.svg?react';
 import FileIcon from '../images/file.svg?react';
 
-function bytesToGB(n) {
-  if (!n || n <= 0) return '0 GB';
-  return `${(n / (1024 ** 3)).toFixed(1)} GB`;
+function formatBytes(n) {
+  if (!n || n <= 0) return '0 KB';
+  const units = ['KB', 'MB', 'GB', 'TB'];
+  let size = n / 1024;
+  let i = 0;
+  while (size >= 1024 && i < units.length - 1) {
+    size /= 1024;
+    i++;
+  }
+  let str = size.toFixed(1);
+  if (str.endsWith('.0')) str = str.slice(0, -2);
+  return `${str} ${units[i]}`;
 }
 
 function normalizePath(p) {
@@ -36,7 +45,7 @@ function DriveCard({ drive, onClick }) {
 
   const sizeText =
     size > 0
-      ? `${bytesToGB(used)} / ${bytesToGB(size)}`
+      ? `${formatBytes(used)} / ${formatBytes(size)}`
       : '정보 없음';
 
   return (
@@ -128,14 +137,14 @@ function ExplorerView({
                     <div className="folder_inner" style={{ fontWeight: entry.isDirectory ? 'bold' : 'normal', cursor: 'pointer' }}>
                       {entry.isDirectory ? <FolderIcon className="folder_icon" /> : <FileIcon className="file_icon" />}
                       <span>{entry.name}</span>
-                      {entry.isSupported && entry.size ? <span className="file_size">({bytesToGB(entry.size)})</span> : null}
+                      {entry.isSupported && entry.size ? <span className="file_size">({formatBytes(entry.size)})</span> : null}
                     </div>
                   </div>
                   {isSelected && (
                     <div id="selected_file_info" className="selected_box">
                       <h4>선택된 파일</h4>
                       <p><strong>파일명:</strong> {selectedFile.name}</p>
-                      <p><strong>크기:</strong> {bytesToGB(selectedFile.size)}</p>
+                      <p><strong>크기:</strong> {formatBytes(selectedFile.size)}</p>
                       <p><strong>경로:</strong> {selectedFile.path}</p>
                       <Button
                         variant="dark"
