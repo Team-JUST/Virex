@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect, useMemo, use } from 'react';
+import React, { useRef, useState, useEffect, useMemo, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 
 import { useSessionStore } from '../session.js';
@@ -136,6 +136,27 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
   const [currentCount, setCurrentCount] = useState(0);
   const [totalFiles, setTotalFiles] = useState(0);
 
+// 3-1) 오디오 재생 상태
+  const audioRef = useRef(null);
+  const [currentAudio, setCurrentAudio] = useState(null); // { type, file }
+  const [isAudioPlaying, setIsAudioPlaying] = useState(false);
+
+  // 오디오 정지 및 초기화 공통 함수
+  const stopAudio = useCallback(() => {
+    if (audioRef.current) {
+      try {
+        audioRef.current.pause();
+        audioRef.current.currentTime = 0;
+      } catch {}
+    }
+    audioRef.current = null;
+    setIsAudioPlaying(false);
+    setCurrentAudio(null);
+  }, []);
+
+  // 언마운트시 정리
+  useEffect(() => () => stopAudio(), [stopAudio]);
+
 // 4) 결과 목록 → 카테고리 그룹핑 유틸/파생값
   function groupByCategory(list) {
     return list.reduce((acc, file) => {
@@ -158,20 +179,15 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
     jdrFiles.forEach(file => {
       if (file.channels) {
         Object.entries(file.channels).forEach(([channelName, channelData]) => {
-          if (channelName !== 'audio') {
-            // merge 채널은 merged_files 사용, 나머지는 video_path 사용
-            const files = channelName === 'merge' ? channelData.merged_files : channelData.video_path;
-            
-            if (files && Array.isArray(files)) {
-              files.forEach(recoveredFile => {
-                channels[channelName]?.push({
-                  originalFile: file,
-                  channelName,
-                  recoveredPath: recoveredFile,
-                  fileName: recoveredFile.split(/[/\\]/).pop() || recoveredFile
-                });
+          if (channelName !== 'audio' && channelData.recovered_files) {
+            channelData.recovered_files.forEach(recoveredFile => {
+              channels[channelName]?.push({
+                originalFile: file,
+                channelName,
+                recoveredPath: recoveredFile,
+                fileName: recoveredFile.split(/[/\\]/).pop() || recoveredFile
               });
-            }
+            });
           }
         });
       }
@@ -240,17 +256,20 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
   const toFileUrl = (p) => (p ? `file:///${String(p).replace(/\\/g, '/')}` : '');
 
   const getSlackForChannel = (file, ch) => {
-    const info = file?.channels?.[ch];
-    if (!info || !info.recovered) return null;
+  const info = file?.channels?.[ch];
+  if (!info || !info.recovered) return null;
 
-    const v = info.video_path ? toFileUrl(info.video_path) : null;
-    const i = info.image_path ? toFileUrl(info.image_path) : null;
+  // video_path가 배열이면 첫 번째 값 사용
+  let videoPath = info.video_path;
+  if (Array.isArray(videoPath)) videoPath = videoPath[0];
+  const v = videoPath ? toFileUrl(videoPath) : null;
+  const i = info.image_path ? toFileUrl(info.image_path) : null;
 
-    if (info.is_image_fallback && i) return { type: 'image', src: i, fallback: v || null };
+  if (info.is_image_fallback && i) return { type: 'image', src: i, fallback: v || null };
 
-    if (v) return { type: 'video', src: v, fallback: i || null };
-    if (i) return { type: 'image', src: i, fallback: null };
-    return null;
+  if (v) return { type: 'video', src: v, fallback: i || null };
+  if (i) return { type: 'image', src: i, fallback: null };
+  return null;
   };
 
   const pickFirstAvailableChannel = (file) => {
@@ -262,16 +281,19 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
   };
 
   const getSlackForMp4 = (file) => {
-    const s = file?.slack_info;
-    if (!s || !s.recovered) return null;
+  const s = file?.slack_info;
+  if (!s || !s.recovered) return null;
 
-    const v = s.video_path ? toFileUrl(s.video_path) : null;
-    const i = s.image_path ? toFileUrl(s.image_path) : null;
+  // video_path가 배열이면 첫 번째 값 사용
+  let videoPath = s.video_path;
+  if (Array.isArray(videoPath)) videoPath = videoPath[0];
+  const v = videoPath ? toFileUrl(videoPath) : null;
+  const i = s.image_path ? toFileUrl(s.image_path) : null;
     
-    if (s.is_image_fallback && i) return { type: 'image', src: i, fallback: v || null };
-    if (v) return { type: 'video', src: v, fallback: i || null };
-    if (i) return { type: 'image', src: i, fallback: null };
-    return null;
+  if (s.is_image_fallback && i) return { type: 'image', src: i, fallback: v || null };
+  if (v) return { type: 'video', src: v, fallback: i || null };
+  if (i) return { type: 'image', src: i, fallback: null };
+  return null;
   };
 
 // 9) 결과/분석 파일 파생값 및 슬랙 지표
@@ -293,11 +315,7 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
     if (lowerCaseName.endsWith('.jdr')) {
       return ['front','rear','side','merge'].filter((ch) => {
         const channelData = f.channels?.[ch];
-        if (ch === 'merge') {
-          return channelData?.merged_files && channelData.merged_files.length > 0;
-        } else {
-          return channelData?.video_path && channelData.video_path.length > 0;
-        }
+        return channelData?.recovered_files && channelData.recovered_files.length > 0;
       });
     }
     
@@ -324,27 +342,26 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
         if (selectedJDRFilePath) {
           path = selectedJDRFilePath;
         } else {
-          // 폴백: video_path 또는 merged_files에서 첫 번째 파일 가져오기
+          // 폴백: recovered_files에서 첫 번째 파일 가져오기
           const pref = selectedChannel || ['front', 'rear', 'side', 'merge'].find((ch) => {
             const channelData = f.channels?.[ch];
-            if (ch === 'merge') {
-              return channelData?.merged_files && channelData.merged_files.length > 0;
-            } else {
-              return channelData?.video_path && channelData.video_path.length > 0;
-            }
+            return channelData?.recovered_files && channelData.recovered_files.length > 0;
           });
-
-          if (pref && f.channels?.[pref]) {
-            if (pref === 'merge' && f.channels[pref].merged_files) {
-              path = f.channels[pref].merged_files[0];
-            } else if (f.channels[pref].video_path) {
-              path = f.channels[pref].video_path[0];
-            }
+          
+          if (pref && f.channels?.[pref]?.recovered_files) {
+            path = f.channels[pref].recovered_files[0];
           }
         }
       } else if (isAVI) {
         const pref = selectedChannel || ['front', 'rear', 'side'].find((ch) => f.channels?.[ch]?.full_video_path);
-        path = pref ? f.channels?.[pref]?.full_video_path : null;
+        
+        // 오리지널 오디오가 병합된 영상이 있으면 우선 사용
+        if (pref && f.channels?.[pref]?.merged_video_path) {
+          path = f.channels[pref].merged_video_path;
+        } else {
+          // 병합된 영상이 없으면 기존 full_video_path 사용
+          path = pref ? f.channels?.[pref]?.full_video_path : null;
+        }
       }
       
       return toFileUrl(path || f.origin_video || '');
@@ -539,6 +556,71 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
   }, [isRecovering, recoveryDone]);
 
 // 16) 파일/다운로드 등 핸들러
+  // 16-1) 오디오 재생 핸들러
+  // 오디오 재생 (문자열 path 또는 {path: "..."} 모두 지원)
+  const handleAudioPlay = (audioType, file) => {
+    if (!file?.channels?.audio || !audioType) {
+      return;
+    }
+
+    const raw = file.channels.audio[audioType];
+    if (!raw) return;
+
+    // audio 데이터 형태: { path: '...' } 또는 문자열 직접
+    const realPath = typeof raw === 'string' ? raw : raw.path;
+    if (!realPath) return;
+
+    const audioPath = toFileUrl(realPath);
+    console.debug('[Audio] 요청 재생', { file: file.name, audioType, audioPath });
+
+    // 이미 동일한 오디오 재생 중이면 토글(정지)
+    if (
+      currentAudio?.type === audioType &&
+      currentAudio?.file?.name === file?.name &&
+      isAudioPlaying
+    ) {
+      console.debug('[Audio] 동일 소스 → 정지');
+      stopAudio();
+      return;
+    }
+
+    // 기존 다른 오디오 정지
+    if (audioRef.current) {
+      stopAudio();
+    }
+
+    // 새 오디오 객체 생성
+    try {
+      const audioEl = new Audio(audioPath);
+      audioRef.current = audioEl;
+      setCurrentAudio({ type: audioType, file });
+
+      audioEl.onplay = () => {
+        setIsAudioPlaying(true);
+      };
+      audioEl.onpause = () => {
+        // 사용자가 수동 pause 한 경우
+        setIsAudioPlaying(false);
+      };
+      audioEl.onended = () => {
+        console.debug('[Audio] 재생 종료 이벤트');
+        stopAudio();
+      };
+      audioEl.onerror = (e) => {
+        console.error('[Audio] 재생 오류', e);
+        stopAudio();
+      };
+
+      audioEl.play().catch(err => {
+        console.error('[Audio] play() 실패', err);
+        stopAudio();
+      });
+    } catch (err) {
+      console.error('[Audio] Audio 객체 생성 실패', err);
+      stopAudio();
+    }
+  };
+
   const handleFile = (file) => {
     const lower = file.name.toLowerCase();
     const ok =
@@ -683,17 +765,13 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
     const isAVI = lowerCaseName.endsWith('.avi');
     const isMultiChannel = isJDR || isAVI;
 
-    if (isJDR && availableChannels.length > 0) {
+    if (isMultiChannel && f?.channels) {
       let first = null;
       
       if (isJDR) {
         first = ['front','rear','side','merge'].find(ch => {
           const channelData = f.channels?.[ch];
-          if (ch === 'merge') {
-            return channelData?.merged_files && channelData.merged_files.length > 0;
-          } else {
-            return channelData?.video_path && channelData.video_path.length > 0;
-          }
+          return channelData?.recovered_files && channelData.recovered_files.length > 0;
         }) ?? null;
       } else if (isAVI) {
         first = ['front','rear','side'].find(ch => f.channels?.[ch]?.full_video_path) ?? null;
@@ -717,6 +795,7 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
   };
 
   const resetToUpload = () => {
+    stopAudio();
     resetSession();
     setShowComplete(false);
     setSelectedAnalysisFile(null);
@@ -839,6 +918,7 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
     const [history, setHistory] = useState(['upload']);
 
     const handleBack = () => {
+      stopAudio();
       if (history.length > 1) {
         const newHistory = [...history];
         newHistory.pop();
@@ -936,6 +1016,8 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
                 <Button
                   variant="dark"
                   onClick={() => {
+                    // 결과 화면에서 뒤로가기 시 재생 중인 오디오 정지
+                    stopAudio();
                     setShowComplete(false);
                     setSelectedAnalysisFile(null);
                     setSelectedJDRFilePath(null);
@@ -1087,6 +1169,30 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
                               />
                             );
                           })}
+                          
+                          {/* 오디오 배지 추가 - AVI 파일에만 표시 */}
+                          {selectedResultFile?.channels?.audio && (
+                            <Badge
+                              label={
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                  <span>Audio</span>
+                                </div>
+                              }
+                              onClick={() => {
+                                // 현재 선택된 채널에 따라 적절한 오디오 타입 결정
+                                // 슬랙 영상(slack)을 보고 있으면 slack 오디오, 원본 영상을 보고 있으면 original 오디오
+                                const isSlackVideo = currentVideoSrc?.includes('_slack.mp4');
+                                const audioType = isSlackVideo ? 'slack' : 'original';
+                                handleAudioPlay(audioType, selectedResultFile);
+                              }}
+                              style={{
+                                cursor: 'pointer',
+                                opacity: currentAudio?.file?.name === selectedResultFile?.name ? 1 : 0.6,
+                                border: currentAudio?.file?.name === selectedResultFile?.name ? '1px solid #333' : '1px solid transparent',
+                                backgroundColor: isAudioPlaying && currentAudio?.file?.name === selectedResultFile?.name ? '#e8f4fd' : undefined,
+                              }}
+                            />
+                          )}
                         </>
                       );
                     }
@@ -1576,6 +1682,8 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
               variant="dark"
               onClick={() => {
                 setShowRestartPopup(false);
+                // 새 복원 시작 전에 재생중인 오디오 완전 정지
+                stopAudio();
                 resetSession();
                 setShowComplete(false);
                 setSelectedAnalysisFile(null);
@@ -1633,11 +1741,13 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
             {(() => {
               const lowerCaseName = String(selectedSlackFile?.name ?? '').toLowerCase();
               const isMultiChannel = lowerCaseName.endsWith('.avi') || lowerCaseName.endsWith('.jdr');
+              const isAVI = lowerCaseName.endsWith('.avi');
+              
               if (isMultiChannel) {
-                return ['front', 'rear', 'side'].map((ch) => {
+                const channelBadges = ['front', 'rear', 'side'].map((ch) => {
                   const media = getSlackForChannel(selectedSlackFile, ch);
                   if (!media) return null;
-                  const label = ch === 'front' ? '전방' : ch === 'rear' ? '후방' : '사이드';
+                  const label = ch === 'front' ? 'Front' : ch === 'rear' ? 'Rear' : 'Side';
                   const active = slackChannel === ch;
                   return (
                     <Badge 
@@ -1657,10 +1767,35 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
                     />
                   );
                 });
+
+                // AVI 파일에만 Audio 배지 추가
+                const audioBadge = isAVI && selectedSlackFile?.channels?.audio ? (
+                  <Badge 
+                    key="audio"
+                    label={
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <span>Audio</span>
+                      </div>
+                    }
+                    onClick={() => {
+                      // 슬랙 팝업에서는 항상 슬랙 오디오를 재생
+                      handleAudioPlay('slack', selectedSlackFile);
+                    }}
+                    style={{
+                      cursor: 'pointer',
+                      opacity: currentAudio?.file?.name === selectedSlackFile?.name ? 1 : 0.6,
+                      border: currentAudio?.file?.name === selectedSlackFile?.name ? '1px solid #fff' : '1px solid transparent',
+                      background: isAudioPlaying && currentAudio?.file?.name === selectedSlackFile?.name ? '#555' : '#333',
+                      color: '#fff'
+                    }}
+                  />
+                ) : null;
+
+                return [...channelBadges.filter(Boolean), audioBadge].filter(Boolean);
               }
               return null;
             })()}
-            <Button variant="gray" onClick={() => setShowSlackPopup(false)}>
+            <Button variant="gray" onClick={() => { stopAudio(); setShowSlackPopup(false); }}>
               닫기
             </Button>
           </div>
@@ -1805,7 +1940,7 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
           }
         >
           <div className="alert-buttons">
-            <Button variant="gray" onClick={() => setShowClosePopup(false)}>취소</Button>
+            <Button variant="gray" onClick={() => { stopAudio(); setShowClosePopup(false); }}>취소</Button>
             <Button
               variant="dark"
               onClick={() => {
