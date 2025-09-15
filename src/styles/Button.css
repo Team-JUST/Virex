@@ -13,6 +13,7 @@
   transition: background-color 0.2s ease, transform 0.1s ease;
   width: 120px;
   height: 45px;
+  z-index: 9999;
 }
 
 .button.dark {
@@ -49,6 +50,26 @@
   color: #f1f5f9;
 }
 .dark-mode .button.gray:hover {
-  background-color: #1e293b;
+  background-color: #374151;
   color: #f1f5f9;
+}
+
+.button:disabled,
+.button:disabled:hover,
+.button.dark:disabled,
+.button.dark:disabled:hover,
+.button.gray:disabled,
+.button.gray:disabled:hover {
+  background-color: #9ca3af;
+  color: #e5e7eb;
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
+  pointer-events: none;
+}
+
+.dark-mode .button:disabled,
+.dark-mode .button:disabled:hover {
+  background-color: #475569;
+  color: #cbd5e1;
 }

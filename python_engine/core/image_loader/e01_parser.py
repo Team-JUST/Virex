@@ -70,11 +70,11 @@ def read_file_content(file_obj):
         offset += len(chunk)
     return buffer.getvalue()
 
-def build_analysis(origin_video_path, meta):
+def build_analysis(basic_target_path, origin_video_path, meta):
     return {
-        'basic': get_basic_info_with_meta(origin_video_path, meta),
+        'basic': get_basic_info_with_meta(basic_target_path, meta),
         'integrity': get_integrity_info(origin_video_path),
-        'structure': get_structure_info(origin_video_path),
+        'structure': get_structure_info(basic_target_path),
     }
 
 def handle_mp4_file(name, filepath, data, file_obj, output_dir, category):
@@ -94,8 +94,32 @@ def handle_mp4_file(name, filepath, data, file_obj, output_dir, category):
         output_video_dir=slack_dir,
         target_format="mp4"
     )
+    if not slack_info:
+        slack_info = {
+            "recovered": False,
+            "video_path": None,
+            "image_path": None,
+            "is_image_fallback": False,
+            "slack_size": "0 B",
+            "slack_rate": 0.0,
+            "source_path": original_path
+        }
 
     origin_video_path = slack_info.get('source_path', original_path)
+    recovered_mp4 = slack_info.get('video_path')
+    
+    analysis_target = (
+        recovered_mp4
+        if (slack_info.get('recovered') and recovered_mp4 and os.path.exists(recovered_mp4))
+        else origin_video_path
+    )
+
+    try:
+        has_slack_output = bool(slack_info.get('video_path') or slack_info.get('image_path'))
+        if not has_slack_output and os.path.exists(slack_dir):
+            os.rmdir(slack_dir)
+    except Exception:
+        pass
 
     return {
         'name': name,
@@ -103,7 +127,7 @@ def handle_mp4_file(name, filepath, data, file_obj, output_dir, category):
         'size': bytes_to_unit(len(data)),
         'origin_video': origin_video_path,
         'slack_info': slack_info,
-        'analysis': build_analysis(origin_video_path, file_obj.info.meta)
+        'analysis': build_analysis(analysis_target, origin_video_path, file_obj.info.meta)
     }
 
 def handle_avi_file(name, filepath, data, file_obj, output_dir, category):
@@ -221,6 +245,7 @@ def extract_videos_from_e01(e01_path):
         return [], None, 0
 
     output_dir = tempfile.mkdtemp(prefix="Virex_", dir=temp_base)
+    print(json.dumps({"tempDir": output_dir}), flush=True)
 
     for partition in volume:
         if partition.flags == pytsk3.TSK_VS_PART_FLAG_UNALLOC or partition.start == 0:

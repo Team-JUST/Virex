@@ -7,7 +7,10 @@ contextBridge.exposeInMainWorld('api', {
   selectFolder: () => ipcRenderer.invoke('dialog:openDirectory'),
   openDirectory: () => ipcRenderer.invoke('dialog:openDirectory'),
   openE01File: () => ipcRenderer.invoke('dialog:openE01File'),
+  openSupportedFile: () => ipcRenderer.invoke('dialog:openSupportedFile'),
   startRecovery: (e01Path) => ipcRenderer.invoke('start-recovery', e01Path),
+  cancelRecovery: () => ipcRenderer.invoke('cancel-recovery'),
+  onCancelled: (cb) => { const h = () => cb(); ipcRenderer.on('recovery-cancelled', h); return () => ipcRenderer.removeListener('recovery-cancelled', h); },
   clearCache: () => ipcRenderer.invoke('clear-cache'),
   
   onDiskFull: (cb) => {
@@ -37,6 +40,13 @@ contextBridge.exposeInMainWorld('api', {
     const listener = () => callback();
     ipcRenderer.on('recovery-done', listener);
     return () => ipcRenderer.removeListener('recovery-done', listener);
+  },
+
+  // 취소 이벤트 핸들러 등록
+  onCancelled: (callback) => {
+    const listener = () => callback();
+    ipcRenderer.on(`recovery-cancelled`, listener);
+    return () => ipcRenderer.removeListener(`recovery-cancelled`, listener);
   },
 
   // 분석 완료 후 받은 temp 폴더 경로 구독

@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect, useMemo } from 'react';
+import React, { useRef, useState, useEffect, useMemo, use } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 
 import { useSessionStore } from '../session.js';
@@ -196,7 +196,7 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
 
 // 6) 라우팅/초기파일 자동시작 상태
   const location = useLocation();
-  const initialFile = location.state?.e01File || null;
+  const initialFile = location.state?.file || null;
   const autoStart = location.state?.autoStart || false;
 
 // 7) 슬랙 영상 소스 등 슬랙 관련 상태
@@ -389,9 +389,9 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
     if (progress >= 100) {
       setIsRecovering(false);
       setRecoveryDone(true);
+      setView('result');
+      setHistory(prev => [...prev, 'result']);
     }
-    setHistory(prev => [...prev, 'result']);
-    setView('result');
   }, [progress]);
 
 // 11) 카테고리 아이콘 매핑 및 아이콘 선택 헬퍼
@@ -435,7 +435,17 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
       setIsRecovering(false);
       setRecoveryDone(true);
     });
-    return () => { offProg(); offDone(); };
+    const offCancelled = window.api.onCancelled?.(() => {
+      resetSession();
+      setShowComplete(false);
+      setSelectedAnalysisFile(null);
+      setIsRecovering(false);
+      setRecoveryDone(false);
+      setProgress(0);
+      setView('upload');
+      setHistory(['upload']);
+    })
+    return () => { offProg(); offDone(); offCancelled?.(); };
   }, []);
 
 // 13) 결과 수신 리스너
@@ -513,10 +523,14 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
 
 // 16) 파일/다운로드 등 핸들러
   const handleFile = (file) => {
-  if (!file.name.toLowerCase().endsWith('.e01')) {
-    setShowAlert(true);
-    return;
-  }
+    const lower = file.name.toLowerCase();
+    const ok =
+      lower.endsWith('.e01') ||
+      lower.endsWith('.001') ||
+      lower.endsWith('.mp4') ||
+      lower.endsWith('.avi') ||
+      lower.endsWith('.jdr');
+    if (!ok) { setShowAlert(true); return; }
   setShowAlert(false);
   startSession(file);           
   setTotalFiles(0);
@@ -534,7 +548,7 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
   };
 
   const handleClick = async () => {
-    const filePath = await window.api.openE01File();
+    const filePath = await window.api.openSupportedFile();
     if (filePath) {
       const parts = filePath.split(/[/\\]/);
       const fileName = parts[parts.length - 1];
@@ -614,7 +628,6 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
       !tempOutputDir ||
       !selectedPath
     ) {
-      alert('다운로드할 파일을 선택하고 경로를 지정하세요.');
       return;
     }
 
@@ -681,6 +694,15 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
       setSelectedPath(dir);
     }
   };
+
+  const resetToUpload = () => {
+    resetSession();
+    setShowComplete(false);
+    setSelectedAnalysisFile(null);
+    setIsRecovering(false);
+    setRecoveryDone(false);
+    setView('upload');
+  }
 
 // 17) 스텝바 계산
   let currentStep = 0;
@@ -867,6 +889,7 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
   
   // 22) 리셋 팝업 핸들러
   const [showRestartPopup, setShowRestartPopup] = useState(false);
+  const [showClosePopup, setShowClosePopup] = useState(false);
 
   return (
     <div className={`recovery-page ${isDarkMode ? 'dark-mode' : ''}`}>
@@ -936,7 +959,16 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
                 <Badge label="진행중" />
                 <span className="file-name">{selectedFile?.name}</span>
               </div>
-              <button className="close-btn" onClick={() => setIsRecovering(false)}>✕</button>
+              <button 
+                className="close-btn"
+                onClick={() => {
+                  if (!isRecovering || progress >= 100) {
+                    setIsRecovering(false);
+                    return;
+                  }
+                  setShowStopRecoverPopup(true);
+                }}
+              >✕</button>
             </div>
             <div style={{ display: "flex", justifyContent: "center" }}>
               <Loading />
@@ -958,7 +990,7 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
           <>
           {/* 파일 업로드 후 복원 중 화면 */}
             <h1 className="upload-title">File Upload</h1>
-            <p className="upload-subtitle">E01 파일을 업로드 해주세요</p>
+            <p className="upload-subtitle">E01 / 001 / MP4 / AVI / JDR 파일을 업로드 해주세요</p>
             <div
               className="dropzone"
               id="dadDrop"
@@ -966,23 +998,26 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
               onDragOver={(e) => e.preventDefault()}
               onClick={handleClick}
             >
-              <p className="dropzone-title">복구할 블랙박스 이미지(E01) 선택</p>
+              <p className="dropzone-title">복구할 파일(E01 / 001 / MP4 / AVI / JDR) 선택</p>
               <p className="dropzone-desc">
-                E01 파일을 업로드해주세요<br />
-                분할된 E01 파일(.E01, E02, E03 ...)을 자동으로 인식합니다
+                E01 / 001 / MP4 / AVI / JDR 파일을 업로드해주세요<br />
+                분할된 E01 파일(.E01, E02, E03 ...)과<br />
+                분할된 001 파일(.001, .002, .003 ...)은 자동으로 인식합니다.
               </p>
 
               <input
                 type="file"
                 id="dadFile"
-                accept=".E01"
+                accept=".E01,.001,.mp4,.avi,.jdr"
                 ref={inputRef}
                 onChange={handleFileChange}
                 hidden
               />
-              <Button variant="gray">
-                ⭱ <span>업로드</span>
-              </Button>
+              {!showAlert && (
+                <Button variant="gray">
+                  ⭱ <span>업로드</span>
+                </Button>
+              )}
             </div>
           </>
         ) : recoveryDone ? (
@@ -1234,12 +1269,17 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
           ) : (
             <>
               {/* 복원 결과 리스트 */}
-              <h1 className="upload-title">Result</h1>
+              <div className="result-header">
+                <h1 className="upload-title">Result</h1>
+                <button
+                  className="close-btn header-close"
+                  onClick={() => setShowClosePopup(true)}
+                >✕</button>
+              </div>
+              
               <div className="recovery-file-box">
                 <span className="result-recovery-text">복원된 파일 목록</span>
-              </div>
-              <div className="result-wrapper">
-                <div style={{ display: "flex", alignItems: "center", marginBottom: "1rem" }}>
+                <div style={{ display: "flex", alignItems: "center" }}>
                   <input
                     type="checkbox"
                     checked={selectAll}
@@ -1248,6 +1288,8 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
                   />
                   <span>전체 선택</span>
                 </div>
+              </div>
+              <div className="result-wrapper">
                 <p className="result-summary">
                   총 {results.length}개의 파일, 용량 {
                     bytesToUnit(
@@ -1381,52 +1423,54 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
 
                               const checked = selectedFilesForDownload.includes(file.path);
 
-                              return (
-                                  <div className="result-file-item" key={file.path}>
-                                    <div className="result-file-info">
-                                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}>
-                                        {/* 개별 파일 다운 */}
-                                        <input
-                                          type="checkbox"
-                                          checked={checked}
-                                          onChange={(e) => {
-                                            let updated;
-                                            if (e.target.checked) {
-                                              updated = [...selectedFilesForDownload, file.path];
+                            return (
+                              <div className="result-file-item" key={file.path}>
+                                {/* 개별 파일 다운 */}
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={(e) => {
+                                    let updated;
+                                    if (e.target.checked) {
+                                      updated = [...selectedFilesForDownload, file.path];
+                                    } else {
+                                      updated = selectedFilesForDownload.filter((p) => p !== file.path);
+                                    }
+                                    setSelectedFilesForDownload(updated);
+                                  }}
+                                />
+
+                                  <div className="result-file-info">
+                                  <div className="result-file-title-row">              
+                                    <button className="text-button" onClick={() => handleFileClick(file.name)}>
+                                        {file.name}
+                                      </button>
+                                      
+                                      {hasSlackBadge && (
+                                        <Badge
+                                          label="슬랙"
+                                          style={{ cursor: 'pointer' }}
+                                          onClick={() => {
+                                            setSelectedSlackFile(file);
+                                            if (isAVI) {
+                                              const [ch, media] = pickFirstAvailableChannel(file);
+                                              setSlackChannel(ch);
+                                              setSlackMedia(media || { type: null, src: '' });
                                             } else {
-                                              updated = selectedFilesForDownload.filter((p) => p !== file.path);
+                                              setSlackChannel(null);
+                                              setSlackMedia(mp4Media || { type: null, src: '' });
                                             }
-                                            setSelectedFilesForDownload(updated);
+                                            setShowSlackPopup(true);
                                           }}
                                         />
-
-                                        <button className="text-button" onClick={() => handleFileClick(file.name)}>
-                                          {file.name}
-                                        </button>
-                                        
-                                        {hasSlackBadge && (
-                                          <Badge
-                                            label="슬랙"
-                                            style={{ cursor: 'pointer' }}
-                                            onClick={() => {
-                                              setSelectedSlackFile(file);
-                                              if (isAVI) {
-                                                const [ch, media] = pickFirstAvailableChannel(file);
-                                                setSlackChannel(ch);
-                                                setSlackMedia(media || { type: null, src: '' });
-                                              } else {
-                                                setSlackChannel(null);
-                                                setSlackMedia(mp4Media || { type: null, src: '' });
-                                              }
-                                              setShowSlackPopup(true);
-                                            }}
-                                          />
-                                        )}
-                                      </div>
-                                      <br />
+                                      )}
+                                    </div>
+                                      
+                                  <div className="file-meta">
                                       {isJDR ? sizeLabel : `${sizeLabel} ・ 슬랙비율: ${slackRatePercent} %`}
                                     </div>
-                                  </div>
+                                </div>
+                                </div>
                               );
                             }
                           })}
@@ -1440,7 +1484,7 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
                   style={{
                     position: 'absolute',
                     bottom: '1.5rem',
-                    right: '4rem',
+                    right: '2rem',
                     display: 'flex',
                     justifyContent: 'flex-end',
                     marginRight: '12px'
@@ -1465,13 +1509,15 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
           isDarkMode={isDarkMode}
           description={
             <>
-              선택한 파일은 E01 이미지 형식이 아닙니다<br />
-              해당 도구는 .E01 형식만 지원됩니다<br />
+              선택한 파일은 지원하지 않는 형식입니다<br />
+              지원 확장자: .E01, .001, .MP4, .AVI, .JDR<br />
               올바른 파일을 다시 선택해 주세요
             </>
           }
         >
-          <Button variant="dark" onClick={() => setShowAlert(false)}>다시 선택</Button>
+          <div className="alert-buttons">
+            <Button variant="dark" onClick={() => setShowAlert(false)}>다시 선택</Button>
+          </div>
         </Alert>
       )}
 
@@ -1488,7 +1534,7 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
             </>
           }
         >
-          <div style={{ display: 'flex', gap: '12px', marginTop: '1rem', justifyContent: 'center' }}>
+          <div className="alert-buttons" style={{ display: 'flex', gap: '12px', marginTop: '1rem', justifyContent: 'center' }}>
             <Button
               variant="gray"
               onClick={() => {
@@ -1721,6 +1767,61 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
               }
             >
               완료
+            </Button>
+          </div>
+        </Alert>
+      )}
+
+      {showClosePopup && (
+        <Alert
+          icon={<RecoveryPauseIcon style={{ color: '#eab308' }} />}
+          title="복원 결과 닫기"
+          isDarkMode={isDarkMode}
+          description= {
+            <>
+              복원 결과를 닫고 파일 업로드로 돌아갈까요?
+            </>
+          }
+        >
+          <div className="alert-buttons">
+            <Button variant="gray" onClick={() => setShowClosePopup(false)}>취소</Button>
+            <Button
+              variant="dark"
+              onClick={() => {
+                setShowClosePopup(false);
+                resetToUpload();
+              }}
+            >
+              확인
+            </Button>
+          </div>
+        </Alert>
+      )}
+
+      {showStopRecoverPopup && (
+        <Alert
+          icon={<RecoveryPauseIcon style={{ color: '#eab308' }} />}
+          title="복원 종료"
+          isDarkMode={isDarkMode}
+          description={
+            <>
+              복원을 종료할까요?<br />
+              진행 중인 작업이 즉시 중지됩니다.
+            </>
+          }
+        >
+          <div className="alert-buttons">
+            <Button variant="gray" onClick={() => setShowStopRecoverPopup(false)}>취소</Button>
+            <Button
+              variant="dark"
+              onClick={async () => {
+                try {
+                  await window.api.cancelRecovery();
+                } catch {}
+                setShowStopRecoverPopup(false);
+              }}
+            >
+              종료
             </Button>
           </div>
         </Alert>

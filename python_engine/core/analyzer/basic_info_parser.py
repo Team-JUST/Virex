@@ -24,7 +24,7 @@ def file_format(file_path):
     return 'Unknown'
 
 # 파일 생성/수정/접근 시간 정보 반환
-def file_creation_time(file_path):
+def file_timestamps(file_path):
     created = os.path.getctime(file_path)
     modified = os.path.getmtime(file_path)
     accessed = os.path.getatime(file_path)
@@ -108,18 +108,29 @@ def video_metadata(file_path):
 def get_basic_info(file_path):
     return {
         "format": file_format(file_path),
-        "timestamps": file_creation_time(file_path),
+        "timestamps": file_timestamps(file_path),
         "video_metadata": video_metadata(file_path)
     }
 
 # E01 메타데이터 기반 버전
 def get_basic_info_with_meta(file_path, meta):
+    # meta가 None이거나 속성이 없을 때 안전하게 처리
+    created = format_timestamp(getattr(meta, 'crtime', None)) if meta else None
+    modified = format_timestamp(getattr(meta, 'mtime', None)) if meta else None
+    accessed = format_timestamp(getattr(meta, 'atime', None)) if meta else None
+
+    # meta가 없으면 파일 시스템의 타임스탬프 사용
+    if not any([created, modified, accessed]):
+        timestamps = file_timestamps(file_path)
+    else:
+        timestamps = {
+            "created": created,
+            "modified": modified,
+            "accessed": accessed
+        }
+
     return {
         "format": file_format(file_path),
-        "timestamps": {
-            "created": format_timestamp(meta.crtime),
-            "modified": format_timestamp(meta.mtime),
-            "accessed": format_timestamp(meta.atime)
-        },
+        "timestamps": timestamps,
         "video_metadata": video_metadata(file_path)
     }

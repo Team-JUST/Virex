@@ -14,8 +14,7 @@ body {
 }
 
 .upload-subtitle {
-  margin-left: 1rem;
-  margin-top: 2rem;
+  margin-top: 1rem;
   font-size: 1.3rem;
   font-weight: 400;
   color: #6b7280;
@@ -29,7 +28,7 @@ body {
   border: 3.5px dashed #d1d5db;
   border-radius: 0.6rem;
   background-color: #f9fafb;
-  margin: 2rem 4rem;
+  margin: 3rem 4rem;
   width: 70%;
   height: 40%;
   padding: 4rem;
@@ -103,6 +102,7 @@ body {
   align-items: center;
   gap: 0.5rem;
   height: var(--bar-height);
+  margin-top: 40px;
 }
 
 .progress-bar-track {
@@ -171,6 +171,13 @@ body {
   color: #222;
 }
 
+.file-meta {
+  margin-top: 2px;
+  font-size: 0.88rem;
+  color: #6b7280;
+  line-height: 1.4;
+}
+
 .close-btn {
   background: none;
   border: none;
@@ -187,14 +194,42 @@ body {
 /* Result-page */
 
 .result-group {
-  margin: 1rem;
+  margin: 1rem 1rem 1rem 0;
 }
 
 .result-summary{
-  margin-left: 1rem;
+  margin-bottom: 0;
 }
 
+.result-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: relative;
+  margin-bottom: 0.25rem;
+}
+
+.header-close {
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 10px;
+  color: #111827;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.header-close:hover { background: #e5e7eb; transform: translateY(-1px); }
+
 .result-group-header {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: #fff;
+  padding: 0.5rem 1rem;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.06);
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -229,13 +264,19 @@ body {
   height: 20px;
 }
 
+.result-file-title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 .result-file-list {
   margin-left: 3.5rem;
 }
 
 .result-file-item {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 0.7rem;
   margin: 0.8rem 0;
 }
@@ -256,6 +297,12 @@ body {
   font-size: 1rem;
   font-weight: 600;
   display: block;
+}
+
+.result-file-info .file-title {
+  display: inlie-block;
+  font-weight: 600;
+  text-decoration: underline;
 }
 
 /* Download */
@@ -284,11 +331,11 @@ body {
 }
 
 .result-scroll-area {
-  max-height: 360px;
-  /* 원하는 높이로 조정 (예: 400~500px) */
+  max-height: 410px;
   overflow-y: auto;
   padding-right: 0.5rem;
   /* 스크롤바 공간 */
+  scrollbar-gutter: stable both-edges;
 }
 
 .result-wrapper {
@@ -546,10 +593,6 @@ input[type="checkbox"] {
   width: 100%;
 }
 
-.recovery-page.dark-mode .parser-info-row--withbar .data-bar-wrapper.is-single {
-  background-color: #374151;
-}
-
 .parser-structure {
   background-color: #f7f7f7;
   padding: 1rem;
@@ -580,7 +623,6 @@ input[type="checkbox"] {
 
 .complete_icon{
   width: 100px;
-  margin: 3rem 0;
   margin-top: 6rem;
 }
 
@@ -592,6 +634,10 @@ input[type="checkbox"] {
 
 .recovery-page.dark-mode .upload-subtitle {
   color: #cbd5e1;
+}
+
+.recovery-page.dark-mode .header-close {
+  color: #f9fafb;
 }
 
 .recovery-page.dark-mode .result-recovery-text {
@@ -644,6 +690,10 @@ input[type="checkbox"] {
 .recovery-page.dark-mode .parser-info-table {
   background-color: #1e293b;
   color: #e2e8f0;
+}
+
+.recovery-page.dark-mode .parser-info-row--withbar .data-bar-wrapper.is-single {
+  background-color: #374151;
 }
 
 .recovery-page.dark-mode .parser-info-row {
@@ -750,4 +800,43 @@ input[type="checkbox"] {
 
 .recovery-page.dark-mode .result-group-toggle::before {
   background-color: #e2e8f0;
+}
+
+.recovery-page.dark-mode .result-group-header {
+  background: #1e293b;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+/* ++ 스크롤바 공통 ++ */
+.result-scroll-area::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.result-scroll-area::-webkit-scrollbar-track {
+  background: transparent;
+  margin-top: 50px;
+  margin-bottom: 50px;
+}
+
+.result-scroll-area::-webkit-scrollbar-thumb {
+  border-radius: 10px;
+}
+
+/* ++ 스크롤바 라이트 모드 ++ */
+.result-scroll-area::-webkit-scrollbar-thumb {
+  background-color: rgba(160, 160, 160, 0.4);
+}
+
+.result-scroll-area::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(120, 120, 120, 0.6);
+}
+
+/* ++ 스크롤바 다크 모드 ++ */
+.recovery-page.dark-mode .result-scroll-area::-webkit-scrollbar-thumb {
+  background-color: rgba(200, 200, 200, 0.3);
+}
+
+.recovery-page.dark-mode .result-scroll-area::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(220, 220, 220, 0.5);
 }
