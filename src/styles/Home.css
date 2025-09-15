@@ -228,6 +228,11 @@
   margin: 1rem 0 1rem 1rem;
 }
 
+#explorer .folder_list > #selected_file_info.selected_box {
+  margin-left: 36px;
+  margin-right: 16px;
+}
+
 /* 버튼 기본화 */
 .button {
   padding: 6px 14px;
