@@ -38,6 +38,36 @@
   }
 }
 
+.skeleton.drive_card .info {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  height: 100%;
+}
+
+.skeleton.drive_card .bar {
+  width: 200px;
+  height: 10px;
+  border-radius: 5px;
+  background: var(--bar-gray);
+  overflow: hidden;
+  margin-top: 4px;
+}
+.skeleton.drive_card .bar_fill {
+  height: 100%;
+  background: linear-gradient(90deg, #e5e7eb 25%, #f3f4f6 50%, #e5e7eb 75%);
+  border-radius: 6px;
+  animation: skeleton-loading 1.2s infinite linear;
+  transition: width 0.6s ease;
+  display: flex;
+  align-items: center;
+}
+
+.main_content.dark-mode .skeleton.drive_card {
+  background-color: #1e293b;
+  border-color: #334155;
+}
+
 /* Home Page Wrapper */
 .main_content {
   padding-top: 1rem;

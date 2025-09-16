@@ -181,6 +181,29 @@ function DriveSection({ title, drives, onDriveClick }) {
   );
 }
 
+function DriveCardSkeleton() {
+  return (
+    <div className="skeleton drive_card">
+      <div className="info">
+        <div
+          className="drive_title skeleton-bar"
+          style={{ marginBottom: "8px", width: "60%", height: 24 }}
+        />
+        <div
+          className="skeleton-bar"
+          style={{ width: "40%", height: 16, marginBottom: 8 }}
+        />
+        <div className="bar">
+          <div
+            className="bar_fill skeleton-bar bar-thick"
+            style={{ width: "80%", height: "100%"  }}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const Home = ({ isDarkMode }) => {
   const [drives, setDrives] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -255,24 +278,8 @@ const Home = ({ isDarkMode }) => {
                 <div className="drive_category">
                   <h2>내장 드라이브</h2>
                   <div className="drive_list">
-                    <div className="drive_card skeleton">
-                      <div className="info">
-                        <div className="drive_title skeleton-bar" style={{ marginBottom: '8px', width: '60%', height: 24 }} />
-                        <div className="skeleton-bar" style={{ width: '40%', height: 16, marginBottom: 8 }} />
-                        <div className="bar">
-                          <div className="bar_fill skeleton-bar bar-thick" style={{ width: '80%' }} />
-                        </div>
-                      </div>
-                    </div>
-                    <div className="drive_card skeleton">
-                      <div className="info">
-                        <div className="drive_title skeleton-bar" style={{ marginBottom: '8px', width: '60%', height: 24 }} />
-                        <div className="skeleton-bar" style={{ width: '40%', height: 16, marginBottom: 8 }} />
-                        <div className="bar">
-                          <div className="bar_fill skeleton-bar bar-thick" style={{ width: '80%' }} />
-                        </div>
-                      </div>
-                    </div>
+                    <DriveCardSkeleton />
+                    <DriveCardSkeleton />
                   </div>
                 </div>
               </>
