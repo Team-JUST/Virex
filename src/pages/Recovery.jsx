@@ -814,16 +814,33 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
               <Loading />
             </div>
             <div className="progress-bar-wrapper">
-              <div className="progress-bar-track">
+              <div
+                className="progress-bar-track"
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={progress}
+              >
                 <div
                   className="progress-bar-fill"
-                  style={{ width: `${progress}%`, transition: 'width 0.6s ease' }}
+                  style={{ width: `${progress}%` }}
                 />
+
+                <div
+                  className="progress-bubble dynamic"
+                  style={{
+                    left: `${progress}%`,
+                    transform:
+                      progress === 0
+                        ? 'translateX(0) rotate(10deg)'
+                        : progress === 100
+                        ? 'translateX(-100%) rotate(10deg)'
+                        : 'translateX(-50%) rotate(10deg)',
+                  }}
+                >
+                  {progress}%
+                </div>
               </div>
-              <div className="progress-bar-text">
-                {progress}%
-              </div>
-              
             </div>
           </>
         ) : !isRecovering && !recoveryDone ? (
