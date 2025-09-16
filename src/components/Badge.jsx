@@ -3,6 +3,7 @@ import React from 'react';
 const Badge = ({ label, onClick, variant = "blue" }) => {
   const baseStyle = {
     width: '64px',
+    minHeight: '20px',
     display: 'flex',
     justifyContent: 'center',
     alignItems: 'center',
