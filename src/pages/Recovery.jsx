@@ -1144,17 +1144,28 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
 
                 <div className="result-scroll-area scrollbar-area" style={{ position: 'relative' }}>
                   {resultsLoading ? (
-                    <div className="result-skeleton">
-                      <div className="skeleton-bar result-skel-header" />
-                      {[...Array(6)].map((_, i) => (
-                        <div className="result-skel-item" key={i}>
-                          <div className="result-skel-checkbox" />
-                          <div style={{ flex: 1 }}>
-                            <div className="skeleton-bar result-skel-title" />
-                            <div className="skeleton-bar result-skel-meta" />
+                    <div className="result-group">
+                      <div className="result-group-header">
+
+                        <span className="skeleton-bar result-skel-header" />
+                      </div>
+
+                      <div className="result-file-list">
+                        {Array.from({ length: 6 }).map((_, i) => (
+                          <div className="result-file-item" key={i}>
+                            <div className="result-skel-checkbox" />
+                            <div className="result-file-info" style={{ flex: 1 }}>
+                              <div className="result-file-title-row">
+                                <span className="skeleton-bar result-skel-title" />
+                                <span className="skeleton-bar result-skel-badge" style={{ width: "60px" }} />
+                              </div>
+                              <div className="file-meta">
+                                <span className="skeleton-bar result-skel-meta" />
+                              </div>
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        ))}
+                      </div>
                     </div>
                   ) : (
                     Object.entries(groupedResults).map(([category, files]) => (
