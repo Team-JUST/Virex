@@ -970,28 +970,6 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
                     controls
                     src={currentVideoSrc}
                   ></video>
-
-                  <div className="parser-controls">
-                    <button id="replayBtn">
-                      <ReplayIcon />
-                    </button>
-                    <button
-                      id="playPauseBtn"
-                      style={{ background: 'none', border: 'none', cursor: 'pointer' }}
-                    >
-                    <PauseIcon
-                      id="playPauseIcon"
-                      className='pause_icon'
-                      style={{ width: '30px', transition: 'filter 0.2s', filter: 'none' }}
-                    />
-                    </button>
-
-                    <input type="range" id="progressBar" min="0" defaultValue="0" step="0.01" />
-                    <span id="timeText">00:00 / 00:00</span>
-                    <button id="fullscreenBtn">
-                      <FullscreenIcon className='full-icon' />
-                    </button>
-                  </div>
                 </div>
 
                 {/* 분석 화면 */}
