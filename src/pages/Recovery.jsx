@@ -26,10 +26,7 @@ import IntegrityIcon from '../images/integrity.svg?react';
 import SlackIcon from '../images/slack.svg?react';
 import StructureIcon from '../images/struc.svg?react';
 import RecoveryPauseIcon from '../images/recoveryPauseIcon.svg?react';
-import ReplayIcon from '../images/view_replay.svg?react';
-import PauseIcon from '../images/view_pause.svg?react';
 import ResetIcon from '../images/resetIcon.svg?react';
-import FullscreenIcon from '../images/view_fullscreen.svg?react';
 import IntegrityGreen from '../images/integrity_g.svg?react';
 import IntegrityRed from '../images/integrity_r.svg?react';
 import CompleteIcon from '../images/complete.svg?react';
@@ -821,24 +818,26 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
               <p style={{ textAlign: 'center', fontSize: '1rem' }}>
                 선택된 경로에 복원된 영상이 저장되었습니다.
               </p>
-              <div style={{ display: 'flex', justifyContent: 'center', gap: '12px', marginTop: '1.5rem' }}>
-                <Button
-                  variant="dark"
-                  onClick={() => {
-                    setShowComplete(false);
-                    setSelectedAnalysisFile(null);
-                    setIsRecovering(false);
-                    setRecoveryDone(true);
-                    setView && setView('result');
-                  }}
-                >
-                  뒤로가기
-                </Button>
+              {!showRestartPopup && (
+                <div style={{ display: 'flex', justifyContent: 'center', gap: '12px', marginTop: '1.5rem' }}>
+                  <Button
+                    variant="dark"
+                    onClick={() => {
+                      setShowComplete(false);
+                      setSelectedAnalysisFile(null);
+                      setIsRecovering(false);
+                      setRecoveryDone(true);
+                      setView && setView('result');
+                    }}
+                  >
+                    뒤로가기
+                  </Button>
 
-                <Button variant="gray" onClick={() => setShowRestartPopup(true)}>
-                  새 복원 시작
-                </Button>
-              </div>
+                  <Button variant="gray" onClick={() => setShowRestartPopup(true)}>
+                    새 복원 시작
+                  </Button>
+                </div>
+              )}
             </div>
           </>
         ) : isDownloading ? (
@@ -1365,12 +1364,12 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
       {showRestartPopup && (
         <Alert
           icon={<ResetIcon />}
-          title="복원 세션 초기화"
+          title="새 복구 시작"
           isDarkMode={isDarkMode}
           description={
             <>
-              새 복원을 시작하시면 현재 복구하신 파일의<br />
-              분석 작업이 모두 초기화 됩니다. <br />
+              새 복구를 시작하면 이전에 복구한 파일의<br />
+              분석 결과가 모두 삭제됩니다.<br />
               계속 진행하시겠습니까?
             </>
           }
