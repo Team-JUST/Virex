@@ -628,93 +628,7 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
     currentStep = 0;
   }
 
-// 18) 파서 뷰어 DOM 세팅(useEffect)
-  useEffect(() => {
-    if (!selectedAnalysisFile) return;
-
-    const waitForDOMAndSetup = () => {
-      const video = document.getElementById('parser-video');
-      const playPauseBtn = document.getElementById('playPauseBtn');
-      const playPauseIcon = document.getElementById('playPauseIcon');
-      const replayBtn = document.getElementById('replayBtn');
-      const fullscreenBtn = document.getElementById('fullscreenBtn');
-      const progressBar = document.getElementById('progressBar');
-      const timeText = document.getElementById('timeText');
-
-      if (!video || !playPauseBtn || !replayBtn || !fullscreenBtn || !progressBar || !timeText || !playPauseIcon) {
-        console.warn("[Debug] video or control element : not ready, retrying");
-        requestAnimationFrame(waitForDOMAndSetup);
-        return;
-      }
-
-      fullscreenBtn.onclick = () => {
-        if (!document.fullscreenElement) {
-          if (video.requestFullscreen) {
-            video.requestFullscreen().catch(err => {
-              console.error("[Debug] fullscreen enter failed : ", err);
-            });
-          } else if (video.webkitRequestFullscreen) {
-            video.webkitRequestFullscreen();
-          } else if (video.msRequestFullscreen) {
-            video.msRequestFullscreen();
-          }
-        } else {
-          if (document.exitFullscreen) {
-            document.exitFullscreen();
-          } else if (document.webkitExitFullscreen) {
-            document.webkitExitFullscreen();
-          } else if (document.msExitFullscreen) {
-            document.msExitFullscreen();
-          }
-        }
-      };
-
-      playPauseBtn.onclick = () => {
-        if (video.paused) {
-          video.play();
-          playPauseIcon.src = 'view_pause.svg';
-          playPauseIcon.style.filter = 'none';
-        } else {
-          video.pause();
-          playPauseIcon.src = 'view_play.svg';
-          playPauseIcon.style.filter = 'grayscale(100%) brightness(0.8)';
-        }
-      };
-
-      replayBtn.onclick = () => {
-        video.currentTime = 0;
-        video.play();
-        playPauseIcon.style.filter = 'none';
-      };
-
-      progressBar.oninput = () => {
-        video.currentTime = progressBar.value;
-      };
-
-      function formatTime(seconds) {
-        if (isNaN(seconds) || seconds === undefined) return '--:--';
-        const min = Math.floor(seconds / 60).toString().padStart(2, '0');
-        const sec = Math.floor(seconds % 60).toString().padStart(2, '0');
-        return `${min}:${sec}`;
-      }
-
-      video.ontimeupdate = () => {
-        progressBar.value = video.currentTime;
-        const durationText = isNaN(video.duration) ? '--:--' : formatTime(video.duration);
-        timeText.textContent = `${formatTime(video.currentTime)} / ${durationText}`;
-      };
-
-      video.onloadedmetadata = () => {
-        progressBar.max = video.duration;
-        const durationText = isNaN(video.duration) ? '--:--' : formatTime(video.duration);
-        timeText.textContent = `${formatTime(0)} / ${durationText}`;
-      };
-    };
-  
-    requestAnimationFrame(waitForDOMAndSetup);
-  }, [selectedAnalysisFile, selectedChannel]);
-
-// 19) 다운로드 완료 후 복원 재시작 핸들러
+// 18) 다운로드 완료 후 복원 재시작 핸들러
     const startRecoveryFromDownload = () => {
       setShowDownloadPopup(false);
       setShowComplete(false);
@@ -724,7 +638,7 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
       setTotalFiles(300);
     };
 
-// 20) 화면 전환/탭 가드 네비게이션
+// 19) 화면 전환/탭 가드 네비게이션
     const [view, setView] = useState('upload');
     const [history, setHistory] = useState(['upload']);
 
@@ -780,7 +694,7 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
       setPendingTab(null);
     };
 
-  // 21) 디스크 용량 부족 이벤트 수신
+  // 20) 디스크 용량 부족 이벤트 수신
   useEffect(() => {
     if (!window.api?.onDiskFull) return;
     const off = window.api.onDiskFull(() => {
@@ -794,7 +708,7 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
     return () => { try { off && off(); } catch {} };
   }, []);
   
-  // 22) 리셋 팝업 핸들러
+  // 21) 리셋 팝업 핸들러
   const [showRestartPopup, setShowRestartPopup] = useState(false);
   const [showClosePopup, setShowClosePopup] = useState(false);
 
