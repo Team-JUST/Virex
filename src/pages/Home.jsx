@@ -183,14 +183,22 @@ function DriveSection({ title, drives, onDriveClick }) {
 
 const Home = ({ isDarkMode }) => {
   const [drives, setDrives] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [currentPath, setCurrentPath] = useState('');
   const [entries, setEntries] = useState([]);
   const [selectedFile, setSelectedFile] = useState(null);
   const [mountPath, setMountPath] = useState('');
 
   useEffect(() => {
-    window.api.getDrives().then(setDrives);
-    const unsubscribe = window.api.onDrivesUpdated(setDrives);
+    setIsLoading(true);
+    window.api.getDrives().then((data) => {
+      setDrives(data);
+      setIsLoading(false);
+    });
+    const unsubscribe = window.api.onDrivesUpdated((data) => {
+      setDrives(data);
+      setIsLoading(false);
+    });
     return () => typeof unsubscribe === 'function' && unsubscribe();
   }, []);
 
@@ -242,21 +250,51 @@ const Home = ({ isDarkMode }) => {
           <h1 className={`home_title${isDarkMode ? ' dark-mode' : ''}`}>드라이브를 선택해 복원을 시작하세요</h1>
 
           <div className={`drive_wrapper${isDarkMode ? ' dark-mode' : ''} scrollbar-area`}>
-            <DriveSection
-              title="내장 드라이브"
-              drives={categorized.internal}
-              onDriveClick={handleDriveClick}
-            />
-            <DriveSection
-              title="외장 드라이브"
-              drives={categorized.external}
-              onDriveClick={handleDriveClick}
-            />
-            <DriveSection
-              title="이동식 드라이브"
-              drives={categorized.removable}
-              onDriveClick={handleDriveClick}
-            />
+            {isLoading ? (
+              <>
+                <div className="drive_category">
+                  <h2>내장 드라이브</h2>
+                  <div className="drive_list">
+                    <div className="drive_card skeleton">
+                      <div className="info">
+                        <div className="drive_title skeleton-bar" style={{ marginBottom: '8px', width: '60%', height: 24 }} />
+                        <div className="skeleton-bar" style={{ width: '40%', height: 16, marginBottom: 8 }} />
+                        <div className="bar">
+                          <div className="bar_fill skeleton-bar bar-thick" style={{ width: '80%' }} />
+                        </div>
+                      </div>
+                    </div>
+                    <div className="drive_card skeleton">
+                      <div className="info">
+                        <div className="drive_title skeleton-bar" style={{ marginBottom: '8px', width: '60%', height: 24 }} />
+                        <div className="skeleton-bar" style={{ width: '40%', height: 16, marginBottom: 8 }} />
+                        <div className="bar">
+                          <div className="bar_fill skeleton-bar bar-thick" style={{ width: '80%' }} />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                <DriveSection
+                  title="내장 드라이브"
+                  drives={categorized.internal}
+                  onDriveClick={handleDriveClick}
+                />
+                <DriveSection
+                  title="외장 드라이브"
+                  drives={categorized.external}
+                  onDriveClick={handleDriveClick}
+                />
+                <DriveSection
+                  title="이동식 드라이브"
+                  drives={categorized.removable}
+                  onDriveClick={handleDriveClick}
+                />
+              </>
+            )}
           </div>
         </>
       )}
