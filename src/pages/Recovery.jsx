@@ -1555,7 +1555,7 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
                   value={selectedPath}
                   readOnly
                   className={`custom-path-input ${isDarkMode ? 'dark-mode' : ''}`}
-                  style={{ flex: 1 }}
+                  style={{ flex: 1, height: '26px' }}
                   placeholder="경로를 지정해주세요"
                 />
                 <Button variant="gray" onClick={handlePathSelect}>
