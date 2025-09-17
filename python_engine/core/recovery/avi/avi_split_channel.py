@@ -81,7 +81,6 @@ def split_channel_bytes(data, label):
 def extract_full_channel_bytes(data, label):
     sig = CHUNK_SIG[label]
     offset = 0
-    frame_count = 0
     out = bytearray()
 
     if not data.startswith(b'RIFF'):
@@ -110,7 +109,6 @@ def extract_full_channel_bytes(data, label):
             continue
 
         out += data[start:end]
-        frame_count += 1
         offset = end
 
-    return bytes(out), frame_count
+    return bytes(out)
