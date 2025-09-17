@@ -9,6 +9,7 @@ import Button from '../components/Button.jsx';
 import Alert from '../components/Alert.jsx';
 import Badge from '../components/Badge.jsx';
 import Loading from '../components/Loading.jsx';
+import VolBadge from '../components/Vol_Badge.jsx';
 
 import '../styles/Stepbar.css';
 import '../styles/Recovery.css';
@@ -881,7 +882,7 @@ async function listCarvedFromFS(baseDir) {
     return () => { try { off && off(); } catch {} };
   }, []);
   
-  // 22) 리셋 팝업 핸들러
+  // 22) 볼륨 슬랙 팝업 핸들러
   const [showRestartPopup, setShowRestartPopup] = useState(false);
   const [showClosePopup, setShowClosePopup] = useState(false);
 
@@ -909,6 +910,7 @@ async function listCarvedFromFS(baseDir) {
     );
   }, [results, volumeSlack, selectedFilesForDownload]);
 
+  const needsRemux = (name) => /\.(?:264|h264|es)$/i.test(name);
   const normalGroups = groupedResults; // 기존 결과
   const carvedGroup = useMemo(() => volumeSlack || [], [volumeSlack]);
   const mergedGroups = useMemo(() => {
@@ -1427,33 +1429,52 @@ async function listCarvedFromFS(baseDir) {
 
                                 <div className="result-file-info">
                                   <div className="result-file-title-row">
+                                    {(() => {
+                                          const unsupported = needsRemux(file.name);
 
-                                      <button className="text-button" onClick={() => openMediaViewer(file)}>
-                                        {file.name}
-                                      </button>
-
-                                    {hasSlackBytes && (
-                                      <Badge
-                                        label="슬랙"
-                                        style={{ cursor: 'pointer' }}
-                                        onClick={() => {
-                                          setSelectedSlackFile(file);
-                                          if (isAVI) {
-                                            const [ch, media] = pickFirstAvailableChannel(file);
-                                            setSlackChannel(ch);
-                                            setSlackMedia(media || { type: null, src: '' });
-                                          } else {
-                                            setSlackChannel(null);
-                                            setSlackMedia(mp4Media || { type: null, src: '' });
+                                          if (unsupported) {
+                                            return (
+                                              <>
+                                                <span className="text-button disabled" title="브라우저에서 재생 불가">
+                                                  {file.name}
+                                                </span>
+                                                <VolBadge label="복원 불가" />
+                                              </>
+                                            );
                                           }
-                                          setShowSlackPopup(true);
-                                        }}
-                                      />
-                                    )}
-                                  </div>
 
+                                          return (
+                                            <button className="text-button" onClick={() => openMediaViewer(file)}>
+                                              {file.name}
+                                            </button>
+                                          );
+                                        })()}
+
+                                        {hasSlackBytes && (
+                                          <Badge
+                                            label="슬랙"
+                                            style={{ cursor: 'pointer' }}
+                                            onClick={() => {
+                                              setSelectedSlackFile(file);
+                                              if (isAVI) {
+                                                const [ch, media] = pickFirstAvailableChannel(file);
+                                                setSlackChannel(ch);
+                                                setSlackMedia(media || { type: null, src: '' });
+                                              } else {
+                                                setSlackChannel(null);
+                                                setSlackMedia(mp4Media || { type: null, src: '' });
+                                              }
+                                              setShowSlackPopup(true);
+                                            }}
+                                          />
+                                        )}
+                                      </div>
+                                     
                                   <div className="file-meta">
-                                    {sizeLabel} ・ 슬랙비율: {slackRatePercent} %
+                                      {category === CARVED_TITLE
+                                        ? sizeLabel
+                                        : (<>{sizeLabel} ・ 슬랙비율: {slackRatePercent} %</>)
+                                      }
                                   </div>
                                 </div>
                               </div>
@@ -1475,15 +1496,17 @@ async function listCarvedFromFS(baseDir) {
                       marginRight: '12px'
                     }}
                   >
-                    <Button variant="dark" onClick={handleDownload}>
-                      다운로드
-                    </Button>
                   </div>  
                 </div> 
                 )}
-              </div>     
+
+              </div>  
+              <Button variant="dark" onClick={handleDownload}>
+                  다운로드
+              </Button>   
             </> )          
             ) : null}
+
       </Box>
 
     {/* Alert 조건문 */}
