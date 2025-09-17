@@ -11,9 +11,12 @@ contextBridge.exposeInMainWorld('api', {
 
 
   cancelRecovery: () => ipcRenderer.invoke('cancel-recovery'),
-  readCarvedIndex: (dir) => ipcRenderer.invoke('readCarvedIndex', dir),
   clearCache: () => ipcRenderer.invoke('clear-cache'),
   
+  readCarvedIndex: (dir) => ipcRenderer.invoke('readCarvedIndex', dir),
+  listCarvedDir: (baseDir) => ipcRenderer.invoke('listCarvedDir', baseDir),
+
+
   onDiskFull: (cb) => {
     const channel = 'recovery-disk-full';
     const handler = (_e, payload) => cb(payload);

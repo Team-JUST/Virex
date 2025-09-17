@@ -5,6 +5,7 @@ import struct
 import subprocess
 import logging
 import mmap
+import sys
 from typing import Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
@@ -12,15 +13,26 @@ logger = logging.getLogger(__name__)
 # =========================================================
 # 공통 유틸
 # =========================================================
+def _nonempty_file(p: Optional[str]) -> Optional[str]:
+    try:
+        if p and os.path.isfile(p) and os.path.getsize(p) > 0:
+            return p
+        if p and os.path.isfile(p):
+            try: os.remove(p)
+            except: pass
+    except:
+        pass
+    return None
+
 def _ensure_outdir(bin_path: str, out_dir: Optional[str]) -> str:
     if out_dir:
         os.makedirs(out_dir, exist_ok=True)
         return out_dir
     base = os.path.dirname(bin_path)
     root = os.path.dirname(base)
-    out_dir = os.path.join(root, "carved")
-    os.makedirs(out_dir, exist_ok=True)
-    return out_dir
+    carved_dir = os.path.join(root, "carved")
+    os.makedirs(carved_dir, exist_ok=True)
+    return carved_dir
 
 def _ensure_sibling_dir(bin_path: str, name: str) -> str:
     base = os.path.dirname(bin_path)
@@ -28,15 +40,6 @@ def _ensure_sibling_dir(bin_path: str, name: str) -> str:
     out_dir = os.path.join(root, name)
     os.makedirs(out_dir, exist_ok=True)
     return out_dir
-
-def _find_all(data: bytes, needle: bytes):
-    i, L = 0, len(needle)
-    while True:
-        i = data.find(needle, i)
-        if i == -1:
-            return
-        yield i
-        i += L
 
 def _open_mmap(path: str):
     f = open(path, "rb")
@@ -53,7 +56,7 @@ def _find_all_mm(mm: mmap.mmap, needle: bytes):
         i += L
 
 # =========================================================
-# ffmpeg / ffprobe 경로
+# ffmpeg / ffprobe
 # =========================================================
 def _search_bin_upwards(start_dir: str) -> Optional[str]:
     cur = os.path.abspath(start_dir)
@@ -93,167 +96,350 @@ def _run(cmd: List[str]) -> Tuple[int, str, str]:
 def ffprobe_json(path: str) -> Optional[Dict]:
     cmd = [_ffprobe_path(), "-v", "error", "-print_format", "json",
            "-show_format", "-show_streams", path]
-    code, out, err = _run(cmd)
+    code, out, _ = _run(cmd)
     if code != 0: return None
     try: return json.loads(out)
     except: return None
 
 # =========================================================
-# AVI 카버
+# AVI utils & carver (정확성 우선)
 # =========================================================
-def carve_avi_from_bin(bin_path: str, out_dir: Optional[str] = None,
-                       max_files: int = 1000) -> List[Dict]:
-    out, out_dir = [], _ensure_outdir(bin_path, out_dir)
-    data = open(bin_path, "rb").read()
-    count = 0
-    for idx in _find_all(data, b"RIFF"):
-        if count >= max_files or idx + 12 > len(data): continue
-        size = struct.unpack("<I", data[idx+4:idx+8])[0]
-        if data[idx+8:idx+12] != b"AVI ": continue
-        total_len = 8 + size
-        if total_len <= 0 or idx + total_len > len(data): continue
-        count += 1
-        out_name = os.path.join(out_dir, f"carved_{count:04d}.avi")
-        with open(out_name, "wb") as wf: wf.write(data[idx:idx+total_len])
-        out.append({"offset": idx, "length": total_len, "path": out_name})
-    return out
+def _read_u32_le(mm, off: int, N: int | None = None):
+    if N is None: N = len(mm)
+    if off < 0 or off + 4 > N: return None
+    return struct.unpack_from("<I", mm, off)[0]
 
-# =========================================================
-# MP4 카버
-# =========================================================
-def carve_mp4_from_bin(bin_path: str, out_dir: Optional[str] = None,
+def _read_fourcc(mm, off: int, N: int | None = None):
+    if N is None: N = len(mm)
+    if off < 0 or off + 4 > N: return None
+    return bytes(mm[off:off+4])
+
+def _iter_riff_avi_hits(mm):
+    N = len(mm); pos = 0
+    while True:
+        hit = mm.find(b"RIFF", pos)
+        if hit == -1: break
+        if hit + 12 <= N and _read_fourcc(mm, hit+8, N) == b"AVI ":
+            yield hit
+        pos = hit + 1
+
+def _find_list_chunk(mm, start: int, end: int, target: bytes):
+    N = len(mm)
+    if start < 0: start = 0
+    if end is None or end > N: end = N
+    pos = start
+    while True:
+        hit = mm.find(b"LIST", pos, end)
+        if hit == -1 or hit + 12 > end: return (None, None)
+        size = _read_u32_le(mm, hit+4, end)
+        if size is None: return (None, None)
+        list_type = _read_fourcc(mm, hit+8, end)
+        logical_end = hit + 8 + size
+        if logical_end > end:
+            pos = hit + 1; continue
+        if list_type == target:
+            return (hit, logical_end - hit)
+        pos = max(hit + 1, logical_end)
+
+def carve_avi_from_bin(bin_path: str, out_dir: Optional[str] = None,
                        max_files: int = 1000,
-                       max_total_len: int = 1_500_000_000) -> List[Dict]:
-    out, out_dir = [], _ensure_outdir(bin_path, out_dir)
+                       max_total_len: int = 2_000_000_000,
+                       require_movi: bool = True,
+                       require_hdrl: bool = True) -> List[Dict]:
+    out = []
+    out_dir = _ensure_outdir(bin_path, out_dir)
     f, mm = _open_mmap(bin_path)
     try:
-        N, count = len(mm), 0
-        def _read_box(off: int):
-            if off+8 > N: return None, None, None
-            size = struct.unpack(">I", mm[off:off+4])[0]
-            typ = mm[off+4:off+8]
-            if size < 8: return None, None, None
-            end = off + size
-            if end > N: return None, None, None
-            try: t = typ.decode("ascii")
-            except: t = "????"
-            return t, size, end
-
-        for ftyp_idx in _find_all_mm(mm, b"ftyp"):
+        N = len(mm); count = 0
+        for riff_off in _iter_riff_avi_hits(mm):
             if count >= max_files: break
-            box_start = ftyp_idx - 4
-            if box_start < 0: continue
-            sz = struct.unpack(">I", mm[box_start:box_start+4])[0]
-            if mm[box_start+4:box_start+8] != b"ftyp": continue
+            if riff_off + 12 > N: continue
+            riff_size = _read_u32_le(mm, riff_off+4, N)
+            if riff_size is None or riff_size < 4: continue
 
-            cur, total, last_end, saw_moov, saw_mdat = box_start, 0, None, False, False
-            while True:
-                btype, bsize, nxt = _read_box(cur)
-                if not btype: break
-                total += bsize
-                if btype == "moov": saw_moov = True
-                if btype == "mdat": saw_mdat = True
-                if total > max_total_len: break
-                last_end = nxt; cur = nxt
+            logical_end = riff_off + 8 + riff_size
+            if logical_end > N: logical_end = N
+            total_len = logical_end - riff_off
+            if total_len <= 12: continue
+            if total_len > max_total_len: total_len = max_total_len
 
-            if not last_end or not (saw_moov or saw_mdat): continue
+            ok = True
+            avi_payload_base = riff_off + 12
+            avi_payload_end  = riff_off + total_len
+            if require_hdrl:
+                hdrl_off, _ = _find_list_chunk(mm, avi_payload_base, avi_payload_end, b"hdrl")
+                if hdrl_off is None: ok = False
+            if require_movi:
+                movi_off, _ = _find_list_chunk(mm, avi_payload_base, avi_payload_end, b"movi")
+                if movi_off is None: ok = False
+            if not ok: continue
+
             count += 1
-            out_name = os.path.join(out_dir, f"carved_{count:04d}.mp4")
-            with open(out_name, "wb") as wf: wf.write(mm[box_start:last_end])
-            out.append({"offset": box_start, "length": last_end-box_start, "path": out_name})
+            out_name = os.path.join(out_dir, f"carved_fixed_{count:04d}.avi")
+            with open(out_name, "wb") as wf:
+                wf.write(mm[riff_off: riff_off + total_len])
+            out.append({"offset": riff_off, "length": total_len, "path": out_name})
+
+            print(json.dumps({
+                "event": "carved_file",
+                "kind": "avi",
+                "path": out_name,
+                "bytes": int(total_len)
+            }), flush=True)
     finally:
         mm.close(); f.close()
     return out
 
 # =========================================================
-# JDR(H.264/H.265 ES) 카버
+# MP4 utils & carver (정확성 우선)
 # =========================================================
-START3, START4 = b"\x00\x00\x01", b"\x00\x00\x00\x01"
+def _read_u32_be(mm, off: int, N: int):
+    if off < 0 or off + 4 > N: return None
+    return struct.unpack(">I", mm[off:off+4])[0]
 
-def _iter_startcodes(buf: bytes):
-    i = 0
-    while i < len(buf)-3:
-        if buf[i:i+4] == START4: yield i; i+=4
-        elif buf[i:i+3] == START3: yield i; i+=3
-        else: i+=1
+def _read_u64_be(mm, off: int, N: int):
+    if off < 0 or off + 8 > N: return None
+    return struct.unpack(">Q", mm[off:off+8])[0]
 
-def _h264_type(b0): return b0 & 0x1F
-def _h265_type(b0,b1): return (b0 & 0x7E)>>1
+def _iter_ftyp_hits(mm):
+    N = len(mm); pos = 0
+    while True:
+        hit = mm.find(b"ftyp", pos)
+        if hit == -1: break
+        box_start = hit - 4
+        if box_start >= 0 and box_start + 8 <= N:
+            yield box_start
+        pos = hit + 1
 
-def _sniff_codec(buf: bytes) -> str:
-    window = min(len(buf), 16_000_000)
-    head = buf[:window]
-    for off in _iter_startcodes(head):
-        sc = 4 if head[off:off+4]==START4 else 3
-        if off+sc >= len(head): continue
-        b0 = head[off+sc]
-        b1 = head[off+sc+1] if off+sc+1 < len(head) else 0
-        if _h264_type(b0) in (5,7,8): return "h264"
-        if _h265_type(b0,b1) in (19,20,32,33,34): return "h265"
+def _read_box_be(mm, off: int, N: int):
+    if off + 8 > N: return (None, None, None)
+    size = _read_u32_be(mm, off, N); typ = mm[off+4:off+8]
+    if size is None: return (None, None, None)
+    if size == 0:
+        end = N; size = end - off
+    elif size == 1:
+        largesize = _read_u64_be(mm, off+8, N)
+        if largesize is None or largesize < 16: return (None, None, None)
+        size = int(largesize); end = off + size
+    else:
+        if size < 8: return (None, None, None)
+        end = off + size
+    if end > N: return (None, None, None)
+    return (typ, size, end)
 
-    L = len(buf)
-    for s in (L//3, (L*2)//3, max(0, L-2_000_000)):
-        e = min(L, s + 2_000_000)
-        if e - s < 8: continue
-        seg = buf[s:e]
-        for off in _iter_startcodes(seg):
-            sc = 4 if seg[off:off+4]==START4 else 3
-            if off+sc >= len(seg): continue
-            b0 = seg[off+sc]
-            b1 = seg[off+sc+1] if off+sc+1 < len(seg) else 0
-            if _h264_type(b0) in (5,7,8): return "h264"
-            if _h265_type(b0,b1) in (19,20,32,33,34): return "h265"
-    return "unknown"
-
-
-def _carve_annexb_segments(buf: bytes, min_bytes=64_000):
-    segs, cur = [], None
-    seen_sps=seen_pps=False
-    for off in _iter_startcodes(buf):
-        sc = 4 if buf[off:off+4]==START4 else 3
-        b0, b1 = buf[off+sc], buf[off+sc+1] if off+sc+1<len(buf) else 0
-        is_idr = (_h264_type(b0)==5) or (_h265_type(b0,b1) in (19,20))
-        is_sps = (_h264_type(b0)==7) or (_h265_type(b0,b1) in (32,33))
-        is_pps = (_h264_type(b0)==8) or (_h265_type(b0,b1)==34)
-        if is_sps: seen_sps=True
-        if is_pps: seen_pps=True
-        if is_idr and seen_sps and seen_pps:
-            if cur is not None and off-cur>=min_bytes: segs.append((cur,off))
-            cur, seen_sps, seen_pps = off, False, False
-    if cur is not None and len(buf)-cur>=min_bytes: segs.append((cur,len(buf)))
-    return segs
-
-def _remux_es_to_mp4(es_path, codec, out_dir):
-    stem=os.path.splitext(os.path.basename(es_path))[0]
-    out_path=os.path.join(out_dir,f"{stem}.mp4")
-    fmt="h264" if codec=="h264" else "hevc"
-    cmd=[_ffmpeg_path(),"-y","-loglevel","warning","-f",fmt,"-i",es_path,
-         "-c","copy","-movflags","+faststart",out_path]
-    code,_,_= _run(cmd)
-    return out_path if code==0 and os.path.isfile(out_path) else None
-
-def carve_jdr_from_bin(bin_path, out_dir=None, max_segments=1000):
-    out, out_dir = [], _ensure_outdir(bin_path,out_dir)
-    fixed_dir=_ensure_sibling_dir(bin_path,"carved_fixed")
-    f,mm=_open_mmap(bin_path)
+def _mp4_header_is_faststart(path: str) -> bool:
     try:
-        codec = _sniff_codec(bytes(mm))
-        if codec not in ("h264","h265"): return out
-        segs=_carve_annexb_segments(bytes(mm))
-        for i,(s,e) in enumerate(segs[:max_segments]):
-            es_ext=".h264" if codec=="h264" else ".h265"
-            es_path=os.path.join(out_dir,f"jdr_seg_{i:04d}{es_ext}")
-            with open(es_path,"wb") as wf: wf.write(mm[s:e])
-            mp4_path=_remux_es_to_mp4(es_path,codec,fixed_dir)
-            out.append({"offset":s,"length":e-s,"es":es_path,
-                        "rebuilt":mp4_path,"ok":mp4_path is not None,
-                        "codec":codec})
+        with open(path, "rb") as rf:
+            head = rf.read(4 * 1024 * 1024)
+        moov = head.find(b"moov"); mdat = head.find(b"mdat")
+        return (moov != -1) and (mdat == -1 or moov < mdat)
+    except Exception:
+        return False
+
+def _looks_playable(path: str) -> bool:
+    meta = ffprobe_json(path)
+    if not meta: return False
+    streams = meta.get("streams") or []
+    return any(s.get("codec_type") == "video" for s in streams)
+
+def carve_mp4_from_bin(bin_path: str, out_dir: Optional[str] = None,
+                       max_files: int = 1000,
+                       max_total_len: int = 1_500_000_000,
+                       require_moov: bool = True,
+                       allow_fragmented: bool = True) -> List[Dict]:
+    out: List[Dict] = []
+    out_dir = _ensure_outdir(bin_path, out_dir)
+    f, mm = _open_mmap(bin_path)
+    try:
+        N = len(mm); count = 0
+        for box_start in _iter_ftyp_hits(mm):
+            if count >= max_files: break
+            typ, size, end = _read_box_be(mm, box_start, N)
+            if typ != b"ftyp" or size is None or size < 16: continue
+            major = mm[box_start+8:box_start+12]
+            if any(b < 0x20 or b > 0x7E for b in major): continue
+
+            cur = end; last_good_end = end; total = size
+            saw_moov = saw_mdat = saw_moof = False
+
+            while cur + 8 <= N and total <= max_total_len:
+                btype, bsize, nxt = _read_box_be(mm, cur, N)
+                if not btype or not bsize: break
+                if bsize > max_total_len: break
+                if btype == b"moov": saw_moov = True
+                elif btype == b"mdat": saw_mdat = True
+                elif btype == b"moof": saw_moof = True
+                total += bsize; last_good_end = nxt; cur = nxt
+                if total > max_total_len: break
+
+            frag_ok = (saw_moof and saw_mdat)
+            ok = saw_moov and (saw_mdat or (allow_fragmented and frag_ok)) if require_moov \
+                 else (saw_mdat or frag_ok or saw_moov)
+            if not ok or last_good_end is None: continue
+
+            dump_end = min(last_good_end, box_start + max_total_len, N)
+            if dump_end <= box_start: continue
+
+            count += 1
+            out_name = os.path.join(out_dir, f"carved_fixed_{count:04d}.mp4")
+            with open(out_name, "wb") as wf:
+                wf.write(mm[box_start:dump_end])
+
+            out.append({
+                "offset": box_start,
+                "length": dump_end - box_start,
+                "path": out_name,
+                "saw_moov": saw_moov,
+                "saw_mdat": saw_mdat,
+                "saw_moof": saw_moof
+            })
+
+            print(json.dumps({
+                "event": "carved_file",
+                "kind": "mp4",
+                "path": out_name,
+                "bytes": int(dump_end - box_start)
+            }), flush=True)
     finally:
-        mm.close();f.close()
+        mm.close(); f.close()
     return out
 
 # =========================================================
-# Remux/Fix
+# JDR(Annex-B H.264/H.265) ES 카버 + remux
+# =========================================================
+START3, START4 = b"\x00\x00\x01", b"\x00\x00\x00\x01"
+
+def _iter_startcodes_mm(mm) -> int:
+    N = len(mm); pos = 0
+    while True:
+        hit = mm.find(START3, pos)
+        if hit == -1: return
+        sc_off = hit - 1 if hit > 0 and mm[hit-1] == 0x00 else hit
+        yield (sc_off + 4) if (sc_off + 4 <= N and mm[sc_off:sc_off+4] == START4) else (sc_off + 3)
+        pos = hit + 1
+
+def _next_start_off_mm(mm, from_payload: int) -> int:
+    N = len(mm); pos = from_payload
+    while True:
+        hit = mm.find(START3, pos)
+        if hit == -1: return N
+        sc_off = hit - 1 if hit > 0 and mm[hit-1] == 0x00 else hit
+        return (sc_off + 4) if (sc_off + 4 <= N and mm[sc_off:sc_off+4] == START4) else (sc_off + 3)
+
+def _nal_type_h264(nal_first_byte: int) -> int:
+    return nal_first_byte & 0x1F
+
+def _nal_type_hevc(b0: int, b1: int) -> int:
+    return (b0 & 0x7E) >> 1
+
+def _classify_codec(mm, nal_off: int) -> str:
+    if nal_off + 2 > len(mm): return "h264"
+    b0 = mm[nal_off]; b1 = mm[nal_off+1]
+    nal_h265 = ((b0 & 0x80) == 0) and ((b1 & 0x07) >= 1)
+    return "hevc" if nal_h265 else "h264"
+
+def _remux_es_to_mp4(es_path: str, codec: str, out_dir: str) -> Optional[str]:
+    stem = os.path.splitext(os.path.basename(es_path))[0]
+    out_path = os.path.join(out_dir, f"{stem}.mp4")
+    fmt = "h264" if codec == "h264" else "hevc"
+    cmd = [_ffmpeg_path(), "-y", "-loglevel", "warning", "-f", fmt, "-i", es_path,
+           "-c", "copy", "-movflags", "+faststart", out_path]
+    code, _, _ = _run(cmd)
+    return _nonempty_file(out_path) if code == 0 else None
+
+def carve_jdr_from_bin(
+    bin_path: str,
+    out_dir: Optional[str] = None,
+    max_files: int = 2000,
+    max_total_len: int = 800_000_000,
+    require_pps: bool = False,
+    codec: str = "auto",
+) -> List[Dict]:
+    out: List[Dict] = []
+    carved_dir = _ensure_outdir(bin_path, out_dir)
+    f, mm_raw = _open_mmap(bin_path)
+    mm = memoryview(mm_raw)
+    try:
+        N = len(mm_raw)
+        count = 0
+        have_sps = have_pps = False
+        cur_start: Optional[int] = None
+        cur_codec = "h264"
+        idr_count = 0
+
+        for nal_off in _iter_startcodes_mm(mm_raw):
+            if count >= max_files or nal_off >= N:
+                break
+            next_off = _next_start_off_mm(mm_raw, nal_off + 1)
+            if next_off <= nal_off or (next_off - nal_off) < 2:
+                continue
+
+            detected = codec if codec in ("h264", "hevc") else _classify_codec(mm_raw, nal_off)
+            if detected == "h264":
+                ntype = mm_raw[nal_off] & 0x1F
+                is_sps = (ntype == 7); is_pps = (ntype == 8); is_idr = (ntype == 5)
+            else:
+                if nal_off + 2 > N: continue
+                ntype = ((mm_raw[nal_off] & 0x7E) >> 1)
+                is_sps = (ntype == 33); is_pps = (ntype == 34); is_idr = (ntype in (19, 20))
+
+            if is_sps: have_sps = True
+            if is_pps: have_pps = True or require_pps
+
+            if cur_start is None and is_idr:
+                cur_start = nal_off
+                cur_codec = "h264" if detected == "h264" else "hevc"
+                idr_count = 1
+                continue
+
+            if is_idr and cur_start is not None:
+                # 세그먼트 마감 조건(너무 길지 않게)
+                if (next_off - cur_start) >= max_total_len:
+                    es_ext = ".h264" if cur_codec == "h264" else ".h265"
+                    es_path = os.path.join(carved_dir, f"carved_es_{count+1:04d}{es_ext}")
+                    with open(es_path, "wb") as wf:
+                        wf.write(mm[cur_start:next_off])
+                    mp4_path = _remux_es_to_mp4(es_path, "h264" if cur_codec == "h264" else "hevc", carved_dir)
+                    out.append({
+                        "offset": cur_start,
+                        "length": next_off - cur_start,
+                        "es": es_path,
+                        "rebuilt": mp4_path,
+                        "ok": mp4_path is not None,
+                        "codec": cur_codec
+                    })
+                    count += 1
+                    cur_start = None
+                    idr_count = 0
+
+        # 끝부분 플러시
+        if cur_start is not None:
+            end = min(cur_start + max_total_len, N)
+            es_ext = ".h264" if cur_codec == "h264" else ".h265"
+            es_path = os.path.join(carved_dir, f"carved_es_{count+1:04d}{es_ext}")
+            with open(es_path, "wb") as wf:
+                wf.write(mm[cur_start:end])
+            mp4_path = _remux_es_to_mp4(es_path, "h264" if cur_codec == "h264" else "hevc", carved_dir)
+            out.append({
+                "offset": cur_start,
+                "length": end - cur_start,
+                "es": es_path,
+                "rebuilt": mp4_path,
+                "ok": mp4_path is not None,
+                "codec": cur_codec
+            })
+    finally:
+        try: mm.release()
+        except: pass
+        try: mm_raw.close()
+        except: pass
+        try: f.close()
+        except: pass
+
+    return out
+
+# =========================================================
+# Remux/Fix 파이프라인
 # =========================================================
 def remux_avi_to_mp4(input_path,out_dir):
     stem=os.path.splitext(os.path.basename(input_path))[0]
@@ -261,7 +447,7 @@ def remux_avi_to_mp4(input_path,out_dir):
     cmd=[_ffmpeg_path(),"-y","-loglevel","warning","-i",input_path,
          "-c:v","copy","-c:a","copy","-movflags","+faststart",out_path]
     code,_,_= _run(cmd)
-    return out_path if code==0 and os.path.isfile(out_path) else None
+    return _nonempty_file(out_path) if code==0 else None
 
 def fix_or_remux_mp4(input_path,out_dir):
     stem=os.path.splitext(os.path.basename(input_path))[0]
@@ -270,78 +456,178 @@ def fix_or_remux_mp4(input_path,out_dir):
          "-fflags","+genpts","-i",input_path,
          "-c:v","copy","-c:a","copy","-movflags","+faststart",out_path]
     code,_,_= _run(cmd)
-    return out_path if code==0 and os.path.isfile(out_path) else None
+    return _nonempty_file(out_path) if code==0 else None
 
-def rebuild_carved_videos(bin_path,carved_list):
-    fixed_dir=_ensure_sibling_dir(bin_path,"carved_fixed")
-    results=[]
+def _mp4_faststart_ok(path: str) -> bool:
+    return _mp4_header_is_faststart(path)
+
+def _looks_playable_or_probe(path: str) -> bool:
+    return _looks_playable(path)
+
+def rebuild_carved_videos(bin_path, carved_list, force_fix: bool = False, fixed_dir: Optional[str] = None):
+    if not carved_list:
+        return []
+    if not fixed_dir:
+        fixed_dir = os.path.dirname(carved_list[0]["path"]) if carved_list else os.path.dirname(bin_path)
+    os.makedirs(fixed_dir, exist_ok=True)
+
+    results = []
     for item in carved_list:
-        raw=item.get("path")
-        if not raw or not os.path.isfile(raw): continue
-        ext=os.path.splitext(raw)[1].lower()
-        rebuilt = remux_avi_to_mp4(raw,fixed_dir) if ext==".avi" else \
-                  fix_or_remux_mp4(raw,fixed_dir) if ext==".mp4" else None
-        probe=ffprobe_json(rebuilt) if rebuilt else None
+        raw = item.get("path")
+        if not raw or not os.path.isfile(raw):
+            continue
+        ext = os.path.splitext(raw)[1].lower()
+        rebuilt = None
+
+        if not force_fix and _looks_playable_or_probe(raw):
+            rebuilt = raw
+        else:
+            if ext == ".avi":
+                rebuilt = remux_avi_to_mp4(raw, fixed_dir)
+            elif ext == ".mp4":
+                if force_fix or not _mp4_faststart_ok(raw):
+                    rebuilt = fix_or_remux_mp4(raw, fixed_dir)
+                else:
+                    rebuilt = raw
+
+        if not rebuilt:
+            continue
+
+        probe = ffprobe_json(rebuilt)
         results.append({
             "offset": item.get("offset"),
             "length": item.get("length"),
             "raw": raw,
             "rebuilt": rebuilt,
-            "ok": (rebuilt is not None and probe is not None),
-            "probe": probe,       
+            "ok": (probe is not None),
+            "probe": probe,
         })
     return results
 
-
 # =========================================================
-# Auto pipelines
-# =========================================================
-def auto_carve_from_dir(bin_dir: str, max_files_per_bin=1000) -> Dict:
-    items, carved_total, rebuilt_total = [],0,0
-    root=os.path.dirname(bin_dir)
-    carved_dir, fixed_dir = os.path.join(root,"carved"), os.path.join(root,"carved_fixed")
-    os.makedirs(carved_dir,exist_ok=True); os.makedirs(fixed_dir,exist_ok=True)
-
-    bin_list=[]
-    meta_path=os.path.join(bin_dir,"volume_slack.json")
-    if os.path.isfile(meta_path):
-        meta=json.load(open(meta_path,"r",encoding="utf-8"))
-        entries=meta.get("entries",[])
-        bin_list=[ent["file"] for ent in entries if os.path.isfile(ent.get("file",""))]
-    else:
-        for n in sorted(os.listdir(bin_dir)):
-            if n.lower().endswith(".bin"): bin_list.append(os.path.join(bin_dir,n))
-
-    for i,bin_path in enumerate(bin_list):
-        avi=carve_avi_from_bin(bin_path,carved_dir,max_files_per_bin)
-        mp4=carve_mp4_from_bin(bin_path,carved_dir,max_files_per_bin)
-        jdr=carve_jdr_from_bin(bin_path,carved_dir,max_files_per_bin)
-        carved_all=avi+mp4
-        carved_total+=len(carved_all)+len(jdr)
-        rebuilt=rebuild_carved_videos(bin_path,carved_all)
-        rebuilt_ok=sum(1 for x in rebuilt if x["ok"])+sum(1 for x in jdr if x["ok"])
-        rebuilt_total+=rebuilt_ok
-        items.append({"bin_index":i,"bin":bin_path,
-                      "carved_count":len(carved_all)+len(jdr),
-                      "rebuilt_ok":rebuilt_ok,
-                      "rebuilt":rebuilt,"jdr":jdr})
-
-    return {"ok":True,"inputs":len(bin_list),
-            "carved_total":carved_total,"rebuilt_total":rebuilt_total,
-            "outputs":{"carved_dir":carved_dir,"fixed_dir":fixed_dir},
-            "items":items}
-
-# =========================================================
-# Folder walker
+# Auto pipelines (이벤트 로그 포함)
 # =========================================================
 def _dir_is_carvable(d: str) -> bool:
     if not os.path.isdir(d): return False
-    if os.path.isfile(os.path.join(d, "volume_slack.json")):
-        return True
+    if os.path.isfile(os.path.join(d, "partition_slack.json")): return True
+    if os.path.isfile(os.path.join(d, "volume_slack.json")): return True
+    if os.path.isfile(os.path.join(d, "unallocated_index.json")): return True
     for n in os.listdir(d):
         if n.lower().endswith(".bin"):
             return True
     return False
+
+def auto_carve_from_dir(bin_dir: str, max_files_per_bin=1000) -> Dict:
+    print(f"[VOL_CARVER] auto_carve_from_dir bin_dir={bin_dir}", file=sys.stderr, flush=True)
+    items, carved_total, rebuilt_total = [], 0, 0
+
+    # 강제 리빌드 여부
+    force_fix = ("--fix" in sys.argv) or (str(os.environ.get("VIREX_FORCE_FIX", "")).lower() in ("1","true","yes"))
+
+    root = os.path.dirname(bin_dir)
+    carved_dir = os.path.join(root, "carved")
+    fixed_dir  = os.path.join(root, "carved_fixed")
+
+    if os.path.abspath(carved_dir) == os.path.abspath(fixed_dir):
+        raise RuntimeError("carved_dir and fixed_dir are identical; check your assignments.")
+
+    print(f"[VOL_CARVER] output dirs => carved_dir={carved_dir} , fixed_dir={fixed_dir}", file=sys.stderr, flush=True)
+    os.makedirs(carved_dir, exist_ok=True)
+    if force_fix and fixed_dir != carved_dir:
+        os.makedirs(fixed_dir, exist_ok=True)
+
+    print(json.dumps({
+        "event": "carve_dirs",
+        "carved_dir": carved_dir,
+        "fixed_dir": (fixed_dir if force_fix and fixed_dir != carved_dir else carved_dir)
+    }), flush=True)
+
+    # bin 목록 구성
+    bin_list: List[str] = []
+    meta = None
+    for meta_name in ("partition_slack.json","volume_slack.json","unallocated_index.json"):
+        meta_path = os.path.join(bin_dir, meta_name)
+        if os.path.isfile(meta_path):
+            try:
+                with open(meta_path, "r", encoding="utf-8") as rf:
+                    meta = json.load(rf)
+                break
+            except Exception:
+                meta = None
+    if meta:
+        entries = meta.get("entries", [])
+        for ent in entries:
+            fp = ent.get("file") or ent.get("path") or ""
+            if fp and os.path.isfile(fp):
+                bin_list.append(fp)
+    if not bin_list:
+        for n in sorted(os.listdir(bin_dir)):
+            if n.lower().endswith(".bin"):
+                bin_list.append(os.path.join(bin_dir, n))
+
+    # 각 bin 처리
+    for i, bin_path in enumerate(bin_list):
+        print(json.dumps({"event": "carve_start", "bin": bin_path}), flush=True)
+
+        avi = carve_avi_from_bin(bin_path, carved_dir, max_files_per_bin)
+        mp4 = carve_mp4_from_bin(bin_path, carved_dir, max_files_per_bin)
+        jdr = carve_jdr_from_bin(bin_path, carved_dir, max_files=max_files_per_bin, require_pps=False)
+
+        print(json.dumps({
+            "event": "carve_counts",
+            "bin": bin_path,
+            "avi": len(avi),
+            "mp4": len(mp4),
+            "jdr": len(jdr)
+        }), flush=True)
+
+        carved_all = avi + mp4
+        carved_total += len(carved_all) + len(jdr)
+
+        if force_fix:
+            rebuilt = rebuild_carved_videos(bin_path, carved_all, force_fix=True, fixed_dir=fixed_dir)
+        else:
+            # 빠른 채택: 원본이 playable이면 그대로
+            rebuilt = rebuild_carved_videos(bin_path, carved_all, force_fix=False, fixed_dir=carved_dir)
+
+        created_cnt = len([x for x in rebuilt if x.get("rebuilt") or x.get("raw")])
+        if created_cnt > 0:
+            print(json.dumps({
+                "event": "carved_nonempty",
+                "bin": bin_path,
+                "count": created_cnt
+            }), flush=True)
+
+        rebuilt_ok = sum(1 for x in rebuilt if x.get("ok"))
+        rebuilt_total += rebuilt_ok
+
+        print(json.dumps({
+            "event": "rebuild_result",
+            "bin": bin_path,
+            "rebuilt_ok": rebuilt_ok,
+            "rebuilt_total": len(rebuilt)
+        }), flush=True)
+
+        items.append({
+            "bin_index": i,
+            "bin": bin_path,
+            "carved_count": len(carved_all) + len(jdr),
+            "rebuilt_ok": rebuilt_ok,
+            "rebuilt": rebuilt,
+            "jdr": jdr
+        })
+
+    return {
+        "ok": True,
+        "inputs": len(bin_list),
+        "carved_total": carved_total,
+        "rebuilt_total": rebuilt_total,
+        "outputs": {
+            "carved_dir": carved_dir,
+            "fixed_dir": (fixed_dir if force_fix and fixed_dir != carved_dir else carved_dir)
+        },
+        "items": items
+    }
 
 def carve_everything(base_dir: str,
                      max_files_per_bin: int = 1000,
@@ -372,26 +658,39 @@ def carve_everything(base_dir: str,
 # 실행 진입점
 # =========================================================
 if __name__=="__main__":
-    import sys
+    print(f"[VOL_CARVER] __file__={__file__}", file=sys.stderr, flush=True)
+    print(f"[VOL_CARVER] argv: {sys.argv}", file=sys.stderr, flush=True)
+
     if len(sys.argv)<2:
-        print("Usage: python vol_carver.py <base_dir> [--ffmpeg-dir <dir>]")
+        print(json.dumps({"event":"usage","msg":"python vol_carver.py <base_dir> [--ffmpeg-dir <dir>]"}), file=sys.stderr, flush=True)
         sys.exit(1)
 
-    base_dir=sys.argv[1]
-    ffmpeg_dir=None
+    base_dir = sys.argv[1]
+    print(f"[VOL_CARVER] base_dir={base_dir}", file=sys.stderr, flush=True)
+
+    if os.path.isfile(base_dir):
+        base_dir = os.path.dirname(base_dir)
+    print(f"[VOL_CARVER] normalized base_dir={base_dir}", file=sys.stderr, flush=True)
+
+    ffmpeg_dir = None
     if "--ffmpeg-dir" in sys.argv:
-        i=sys.argv.index("--ffmpeg-dir")
-        if i+1 < len(sys.argv): ffmpeg_dir=sys.argv[i+1]
+        i = sys.argv.index("--ffmpeg-dir")
+        if i+1 < len(sys.argv): ffmpeg_dir = sys.argv[i+1]
         if ffmpeg_dir and ffmpeg_dir.lower().endswith("ffmpeg.exe"):
-            ffmpeg_dir=os.path.dirname(ffmpeg_dir)
+            ffmpeg_dir = os.path.dirname(ffmpeg_dir)
 
-    result=carve_everything(base_dir, ffmpeg_dir_override=ffmpeg_dir)
-    print(json.dumps(result, ensure_ascii=False, indent=2))
+    result = carve_everything(base_dir, ffmpeg_dir_override=ffmpeg_dir)
+    final_line = json.dumps(result, ensure_ascii=False)
 
-    # 인덱스 파일 저장
-    index_path = os.path.join(base_dir, "carved_index.json")
+    parent_dir = os.path.dirname(base_dir)
+    index_path = os.path.join(parent_dir, "carved_index.json")
     try:
         with open(index_path, "w", encoding="utf-8") as wf:
             json.dump(result, wf, ensure_ascii=False, indent=2)
+        print(json.dumps({"event":"index_written","path":index_path}), flush=True)
+        print(json.dumps({"event":"carved_ready","index": index_path}), flush=True)
     except Exception as e:
-        print(json.dumps({"error": f"write_index_failed: {e}"}))
+        print(json.dumps({"event":"write_index_failed","error": str(e)}), flush=True)
+
+    print(json.dumps({"event":"carve_done"}), flush=True)
+    print(final_line, flush=True)

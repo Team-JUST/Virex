@@ -10,8 +10,9 @@ const drivelist = require('drivelist');
 const checkDiskSpace = require('check-disk-space').default;
 const os = require('os');
 
-const VOL_CARVER = path.join(__dirname, 'python_engine', 'tools', 'vol_carver.py');
+const VOL_CARVER = path.join(__dirname, 'python_engine', 'core', 'recovery', 'vol_recover', 'vol_carver.py');
 const FFMPEG_DIR = path.join(__dirname, 'bin');
+
 
 process.env.SystemRoot = process.env.SystemRoot || 'C:\\Windows';
 process.env.ComSpec    = process.env.ComSpec    || path.join(process.env.SystemRoot, 'System32', 'cmd.exe');
@@ -46,7 +47,7 @@ function runVolCarver(baseDir, sender) {
     const args = [VOL_CARVER, baseDir, '--ffmpeg-dir', FFMPEG_DIR];
     const child = spawn('python', args, {
       cwd: path.dirname(VOL_CARVER),
-      shell: true,
+      shell: false,
       env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' },
     });
     child.on('error', (err) => {
@@ -676,3 +677,29 @@ ipcMain.handle('dialog:openE01File', async () => {
 });
 
 
+// 볼륨 슬랙 리스트
+
+ipcMain.handle('listCarvedDir', async (_event, baseDir) => {
+  if (!baseDir) return [];
+  const carvedDir = path.join(baseDir, 'carved');
+
+  try {
+    const entries = await fs.readdir(carvedDir, { withFileTypes: true });
+
+    const out = [];
+    for (const ent of entries) {
+      if (!ent.isFile()) continue;                      // 파일만
+      const abs = path.join(carvedDir, ent.name);
+      const st = await fs.stat(abs).catch(() => null);  // 크기 확인
+      if (!st || st.size <= 0) continue;                // 0바이트 제외
+      out.push({ name: ent.name, path: abs, size: st.size });
+    }
+
+    // 보기 좋게 정렬
+    out.sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+    return out;
+  } catch (e) {
+    console.warn('[listCarvedDir] failed:', e?.message || e);
+    return [];
+  }
+});
