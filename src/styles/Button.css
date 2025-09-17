@@ -14,6 +14,7 @@
   width: 120px;
   height: 45px;
   z-index: 9999;
+  z-index: 9999;
 }
 
 .button.dark {
@@ -32,18 +33,17 @@
 }
 
 .button.gray:hover {
-  background-color: #5e5e5e;
+  background-color: #1f2937;
   color: white;
   transform: translateY(-1px);
 }
 
 .dark-mode .button.dark {
-  background-color: #f1f5f9;
-  color: #1e293b;
+  background-color: #475569;
+  color: #f8fafc;
 }
 .dark-mode .button.dark:hover {
-  background-color: #e5e7eb;
-  color: #1e293b;
+  background-color: #64748b;
 }
 .dark-mode .button.gray {
   background-color: #374151;

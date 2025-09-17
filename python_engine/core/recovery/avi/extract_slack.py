@@ -5,8 +5,7 @@ import subprocess
 import json
 from python_engine.core.recovery.avi.avi_split_channel import (
     split_channel_bytes,
-    extract_full_channel_bytes,
-    CHUNK_SIG)
+    extract_full_channel_bytes)
 from python_engine.core.recovery.utils.ffmpeg_wrapper import convert_video
 from python_engine.core.recovery.utils.unit import bytes_to_unit
 
