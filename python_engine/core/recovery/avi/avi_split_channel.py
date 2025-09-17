@@ -8,7 +8,7 @@ CHUNK_SIG = {
     'front': b'00dc',
     'rear':  b'01dc',
     'side':  b'02dc',
-}   
+}
 
 PATTERNS = {
     'H264': {
@@ -80,17 +80,20 @@ def split_channel_bytes(data, label):
 
 def extract_full_channel_bytes(data, label):
     sig = CHUNK_SIG[label]
+
+    riff_end = len(data)
+    if data.startswith(b'RIFF'):
+        total = struct.unpack('<I', data[4:8])[0]
+        riff_end = 8 + total
+
     offset = 0
+    file_end = riff_end
+
     out = bytearray()
 
-    if not data.startswith(b'RIFF'):
-        return b'', 0
-    real_file_size = struct.unpack('<I', data[4:8])[0]
-    valid_end = 8 + real_file_size
-
-    while offset < valid_end:
-        idx = data.find(sig, offset, valid_end)
-        if idx < 0 or idx + 8 > valid_end:
+    while True:
+        idx = data.find(sig, offset)
+        if idx < 0 or idx + 8 > file_end:
             break
 
         size = struct.unpack('<I', data[idx + 4:idx + 8])[0]
@@ -104,7 +107,7 @@ def extract_full_channel_bytes(data, label):
         elif size <= MIN_REASONABLE_CHUNK_SIZE:
             offset = idx + 4
             continue
-        if end > valid_end:
+        if end > file_end:
             offset = idx + 4
             continue
 

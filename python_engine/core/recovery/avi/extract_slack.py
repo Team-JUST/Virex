@@ -6,8 +6,7 @@ import json
 import struct
 from python_engine.core.recovery.avi.avi_split_channel import (
     split_channel_bytes,
-    extract_full_channel_bytes,
-    CHUNK_SIG)
+    extract_full_channel_bytes)
 from python_engine.core.recovery.avi.recover_audio import (
     extract_original_audio,
     extract_slack_audio)
