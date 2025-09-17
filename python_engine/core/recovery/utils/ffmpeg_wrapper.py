@@ -5,7 +5,7 @@ from python_engine.core.analyzer.basic_info_parser import video_metadata
 # FFmpeg 실행 파일 경로 
 FFMPEG_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../../bin/ffmpeg.exe'))
 
-def convert_video(input_path, output_path, fps=30, extra_args=None, use_gpu=True, wait=True):
+def convert_video(input_path, output_path, fps=None, extra_args=None, use_gpu=True, wait=True):
     cmd = [FFMPEG_PATH, '-hide_banner', '-loglevel', 'info']
 
     try:
@@ -37,8 +37,6 @@ def convert_video(input_path, output_path, fps=30, extra_args=None, use_gpu=True
             cmd += ['-r', '30']
         cmd += ['-i', input_path, '-c:v', vcodec, '-preset', 'medium', '-crf', '23', '-movflags', '+faststart']
         cmd += [output_path]
-            
-        cmd += ['-movflags', '+faststart']
     else:
         if use_gpu:
             if fps:
@@ -67,7 +65,6 @@ def convert_video(input_path, output_path, fps=30, extra_args=None, use_gpu=True
         
         if extra_args:
             cmd += list(extra_args)
-
         cmd += [output_path]
 
     if wait:

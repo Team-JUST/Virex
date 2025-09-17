@@ -55,7 +55,7 @@ const Settings = ({ isDarkMode, setIsDarkMode }) => {
           <p className="settings_box_desc">임시 캐시 파일을 정리하여 저장 공간을 확보합니다.</p>
         </div>
         <div className="setting-action">
-          <Button variant="gray" onClick={handleCacheClear}>캐시 삭제</Button>
+          <Button variant="dark" onClick={handleCacheClear}>캐시 삭제</Button>
         </div>
       </div>
 
