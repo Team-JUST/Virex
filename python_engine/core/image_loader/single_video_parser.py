@@ -1,9 +1,9 @@
 import os
 import json
 import tempfile
-import time
 from python_engine.core.recovery.mp4.extract_slack import recover_mp4_slack
 from python_engine.core.recovery.avi.extract_slack import recover_avi_slack
+from python_engine.core.recovery.jdr.extract_jdr import recover_jdr
 from python_engine.core.analyzer.basic_info_parser import get_basic_info_with_meta
 from python_engine.core.analyzer.integrity import get_integrity_info
 from python_engine.core.analyzer.struc import get_structure_info
@@ -27,9 +27,14 @@ def handle_single_video_file(filepath, output_dir):
     category = "single"
     orig_dir = os.path.join(output_dir, category)
     os.makedirs(orig_dir, exist_ok=True)
-    original_path = os.path.join(orig_dir, name)
-    with open(original_path, 'wb') as wf:
-        wf.write(data)
+    
+    # JDR 파일은 원본 복사하지 않음
+    if ext != '.jdr':
+        original_path = os.path.join(orig_dir, name)
+        with open(original_path, 'wb') as wf:
+            wf.write(data)
+    else:
+        original_path = filepath  # JDR은 원본 경로 사용
 
     # 원본 파일의 타임스탬프를 meta로 전달
     class Meta:
@@ -83,12 +88,19 @@ def handle_single_video_file(filepath, output_dir):
             'analysis': build_analysis(origin_video_path, origin_video_path, meta)
         }
     elif ext == '.jdr':
+        # JDR 파일은 extract_jdr을 사용하여 복원
+        jdr_info = recover_jdr(
+            input_jdr=original_path,
+            base_dir=orig_dir,
+            target_format="mp4"
+        )
+        
+        # JDR 파일은 analysis 없이 복원 결과만 반환
         result = {
             'name': name,
             'path': filepath,
             'size': bytes_to_unit(len(data)),
-            'origin_video': original_path,
-            'analysis': build_analysis(original_path, meta)
+            'channels': jdr_info  # 복원된 채널 정보
         }
     else:
         return None
