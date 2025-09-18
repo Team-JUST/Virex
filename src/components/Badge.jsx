@@ -1,34 +1,32 @@
 import React from 'react';
 
-const Badge = ({ label, onClick }) => {
-  const sharedStyle = {
-    backgroundColor: '#e0edff',
+const Badge = ({ label, onClick, variant = "blue" }) => {
+  const baseStyle = {
     width: '64px',
+    minHeight: '20px',
     display: 'flex',
     justifyContent: 'center',
     alignItems: 'center',
-    color: '#0051b3',
     fontSize: '0.75rem',
     fontWeight: 600,
     padding: '4px 8px',
     borderRadius: '6px',
-    cursor: onClick ? 'pointer' : 'default',
     border: 'none',
+    cursor: onClick ? 'pointer' : 'default',
   };
 
-  if (onClick) {
-    return (
-      <button style={sharedStyle} onClick={onClick}>
-        {label}
-      </button>
-    );
-  }
+  const colorStyles = {
+    blue:   { backgroundColor: '#e0edff', color: '#0051b3' },
+    red:    { backgroundColor: '#ffe0e0', color: '#b30000' },
+    yellow: { backgroundColor: '#FEF3C7', color: '#92400E' },
+  };
 
-  return (
-    <div style={sharedStyle}>
-      {label}
-    </div>
-  );
+  const style = { ...baseStyle, ...(colorStyles[variant] || colorStyles.blue) };
+
+  if (onClick) {
+    return <button style={style} onClick={onClick}>{label}</button>;
+  }
+  return <div style={style}>{label}</div>;
 };
 
 export default Badge;

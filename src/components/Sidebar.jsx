@@ -50,18 +50,27 @@ const Sidebar = ({ isDarkMode }) => {
           <div className="menu_divider" />
         </div>
         <ul className="menu_list">
-          {navItems.map(({ path, label, icon, alt }) => (
-            <li key={path}>
-              <Link
-                to={path}
-                onClick={(e) => handleNav(e, path)}  
-                className={`menu_item${location.pathname === path ? ' active' : ''}`}
-              >
-                {React.createElement(icon, { className: 'menu_icon', alt })}
-                {label}
-              </Link>
-            </li>
-          ))}
+          {navItems.map(({ path, label, icon, alt }) => {
+            const g = window.__recoverGuard;
+            const isRecovering = g?.isRecovering && Number(g.progress) < 100;
+            const isRecoveryMenu = path === '/fileUpload';
+            const disabled = isRecoveryMenu && isRecovering;
+            return (
+              <li key={path}>
+                <Link
+                  to={path}
+                  onClick={disabled ? (e) => e.preventDefault() : (e) => handleNav(e, path)}
+                  className={`menu_item${location.pathname === path ? ' active' : ''}${disabled ? ' disabled' : ''}`}
+                  style={disabled ? { pointerEvents: 'none', cursor: 'not-allowed' } : {}}
+                  tabIndex={disabled ? -1 : 0}
+                  aria-disabled={disabled}
+                >
+                  {React.createElement(icon, { className: 'menu_icon', alt })}
+                  {label}
+                </Link>
+              </li>
+            );
+          })}
         </ul>
       </div>
     </div>
