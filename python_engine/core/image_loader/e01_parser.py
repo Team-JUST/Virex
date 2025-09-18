@@ -9,13 +9,14 @@ import time
 from io import BytesIO
 from python_engine.core.recovery.mp4.extract_slack import recover_mp4_slack
 from python_engine.core.recovery.avi.extract_slack import recover_avi_slack
+from python_engine.core.recovery.jdr.extract_jdr import recover_jdr
 from python_engine.core.analyzer.basic_info_parser import get_basic_info_with_meta
 from python_engine.core.analyzer.integrity import get_integrity_info
 from python_engine.core.analyzer.struc import get_structure_info
 from python_engine.core.recovery.utils.unit import bytes_to_unit
 
 logger = logging.getLogger(__name__)
-VIDEO_EXTENSIONS = ('.mp4', '.avi')
+VIDEO_EXTENSIONS = ('.mp4', '.avi', '.jdr')
 
 class EWFImgInfo(pytsk3.Img_Info):
     def __init__(self, ewf_handle):
@@ -158,6 +159,32 @@ def handle_avi_file(name, filepath, data, file_obj, output_dir, category):
         'analysis': build_analysis(origin_video_path, origin_video_path, file_obj.info.meta)
     }
 
+def handle_jdr_file(name, filepath, data, file_obj, output_dir, category):
+    video_stem = os.path.splitext(name)[0]
+    orig_dir = os.path.join(output_dir, category, video_stem)
+    os.makedirs(orig_dir, exist_ok=True)
+
+    original_path = os.path.join(orig_dir, name)
+    with open(original_path, 'wb') as wf:
+        wf.write(data)
+
+    jdr_info = recover_jdr(
+        input_jdr=original_path,
+        base_dir=orig_dir,
+        target_format="mp4"
+    )
+    if jdr_info is None:
+        return None
+
+    channels_only = {k: v for k, v in jdr_info.items() if isinstance(v, dict)}
+    
+    return {
+        'name': name,
+        'path': filepath,
+        'size': bytes_to_unit(len(data)),
+        'channels': channels_only
+    }
+
 def extract_video_files(fs_info, output_dir, path="/", total_count=None, progress=None):
     results = []
     for entry in fs_info.open_dir(path=path):
@@ -186,8 +213,12 @@ def extract_video_files(fs_info, output_dir, path="/", total_count=None, progres
 
         if name_str.lower().endswith('.mp4'):
             result = handle_mp4_file(name_str, filepath, data, file_obj, output_dir, category)
-        else: 
+        elif name_str.lower().endswith('.avi'): 
             result = handle_avi_file(name_str, filepath, data, file_obj, output_dir, category)
+        elif name_str.lower().endswith('.jdr'):
+            result = handle_jdr_file(name_str, filepath, data, file_obj, output_dir, category)
+        else:
+            continue
 
         if result:
             results.append(result)
