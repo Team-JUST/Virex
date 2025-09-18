@@ -85,7 +85,7 @@ const setSaveFrames = (b) => patchSession({ saveFrames: b });
 const openGroups = session.openGroups || {};
 const setOpenGroups = (next) => patchSession({ openGroups: next });
 
-// volume list
+// 볼륨 슬랙 변수 정의
 const [volumeSlack, setVolumeSlack] = useState([]);
 const volumeSlackCount = volumeSlack?.length || 0;
 const volumeSlackBytes = (volumeSlack || []).reduce((s, f) => s + Number(f.size || 0), 0);
@@ -1486,27 +1486,25 @@ async function listCarvedFromFS(baseDir) {
                   ))}
 
                   
-                  <div
-                    style={{
-                      position: 'absolute',
-                      bottom: '1.5rem',
-                      right: '2rem',
-                      display: 'flex',
-                      justifyContent: 'flex-end',
-                      marginRight: '12px'
-                    }}
-                  >
-                  </div>  
                 </div> 
                 )}
 
               </div>  
-              <Button variant="dark" onClick={handleDownload}>
-                  다운로드
-              </Button>   
+  
             </> )          
             ) : null}
-
+          {recoveryDone && !selectedAnalysisFile && (
+            <div
+              style={{
+                position: 'fixed',
+                right: 24,
+                bottom: 20,
+                zIndex: 2000,
+              }}
+            >
+              <Button variant="dark" onClick={handleDownload}>다운로드</Button>
+            </div>
+          )}
       </Box>
 
     {/* Alert 조건문 */}
