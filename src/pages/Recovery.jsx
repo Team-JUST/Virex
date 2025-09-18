@@ -921,6 +921,15 @@ async function listCarvedFromFS(baseDir) {
  }, [normalGroups, carvedGroup]);
 
 
+ const showFloatingDownload =
+  recoveryDone &&
+  !selectedAnalysisFile && 
+  view === 'result' &&
+  !showSlackPopup &&
+  !isDownloading &&
+  !showComplete &&
+  !isRecovering;
+
   // 재진입/새로고침 시에도 JSON→FS 순으로 로드
   useEffect(() => {
     if (!recoveryDone || !tempOutputDir || !window.api?.readCarvedIndex) return;
@@ -1493,12 +1502,12 @@ async function listCarvedFromFS(baseDir) {
   
             </> )          
             ) : null}
-          {recoveryDone && !selectedAnalysisFile && (
+            {showFloatingDownload && (
             <div
               style={{
                 position: 'fixed',
-                right: 24,
-                bottom: 20,
+                right: 40,
+                bottom: 40,
                 zIndex: 2000,
               }}
             >
