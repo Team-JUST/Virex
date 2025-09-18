@@ -26,10 +26,7 @@ import IntegrityIcon from '../images/integrity.svg?react';
 import SlackIcon from '../images/slack.svg?react';
 import StructureIcon from '../images/struc.svg?react';
 import RecoveryPauseIcon from '../images/recoveryPauseIcon.svg?react';
-import ReplayIcon from '../images/view_replay.svg?react';
-import PauseIcon from '../images/view_pause.svg?react';
 import ResetIcon from '../images/resetIcon.svg?react';
-import FullscreenIcon from '../images/view_fullscreen.svg?react';
 import IntegrityGreen from '../images/integrity_g.svg?react';
 import IntegrityRed from '../images/integrity_r.svg?react';
 import CompleteIcon from '../images/complete.svg?react';
@@ -91,7 +88,6 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
   
   const rollbackRef = useRef(() => {});
   const [selectedChannel, setSelectedChannel] = useState(null);
-  const [selectedJDRFilePath, setSelectedJDRFilePath] = useState(null);
 
   rollbackRef.current = () => {
     resetSession();
@@ -145,59 +141,29 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
       return acc
     }, {})
   };
-
-  // 4-1) 결과 목록 -> JDR 채널별로 그룹핑
-  function groupJDRByChannels(jdrFiles) {
-    const channels = {
-      front: [],
-      rear: [],
-      side: [],
-      merge: []
-    };
-
-    jdrFiles.forEach(file => {
-      if (file.channels) {
-        Object.entries(file.channels).forEach(([channelName, channelData]) => {
-          if (channelName !== 'audio') {
-            // merge 채널은 merged_files 사용, 나머지는 video_path 사용
-            const files = channelName === 'merge' ? channelData.merged_files : channelData.video_path;
-            
-            if (files && Array.isArray(files)) {
-              files.forEach(recoveredFile => {
-                channels[channelName]?.push({
-                  originalFile: file,
-                  channelName,
-                  recoveredPath: recoveredFile,
-                  fileName: recoveredFile.split(/[/\\]/).pop() || recoveredFile
-                });
-              });
-            }
-          }
-        });
-      }
-    });
-
-    return channels;
-  }
-
-  const groupedResults = useMemo(() => {
-    const regularGroups = groupByCategory(results.filter(f => !f.name?.toLowerCase().endsWith('.jdr')));
-    const jdrFiles = results.filter(f => f.name?.toLowerCase().endsWith('.jdr'));
-    const jdrChannels = groupJDRByChannels(jdrFiles);
-
-    if (jdrFiles.length > 0) {
-      if (jdrChannels.front.length > 0) regularGroups['Front'] = jdrChannels.front;
-      if (jdrChannels.rear.length > 0) regularGroups['Rear'] = jdrChannels.rear;
-      if (jdrChannels.side.length > 0) regularGroups['Side'] = jdrChannels.side;
-      if (jdrChannels.merge.length > 0) regularGroups['Merge'] = jdrChannels.merge;
-    }
-
-    return regularGroups;
-  }, [results]);
+  const groupedResults = useMemo(() => groupByCategory(results), [results]);
 
 // 5) 분석 선택/탭/다운로드 완료 등 결과 뷰 상태
   const [showComplete, setShowComplete] = useState(false);
   const [showDownloadAlert, setShowDownloadAlert] = useState(false);
+  const [resultsLoading, setResultsLoading] = useState(false);
+
+  // 복원 완료 → 결과화면 진입 트리거
+  useEffect(() => {
+    if (recoveryDone && !selectedAnalysisFile) {
+      if (results.length === 0) setResultsLoading(true);
+    }
+  }, [recoveryDone, selectedAnalysisFile, results.length]);
+
+  // 결과 수신 리스너
+  useEffect(() => {
+    const off = window.api.onResults(data => {
+      if (data.error) setResultError(data.error);
+      else setResults(data);
+      setTimeout(() => setResultsLoading(false), 150);
+    });
+    return off;
+  }, []);
 
 // 6) 라우팅/초기파일 자동시작 상태
   const location = useLocation();
@@ -287,92 +253,53 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
 
   const availableChannels = useMemo(() => {
     const f = selectedResultFile;
-    if (!f || !f.channels) return [];
-    const lowerCaseName = f.name?.toLowerCase() || '';
-    
-    if (lowerCaseName.endsWith('.jdr')) {
-      return ['front','rear','side','merge'].filter((ch) => {
-        const channelData = f.channels?.[ch];
-        if (ch === 'merge') {
-          return channelData?.merged_files && channelData.merged_files.length > 0;
-        } else {
-          return channelData?.video_path && channelData.video_path.length > 0;
-        }
-      });
-    }
-    
-    if (lowerCaseName.endsWith('.avi')) {
-      return ['front','rear','side'].filter((ch) => !!f.channels?.[ch]?.full_video_path);
-    }
-    
-    return [];
+    if (!f || !f.name?.toLowerCase().endsWith('.avi') || !f.channels) return [];
+    return ['front','rear','side'].filter((ch) => !!f.channels?.[ch]?.full_video_path);
   }, [selectedResultFile]);
 
+  const slack_info = selectedResultFile?.slack_info ?? { recovered: false, slack_size: '0 B', slack_rate: 0,  };
+  
   const currentVideoSrc = useMemo(() => {
     const f = selectedResultFile;
     if (!f) return '';
 
-    const lowerCaseName = f.name?.toLowerCase() || '';
-    const isJDR = lowerCaseName.endsWith('.jdr');
-    const isAVI = lowerCaseName.endsWith('.avi');
-    const isMultiChannel = (isAVI || isJDR) && f.channels;
-
-    if (isMultiChannel) {
-      let path = null;
-      
-      if (isJDR) {
-        if (selectedJDRFilePath) {
-          path = selectedJDRFilePath;
-        } else {
-          // 폴백: video_path 또는 merged_files에서 첫 번째 파일 가져오기
-          const pref = selectedChannel || ['front', 'rear', 'side', 'merge'].find((ch) => {
-            const channelData = f.channels?.[ch];
-            if (ch === 'merge') {
-              return channelData?.merged_files && channelData.merged_files.length > 0;
-            } else {
-              return channelData?.video_path && channelData.video_path.length > 0;
-            }
-          });
-
-          if (pref && f.channels?.[pref]) {
-            if (pref === 'merge' && f.channels[pref].merged_files) {
-              path = f.channels[pref].merged_files[0];
-            } else if (f.channels[pref].video_path) {
-              path = f.channels[pref].video_path[0];
-            }
-          }
-        }
-      } else if (isAVI) {
-        const pref = selectedChannel || ['front', 'rear', 'side'].find((ch) => f.channels?.[ch]?.full_video_path);
-        path = pref ? f.channels?.[pref]?.full_video_path : null;
-      }
-      
+    const isAVI = f.name?.toLowerCase().endsWith('.avi');
+    if (isAVI && f.channels) {
+      const pref =
+        selectedChannel ||
+        ['front', 'rear', 'side'].find((ch) => f.channels?.[ch]?.full_video_path) ||
+        null;
+      const path = pref ? f.channels?.[pref]?.full_video_path : null;
       return toFileUrl(path || f.origin_video || '');
     }
 
+    const isDamaged = Boolean(f?.analysis?.integrity?.damaged);
+    const isRecovered = Boolean(f?.slack_info?.recovered);
+    
+    if (isDamaged && isRecovered) {
+      return toFileUrl(f.slack_info?.video_path || f.origin_video || '');
+    }
+
     return toFileUrl(f.origin_video || '');
-  }, [selectedResultFile, selectedChannel, selectedJDRFilePath]);
+  }, [selectedResultFile, selectedChannel]);
 
-  const slack_info = selectedResultFile?.slack_info ?? { recovered: false, slack_size: '0 B', slack_rate: 0,  };
   const totalBytes = unitToBytes(selectedResultFile?.size || '0 B');
-  const lowerCaseName = selectedResultFile?.name?.toLowerCase() || '';
-  const isJDR = lowerCaseName.endsWith('.jdr');
-  const isAVI = lowerCaseName.endsWith('.avi');
-  const isMultiChannel = isAVI || isJDR;
-
-  const multiChannelSlackBytes = isMultiChannel && selectedResultFile?.channels && isAVI
+  const isAVI = selectedResultFile?.name?.toLowerCase().endsWith('.avi');
+  const isMP4 = selectedResultFile?.name?.toLowerCase().endsWith('.mp4');
+  const isDamagedAndRecovered = Boolean(analysis?.integrity?.damaged && slack_info?.recovered && isMP4);
+  const aviSlackBytes = isAVI && selectedResultFile?.channels
     ? Object.values(selectedResultFile.channels)
-        .filter(Boolean)
-        .reduce((sum, ch) => sum + (ch?.slack_size ? unitToBytes(ch.slack_size) : 0), 0)
+      .filter(Boolean)
+      .reduce((sum, ch) => sum + (ch?.slack_size ? unitToBytes(ch.slack_size) : 0), 0)
     : 0;
   
   let slackBytes = 0;
   let slackLabel = '0 B';
 
-  if (isMultiChannel && isAVI) {
-    slackBytes = multiChannelSlackBytes;
+  if (isAVI) {
+    slackBytes = aviSlackBytes;
     slackLabel = bytesToUnit(slackBytes);
-  } else if (!isJDR) {
+  } else {
     if (slack_info?.slack_size && typeof slack_info.slack_size === 'string') {
       slackBytes = unitToBytes(slack_info.slack_size);
       slackLabel = bytesToUnit(slackBytes);
@@ -392,7 +319,7 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
 
   const slackPercent = (() => {
     if (!totalBytes) return 0;
-    if (isMultiChannel) {
+    if (isAVI) {
       const p = (slackBytes / totalBytes) * 100;
       return p > 0 && p < 1 ? 1 : Math.round(p);
     }
@@ -675,30 +602,11 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
   const handleFileClick = (filename) => {
     setSelectedAnalysisFile(filename);
     setActiveTab('basic');
-    setSelectedJDRFilePath(null); // JDR 파일 경로 초기화
 
     const f = results.find((r) => r.name === filename);
-    const lowerCaseName = filename.toLowerCase();
-    const isJDR = lowerCaseName.endsWith('.jdr');
-    const isAVI = lowerCaseName.endsWith('.avi');
-    const isMultiChannel = isJDR || isAVI;
-
-    if (isJDR && availableChannels.length > 0) {
-      let first = null;
-      
-      if (isJDR) {
-        first = ['front','rear','side','merge'].find(ch => {
-          const channelData = f.channels?.[ch];
-          if (ch === 'merge') {
-            return channelData?.merged_files && channelData.merged_files.length > 0;
-          } else {
-            return channelData?.video_path && channelData.video_path.length > 0;
-          }
-        }) ?? null;
-      } else if (isAVI) {
-        first = ['front','rear','side'].find(ch => f.channels?.[ch]?.full_video_path) ?? null;
-      }
-      
+    const isAVI = filename.toLowerCase().endsWith('.avi');
+    if (isAVI && f?.channels) {
+      const first = ['front','rear','side'].find(ch => f.channels?.[ch]?.full_video_path) ?? null;
       setSelectedChannel(first);
     } else {
       setSelectedChannel(null);
@@ -738,93 +646,7 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
     currentStep = 0;
   }
 
-// 18) 파서 뷰어 DOM 세팅(useEffect)
-  useEffect(() => {
-    if (!selectedAnalysisFile) return;
-
-    const waitForDOMAndSetup = () => {
-      const video = document.getElementById('parser-video');
-      const playPauseBtn = document.getElementById('playPauseBtn');
-      const playPauseIcon = document.getElementById('playPauseIcon');
-      const replayBtn = document.getElementById('replayBtn');
-      const fullscreenBtn = document.getElementById('fullscreenBtn');
-      const progressBar = document.getElementById('progressBar');
-      const timeText = document.getElementById('timeText');
-
-      if (!video || !playPauseBtn || !replayBtn || !fullscreenBtn || !progressBar || !timeText || !playPauseIcon) {
-        console.warn("[Debug] video or control element : not ready, retrying");
-        requestAnimationFrame(waitForDOMAndSetup);
-        return;
-      }
-
-      fullscreenBtn.onclick = () => {
-        if (!document.fullscreenElement) {
-          if (video.requestFullscreen) {
-            video.requestFullscreen().catch(err => {
-              console.error("[Debug] fullscreen enter failed : ", err);
-            });
-          } else if (video.webkitRequestFullscreen) {
-            video.webkitRequestFullscreen();
-          } else if (video.msRequestFullscreen) {
-            video.msRequestFullscreen();
-          }
-        } else {
-          if (document.exitFullscreen) {
-            document.exitFullscreen();
-          } else if (document.webkitExitFullscreen) {
-            document.webkitExitFullscreen();
-          } else if (document.msExitFullscreen) {
-            document.msExitFullscreen();
-          }
-        }
-      };
-
-      playPauseBtn.onclick = () => {
-        if (video.paused) {
-          video.play();
-          playPauseIcon.src = 'view_pause.svg';
-          playPauseIcon.style.filter = 'none';
-        } else {
-          video.pause();
-          playPauseIcon.src = 'view_play.svg';
-          playPauseIcon.style.filter = 'grayscale(100%) brightness(0.8)';
-        }
-      };
-
-      replayBtn.onclick = () => {
-        video.currentTime = 0;
-        video.play();
-        playPauseIcon.style.filter = 'none';
-      };
-
-      progressBar.oninput = () => {
-        video.currentTime = progressBar.value;
-      };
-
-      function formatTime(seconds) {
-        if (isNaN(seconds) || seconds === undefined) return '--:--';
-        const min = Math.floor(seconds / 60).toString().padStart(2, '0');
-        const sec = Math.floor(seconds % 60).toString().padStart(2, '0');
-        return `${min}:${sec}`;
-      }
-
-      video.ontimeupdate = () => {
-        progressBar.value = video.currentTime;
-        const durationText = isNaN(video.duration) ? '--:--' : formatTime(video.duration);
-        timeText.textContent = `${formatTime(video.currentTime)} / ${durationText}`;
-      };
-
-      video.onloadedmetadata = () => {
-        progressBar.max = video.duration;
-        const durationText = isNaN(video.duration) ? '--:--' : formatTime(video.duration);
-        timeText.textContent = `${formatTime(0)} / ${durationText}`;
-      };
-    };
-  
-    requestAnimationFrame(waitForDOMAndSetup);
-  }, [selectedAnalysisFile, selectedChannel]);
-
-// 19) 다운로드 완료 후 복원 재시작 핸들러
+// 18) 다운로드 완료 후 복원 재시작 핸들러
     const startRecoveryFromDownload = () => {
       setShowDownloadPopup(false);
       setShowComplete(false);
@@ -834,7 +656,7 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
       setTotalFiles(300);
     };
 
-// 20) 화면 전환/탭 가드 네비게이션
+// 19) 화면 전환/탭 가드 네비게이션
     const [view, setView] = useState('upload');
     const [history, setHistory] = useState(['upload']);
 
@@ -852,24 +674,20 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
           setShowComplete(false);
           setSelectedAnalysisFile(null);
           setSelectedChannel(null);
-          setSelectedJDRFilePath(null);
         } else if (prevView === 'recovering') {
           setIsRecovering(true);
           setRecoveryDone(false);
           setShowComplete(false);
           setSelectedAnalysisFile(null);
-          setSelectedJDRFilePath(null);
         } else if (prevView === 'result') {
           setIsRecovering(false);
           setRecoveryDone(true);
           setShowComplete(false);
           setSelectedAnalysisFile(null);
-          setSelectedJDRFilePath(null);
         } else if (prevView === 'parser') {
           setIsRecovering(false);
           setRecoveryDone(true);
           setShowComplete(false);
-          setSelectedJDRFilePath(null);
         }
       }
     };
@@ -894,7 +712,7 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
       setPendingTab(null);
     };
 
-  // 21) 디스크 용량 부족 이벤트 수신
+  // 20) 디스크 용량 부족 이벤트 수신
   useEffect(() => {
     if (!window.api?.onDiskFull) return;
     const off = window.api.onDiskFull(() => {
@@ -908,7 +726,7 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
     return () => { try { off && off(); } catch {} };
   }, []);
   
-  // 22) 리셋 팝업 핸들러
+  // 21) 리셋 팝업 핸들러
   const [showRestartPopup, setShowRestartPopup] = useState(false);
   const [showClosePopup, setShowClosePopup] = useState(false);
 
@@ -932,25 +750,26 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
               <p style={{ textAlign: 'center', fontSize: '1rem' }}>
                 선택된 경로에 복원된 영상이 저장되었습니다.
               </p>
-              <div style={{ display: 'flex', justifyContent: 'center', gap: '12px', marginTop: '1.5rem' }}>
-                <Button
-                  variant="dark"
-                  onClick={() => {
-                    setShowComplete(false);
-                    setSelectedAnalysisFile(null);
-                    setSelectedJDRFilePath(null);
-                    setIsRecovering(false);
-                    setRecoveryDone(true);
-                    setView && setView('result');
-                  }}
-                >
-                  뒤로가기
-                </Button>
+              {!showRestartPopup && (
+                <div style={{ display: 'flex', justifyContent: 'center', gap: '12px', marginTop: '1.5rem' }}>
+                  <Button
+                    variant="dark"
+                    onClick={() => {
+                      setShowComplete(false);
+                      setSelectedAnalysisFile(null);
+                      setIsRecovering(false);
+                      setRecoveryDone(true);
+                      setView && setView('result');
+                    }}
+                  >
+                    뒤로가기
+                  </Button>
 
-                <Button variant="gray" onClick={() => setShowRestartPopup(true)}>
-                  새 복원 시작
-                </Button>
-              </div>
+                  <Button variant="gray" onClick={() => setShowRestartPopup(true)}>
+                    새 복원 시작
+                  </Button>
+                </div>
+              )}
             </div>
           </>
         ) : isDownloading ? (
@@ -995,16 +814,33 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
               <Loading />
             </div>
             <div className="progress-bar-wrapper">
-              <div className="progress-bar-track">
+              <div
+                className="progress-bar-track"
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={progress}
+              >
                 <div
                   className="progress-bar-fill"
-                  style={{ width: `${progress}%`, transition: 'width 0.6s ease' }}
+                  style={{ width: `${progress}%` }}
                 />
+
+                <div
+                  className="progress-bubble dynamic"
+                  style={{
+                    left: `${progress}%`,
+                    transform:
+                      progress === 0
+                        ? 'translateX(0) rotate(10deg)'
+                        : progress === 100
+                        ? 'translateX(-100%) rotate(10deg)'
+                        : 'translateX(-50%) rotate(10deg)',
+                  }}
+                >
+                  {progress}%
+                </div>
               </div>
-              <div className="progress-bar-text">
-                {progress}%
-              </div>
-              
             </div>
           </>
         ) : !isRecovering && !recoveryDone ? (
@@ -1047,56 +883,33 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
               <h1 className="upload-title">Result</h1>
 
               <div className="recovery-file-box">
-                <span className="file-name">
-                  {(() => {
-                    const lowerCaseName = selectedResultFile?.name?.toLowerCase() || '';
-                    const isJDR = lowerCaseName.endsWith('.jdr');
-                    
-                    if (isJDR && selectedJDRFilePath) {
-                      // JDR 파일인 경우 실제 영상 파일명(.mp4) 표시
-                      return selectedJDRFilePath.split(/[/\\]/).pop() || selectedAnalysisFile;
-                    }
-                    return selectedAnalysisFile;
-                  })()}
-                </span>
+                <span className="file-name">{selectedAnalysisFile}</span>
                 <div className="recovery-file-controls">
-                  {(() => {
-                    const lowerCaseName = selectedResultFile?.name?.toLowerCase() || '';
-                    const isJDR = lowerCaseName.endsWith('.jdr');
-                    const isAVI = lowerCaseName.endsWith('.avi');
-                    
-                    if (isAVI && availableChannels.length > 0) {
-                      return (
-                        <>
-                          {availableChannels.map((ch) => {
-                            const label = ch === 'front' ? 'Front' : 
-                                         ch === 'rear' ? 'Rear' : 
-                                         ch === 'side' ? 'Side' :
-                                         ch === 'merge' ? 'Merge' : ch;
-                            const active = selectedChannel === ch;
-                            return (
-                              <Badge
-                                key={ch}
-                                label={label}
-                                onClick={() => setSelectedChannel(ch)}
-                                style={{
-                                  cursor: 'pointer',
-                                  opacity: active ? 1 : 0.6,
-                                  border: active ? '1px solid #333' : '1px solid transparent',
-                                }}
-                              />
-                            );
-                          })}
-                        </>
-                      );
-                    }
-                    return null;
-                  })()}
+                  {selectedResultFile?.name?.toLowerCase().endsWith('.avi') && availableChannels.length > 0 && (
+                    <>
+                      {availableChannels.map((ch) => {
+                        const label = ch === 'front' ? '전방' : ch === 'rear' ? '후방' : '사이드';
+                        const active = selectedChannel === ch;
+                        return (
+                          <Badge
+                            key={ch}
+                            label={label}
+                            onClick={() => setSelectedChannel(ch)}
+                            style={{
+                              cursor: 'pointer',
+                              opacity: active ? 1 : 0.6,
+                              border: active ? '1px solid #333' : '1px solid transparent',
+                            }}
+                          />
+                        );
+                      })}
+                    </>
+                  )}
                   <button className="close-btn" onClick={handleBack}>✕</button>
                 </div>
               </div>
 
-              <div className="result-scroll-area">
+              <div className="result-scroll-area scrollbar-area">
                 {/* 뷰 */}
                 <div className="video-container">
                   <video
@@ -1105,150 +918,154 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
                     controls
                     src={currentVideoSrc}
                   ></video>
-
-                  <div className="parser-controls">
-                    <button id="replayBtn">
-                      <ReplayIcon />
-                    </button>
-                    <button
-                      id="playPauseBtn"
-                      style={{ background: 'none', border: 'none', cursor: 'pointer' }}
-                    >
-                    <PauseIcon
-                      id="playPauseIcon"
-                      className='pause_icon'
-                      style={{ width: '30px', transition: 'filter 0.2s', filter: 'none' }}
-                    />
-                    </button>
-
-                    <input type="range" id="progressBar" min="0" defaultValue="0" step="0.01" />
-                    <span id="timeText">00:00 / 00:00</span>
-                    <button id="fullscreenBtn">
-                      <FullscreenIcon className='full-icon' />
-                    </button>
-                  </div>
                 </div>
 
                 {/* 분석 화면 */}
-                {analysis && (
-                  <>
-                    <div className="parser-tabs">
-                      <button
-                        className={`parser-tab-button ${activeTab === 'basic' ? 'active' : ''}`}
-                        onClick={() => handleTabClick('basic')}
-                      >
-                        <BasicIcon className="tab-icon" />
-                        <span>기본 정보</span>
-                      </button>
-                      <button
-                        className={`parser-tab-button ${activeTab === 'integrity' ? 'active' : ''}`}
-                        onClick={() => handleTabClick('integrity')}
-                      >
-                        <IntegrityIcon className="tab-icon" />
-                        <span>무결성 검사</span>
-                      </button>
-                      <button
-                        className={`parser-tab-button ${activeTab === 'slack' ? 'active' : ''}`}
-                        onClick={() => handleTabClick('slack')}
-                      >
-                        <SlackIcon className="tab-icon" />
-                        <span>슬랙 정보</span>
-                      </button>
-                      <button
-                        className={`parser-tab-button ${activeTab === 'structure' ? 'active' : ''}`}
-                        onClick={() => handleTabClick('structure')}
-                      >
-                        <StructureIcon className="tab-icon" />
-                        <span>구조 정보</span>
-                      </button>
+                <div className="parser-tabs">
+                  <button
+                    className={`parser-tab-button ${activeTab === 'basic' ? 'active' : ''}`}
+                    onClick={() => handleTabClick('basic')}
+                  >
+                  <BasicIcon className='tab-icon' />
+                    <span>기본 정보</span>
+                  </button>
+                  <button
+                    className={`parser-tab-button ${activeTab === 'integrity' ? 'active' : ''}`}
+                    onClick={() => handleTabClick('integrity')}
+                  >
+                    <IntegrityIcon className='tab-icon' />
+                    <span>무결성 검사</span>
+                  </button>
+                  <button
+                    className={`parser-tab-button ${activeTab === 'slack' ? 'active' : ''}`}
+                    onClick={() => handleTabClick('slack')}
+                  >
+                    <SlackIcon className='tab-icon' />
+                    <span>
+                      {selectedResultFile?.analysis?.integrity?.damaged && selectedResultFile?.slack_info?.recovered
+                        ? '복원 정보'
+                        : '슬랙 정보'}
+                    </span>
+                  </button>
+                  <button
+                    className={`parser-tab-button ${activeTab === 'structure' ? 'active' : ''}`}
+                    onClick={() => handleTabClick('structure')}
+                  >
+                    <StructureIcon className='tab-icon' />
+                    <span>구조 정보</span>
+                  </button>
+                </div>
+
+              {/* 분석 파서 */}
+                <div className={`parser-tab-content ${activeTab === 'basic' ? 'active' : ''}`}>
+                  <div className="parser-info-table">
+                    <div className="parser-info-row">
+                      <span className="parser-info-label">파일 포맷</span>
+                      <span className="parser-info-value">{analysis.basic.format}</span>
                     </div>
 
-                    {/* 분석 파서 */}
-                    <div className={`parser-tab-content ${activeTab === 'basic' ? 'active' : ''}`}>
-                      <div className="parser-info-table">
-                        <div className="parser-info-row">
-                          <span className="parser-info-label">파일 포맷</span>
-                          <span className="parser-info-value">{analysis.basic.format}</span>
-                        </div>
-
-                        <div className="parser-info-row">
-                          <span className="parser-info-label">생성 시간</span>
-                          <span className="parser-info-value">{analysis.basic.timestamps?.created ?? '-'}</span>
-                        </div>
-
-                        <div className="parser-info-row">
-                          <span className="parser-info-label">수정 시간</span>
-                          <span className="parser-info-value">{analysis.basic.timestamps?.modified ?? '-'}</span>
-                        </div>
-
-                        <div className="parser-info-row">
-                          <span className="parser-info-label">마지막 접근 시간</span>
-                          <span className="parser-info-value">{analysis.basic.timestamps?.accessed ?? '-'}</span>
-                        </div>
-
-                        <div className="parser-info-row">
-                          <span className="parser-info-label">파일 크기</span>
-                          <span className="parser-info-value">
-                            {selectedResultFile?.size ?? '-'}
-                          </span>
-                        </div>
-                        <div className="parser-info-row">
-                          <span className="parser-info-label">비디오 코덱</span>
-                          <span className="parser-info-value">
-                            {formatCodec(analysis.basic.video_metadata.codec)}
-                          </span>
-                        </div>
-                        <div className="parser-info-row">
-                          <span className="parser-info-label">해상도</span>
-                          <span className="parser-info-value">
-                            {analysis.basic.video_metadata.width}×{analysis.basic.video_metadata.height}
-                          </span>
-                        </div>
-                        <div className="parser-info-row">
-                          <span className="parser-info-label">프레임 레이트</span>
-                          <span className="parser-info-value">
-                            {Math.round(analysis.basic.video_metadata.frame_rate)} fps
-                          </span>
-                        </div>
-                      </div>
+                    <div className="parser-info-row">
+                      <span className="parser-info-label">생성 시간</span>
+                      <span className="parser-info-value">{analysis.basic.timestamps?.created ?? '-'}</span>
                     </div>
 
-                    <div className={`parser-tab-content ${activeTab === 'integrity' ? 'active' : ''}`}>
-                      <div className="parser-info-table">
-                        <div className="parser-info-row">
-                          <span className="parser-info-label">전체 상태</span>
-                          <span className="parser-info-value">
-                            {analysis.integrity.damaged ? (
-                              <IntegrityRed alt="손상" className="status-icon" />
-                            ) : (
-                              <IntegrityGreen alt="정상" className="status-icon" />
-                            )}
-                            <span className={`status-text ${analysis.integrity.damaged ? 'red' : 'green'}`}>
-                              {analysis.integrity.damaged ? '손상됨' : '정상'}
-                            </span>
-                          </span>
-                        </div>
-                        {analysis.integrity.damaged && analysis.integrity.reasons.length > 0 && (
-                          <div className="parser-info-row">
-                            <span className="parser-info-label">손상 사유</span>
-                            <span className="parser-info-value">
-                              <ul className="reason-list">
-                                {analysis.integrity.reasons.map((reason, idx) => (
-                                  <li key={idx}>{reason}</li>
-                                ))}
-                              </ul>
-                            </span>
-                          </div>
+                    <div className="parser-info-row">
+                      <span className="parser-info-label">수정 시간</span>
+                      <span className="parser-info-value">{analysis.basic.timestamps?.modified ?? '-'}</span>
+                    </div>
+
+                    <div className="parser-info-row">
+                      <span className="parser-info-label">마지막 접근 시간</span>
+                      <span className="parser-info-value">{analysis.basic.timestamps?.accessed ?? '-'}</span>
+                    </div>
+
+                    <div className="parser-info-row">
+                      <span className="parser-info-label">파일 크기</span>
+                      <span className="parser-info-value">
+                        {selectedResultFile?.size ?? '-'}
+                      </span>
+                    </div>
+                    <div className="parser-info-row">
+                      <span className="parser-info-label">비디오 코덱</span>
+                      <span className="parser-info-value">
+                        {formatCodec(analysis.basic.video_metadata.codec)}
+                      </span>
+                    </div>
+                    <div className="parser-info-row">
+                      <span className="parser-info-label">해상도</span>
+                      <span className="parser-info-value">
+                        {analysis.basic.video_metadata.width}×{analysis.basic.video_metadata.height}
+                      </span>
+                    </div>
+                    <div className="parser-info-row">
+                      <span className="parser-info-label">프레임 레이트</span>
+                      <span className="parser-info-value">
+                        {Math.round(analysis.basic.video_metadata.frame_rate)} fps
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className={`parser-tab-content ${activeTab === 'integrity' ? 'active' : ''}`}>
+                  <div className="parser-info-table">
+                    <div className="parser-info-row">
+                      <span className="parser-info-label">전체 상태</span>
+                      <span className="parser-info-value">
+                        {analysis.integrity.damaged ? (
+                          <IntegrityRed alt="손상" className="status-icon" />
+                        ) : (
+                          <IntegrityGreen alt="정상" className="status-icon" />
                         )}
-                      </div>
+                        <span className={`status-text ${analysis.integrity.damaged ? 'red' : 'green'}`}>
+                          {analysis.integrity.damaged ? '손상됨' : '정상'}
+                        </span>
+                      </span>
                     </div>
+                    {analysis.integrity.damaged && analysis.integrity.reasons.length > 0 && (
+                      <div className="parser-info-row">
+                        <span className="parser-info-label">손상 사유</span>
+                        <span className="parser-info-value">
+                          <ul className="reason-list">
+                            {analysis.integrity.reasons.map((reason, idx) => (
+                              <li key={idx}>{reason}</li>
+                            ))}
+                          </ul>
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
 
-                    <div className={`parser-tab-content ${activeTab === 'slack' ? 'active' : ''}`}>
-                      <div className="parser-info-table">
+                <div className={`parser-tab-content ${activeTab === 'slack' ? 'active' : ''}`}>
+                  <div className="parser-info-table">
+                    <div className="parser-info-row">
+                      <span className="parser-info-label">전체 크기</span>
+                      <span className="parser-info-value">{totalLabel}</span>
+                    </div>
+                    {isDamagedAndRecovered ? (
+                      <>
                         <div className="parser-info-row">
-                          <span className="parser-info-label">전체 크기</span>
-                          <span className="parser-info-value">{totalLabel}</span>
+                          <span className="parser-info-label">복원된 영상 크기</span>
+                          <span className="parser-info-value">{slackLabel}</span>
                         </div>
+                        <div className="parser-info-row parser-info-row--withbar">
+                          <div className="data-bar-flex-row-between">
+                            <span className="parser-info-label">전체 영상 대비 복원 영상 비율</span>
+                            {slackPercent > 0 && (
+                              <div className="data-bar-wrapper is-single is-narrow">
+                                <div
+                                  className="data-bar-used"
+                                  style={{ width: `${slackPercent}%`, minWidth: '44px' }}
+                                >
+                                  <span className="data-bar-text">{slackPercent} %</span>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <>
                         <div className="parser-info-row">
                           <span className="parser-info-label">원본 영상 크기</span>
                           <span className="parser-info-value">{usedLabel}</span>
@@ -1272,19 +1089,19 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
                             )}
                           </div>
                         </div>
-                      </div>
-                    </div>
+                      </>
+                    )}                    
+                  </div>
+                </div>
 
-                    <div className={`parser-tab-content ${activeTab === 'structure' ? 'active' : ''}`}>
-                      <div className="parser-structure">
-                        <h4>{analysis.structure.type.toUpperCase()} Structure</h4>
-                        <pre className="structure-pre">
-                          {analysis.structure.structure.join('\n')}
-                        </pre>
-                      </div>
-                    </div>
-                  </>
-                )}
+                <div className={`parser-tab-content ${activeTab === 'structure' ? 'active' : ''}`}>
+                  <div className="parser-structure">
+                    <h4>{analysis.structure.type.toUpperCase()} Structure</h4>
+                    <pre className="structure-pre">
+                      {analysis.structure.structure.join('\n')}
+                    </pre>
+                  </div>
+                </div>
               </div>
             </>
           ) : (
@@ -1311,91 +1128,65 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
                 </div>
               </div>
               <div className="result-wrapper">
-                <p className="result-summary">
-                  총 {results.length}개의 파일, 용량 {
-                    bytesToUnit(
-                      results.reduce((sum, f) => sum + unitToBytes(f.size), 0)
-                    )
-                  }
-                </p>
+                {resultsLoading ? (
+                  <div className="result-summary" style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                    <span className="skeleton-bar result-skel-summary" />
+                  </div>
+                ) : (
+                  <p className="result-summary">
+                    총 {results.length}개의 파일, 용량 {
+                      bytesToUnit(
+                        results.reduce((sum, f) => sum + unitToBytes(f.size), 0)
+                      )
+                    }
+                  </p>
+                )}
 
-                <div className="result-scroll-area" style={{ position: 'relative' }}>
-                  {Object.entries(groupedResults).map(([category, files]) => (
-                    <div className="result-group" key={category}>
+                <div className="result-scroll-area scrollbar-area" style={{ position: 'relative' }}>
+                  {resultsLoading ? (
+                    <div className="result-group">
+                      <div className="result-group-header">
 
-                      <div
-                        className={`result-group-header ${openGroups[category] ? 'open' : ''}`}
-                        onClick={() => toggleGroup(category)}
-                      >
-                        <span className="result-group-toggle" />
-                        {React.createElement(getCategoryIcon(category), { className: "result-group-icon" })}
-                        {category} ({files.length})
+                        <span className="skeleton-bar result-skel-header" />
                       </div>
 
-                      {openGroups[category] && (
-                        <div className="result-file-list">
-                          {(files || []).filter(Boolean).map((file, index) => {
-                            if (!file) return null;
+                      <div className="result-file-list">
+                        {Array.from({ length: 6 }).map((_, i) => (
+                          <div className="result-file-item" key={i}>
+                            <div className="result-skel-checkbox" />
+                            <div className="result-file-info" style={{ flex: 1 }}>
+                              <div className="result-file-title-row">
+                                <span className="skeleton-bar result-skel-title" />
+                                <span className="skeleton-bar result-skel-badge" style={{ width: "60px" }} />
+                              </div>
+                              <div className="file-meta">
+                                <span className="skeleton-bar result-skel-meta" />
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    Object.entries(groupedResults).map(([category, files]) => (
+                      <div className="result-group" key={category}>
 
-                            const isJDRChannelFile = file.originalFile && file.channelName && file.recoveredPath;
-                            
-                            if (isJDRChannelFile) {
-                              const checked = selectedFilesForDownload.includes(file.recoveredPath);
-                              
-                              const channelData = file.originalFile.channels?.[file.channelName];
-                              let videoSize = '알 수 없음';
-                              
-                              if (file.channelName === 'merge') {
-                                const filename = file.fileName;
-                                const fileSizes = channelData?.file_sizes || {};
-                                videoSize = fileSizes[filename] || '알 수 없음';
-                              } else {
-                                videoSize = channelData?.video_size || '알 수 없음';
-                              }
-                              
-                              return (
-                                <div className="result-file-item" key={`${file.originalFile.name}-${file.channelName}-${index}`}>
-                                  <div className="result-file-info">
-                                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}>
-                                      <input
-                                        type="checkbox"
-                                        checked={checked}
-                                        onChange={(e) => {
-                                          let updated;
-                                          if (e.target.checked) {
-                                            updated = [...selectedFilesForDownload, file.recoveredPath];
-                                          } else {
-                                            updated = selectedFilesForDownload.filter((p) => p !== file.recoveredPath);
-                                          }
-                                          setSelectedFilesForDownload(updated);
-                                        }}
-                                      />
+                        <div
+                          className={`result-group-header ${openGroups[category] ? 'open' : ''}`}
+                          onClick={() => toggleGroup(category)}
+                        >
+                          <span className="result-group-toggle" />
+                          {React.createElement(getCategoryIcon(category), { className: "result-group-icon" })}
+                          {category} ({files.length})
+                        </div>
 
-                                      <div>
-                                        <button 
-                                          className="text-button" 
-                                          onClick={() => {
-                                            setSelectedAnalysisFile(file.originalFile.name);
-                                            setSelectedChannel(file.channelName);
-                                            setSelectedJDRFilePath(file.recoveredPath);
-                                            setActiveTab('basic');
-                                            setHistory(prev => [...prev, 'parser']);
-                                            setView('parser');
-                                          }}
-                                        >
-                                          {file.fileName}
-                                        </button>
-                                        <br />
-                                        {videoSize}
-                                      </div>
-                                    </div>
-                                  </div>
-                                </div>
-                              );
-                            } else {
+                        {openGroups[category] && (
+                          <div className="result-file-list">
+                            {(files || []).filter(Boolean).map((file) => {
+                              if (!file) return null;
+
                               const sizeLabel = typeof file.size === 'string' ? file.size : bytesToUnit(file.size);
                               const filename = String(file?.name ?? '');
-                              const isJDR = filename.toLowerCase().endsWith('.jdr');
                               const isAVI = filename.toLowerCase().endsWith('.avi');
                               const isMP4 = filename.toLowerCase().endsWith('.mp4');
                               const totalBytes = unitToBytes(file.size || 0);
@@ -1422,7 +1213,6 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
                               const mp4Media = isMP4 ? getSlackForMp4(file) : null;
                               const aviHasMedia =
                                 isAVI && ['front', 'rear', 'side'].some((ch) => !!getSlackForChannel(file, ch));
-                                
                               const hasSlackMedia = isAVI ? aviHasMedia : !!mp4Media;              
                               
                               const slackRatePercent = (() => {
@@ -1431,80 +1221,90 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
                                   const p = (aviSlackBytes / totalBytes) * 100;
                                   return p > 0 && p < 1 ? 1 : Math.round(p);
                                 }
-                                if (isMP4) {
-                                  const r = Number(file?.slack_info?.slack_rate ?? 0);
-                                  const pct = Number.isFinite(r) ? (r <= 1 ? r * 100 : r) : (mp4SlackBytes / totalBytes) * 100;
-                                  return pct > 0 && pct < 1 ? 1 : Math.round(pct);
-                                }
-                                return 0;
+                                const r = Number(file?.slack_info?.slack_rate ?? 0);
+                                const pct = Number.isFinite(r) ? (r <= 1 ? r * 100 : r) : (mp4SlackBytes / totalBytes) * 100;
+                                return pct > 0 && pct < 1 ? 1 : Math.round(pct);
                               })();
 
-                              const hasSlackBytes = isJDR ? false : (isAVI ? aviSlackBytes : mp4SlackBytes) > 0;
-                              const hasSlackBadge = !isJDR && hasSlackBytes && hasSlackMedia;
+                              const hasSlackBytes = (isAVI ? aviSlackBytes : mp4SlackBytes) > 0;
+                              const hasSlackBadge = hasSlackBytes && hasSlackMedia;
 
                               const checked = selectedFilesForDownload.includes(file.path);
 
-                            return (
-                              <div className="result-file-item" key={file.path}>
-                                {/* 개별 파일 다운 */}
-                                <input
-                                  type="checkbox"
-                                  checked={checked}
-                                  onChange={(e) => {
-                                    let updated;
-                                    if (e.target.checked) {
-                                      updated = [...selectedFilesForDownload, file.path];
-                                    } else {
-                                      updated = selectedFilesForDownload.filter((p) => p !== file.path);
-                                    }
-                                    setSelectedFilesForDownload(updated);
-                                  }}
-                                />
+                              return (
+                                <div className="result-file-item" key={file.path}>
+                                  {/* 개별 파일 다운 */}
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={(e) => {
+                                      let updated;
+                                      if (e.target.checked) {
+                                        updated = [...selectedFilesForDownload, file.path];
+                                      } else {
+                                        updated = selectedFilesForDownload.filter((p) => p !== file.path);
+                                      }
+                                      setSelectedFilesForDownload(updated);
+                                    }}
+                                  />
 
                                   <div className="result-file-info">
-                                  <div className="result-file-title-row">              
-                                    <button className="text-button" onClick={() => handleFileClick(file.name)}>
+                                    <div className="result-file-title-row">              
+                                      <button className="text-button" onClick={() => handleFileClick(file.name)}>
                                         {file.name}
                                       </button>
                                       
                                       {hasSlackBadge && (
-                                        <Badge
-                                          label="슬랙"
-                                          style={{ cursor: 'pointer' }}
-                                          onClick={() => {
-                                            setSelectedSlackFile(file);
-                                            if (isAVI) {
-                                              const [ch, media] = pickFirstAvailableChannel(file);
-                                              setSlackChannel(ch);
-                                              setSlackMedia(media || { type: null, src: '' });
-                                            } else {
-                                              setSlackChannel(null);
-                                              setSlackMedia(mp4Media || { type: null, src: '' });
-                                            }
-                                            setShowSlackPopup(true);
-                                          }}
-                                        />
+                                        file?.analysis?.integrity?.damaged
+                                          ? (
+                                              file?.slack_info?.recovered ? (
+                                                <Badge label="복원 완료" variant="yellow" />
+                                              ) : (
+                                                <Badge label="손상" variant="red" />
+                                              )
+                                            )
+                                          : (
+                                              <Badge
+                                                label="슬랙"
+                                                style={{ cursor: 'pointer' }}
+                                                onClick={() => {
+                                                  setSelectedSlackFile(file);
+                                                  if (isAVI) {
+                                                    const [ch, media] = pickFirstAvailableChannel(file);
+                                                    setSlackChannel(ch);
+                                                    setSlackMedia(media || { type: null, src: '' });
+                                                  } else {
+                                                    setSlackChannel(null);
+                                                    setSlackMedia(mp4Media || { type: null, src: '' });
+                                                  }
+                                                  setShowSlackPopup(true);
+                                                }}
+                                                variant="blue"
+                                              />
+                                            )
                                       )}
                                     </div>
                                       
-                                  <div className="file-meta">
-                                      {isJDR ? sizeLabel : `${sizeLabel} ・ 슬랙비율: ${slackRatePercent} %`}
+                                    <div className="file-meta">
+                                      {sizeLabel} ・ {file?.analysis?.integrity?.damaged && file?.slack_info?.recovered
+                                        ? `복원 비율: ${slackRatePercent} %`
+                                        : `슬랙 비율: ${slackRatePercent} %`}
                                     </div>
-                                </div>
+                                  </div>
                                 </div>
                               );
-                            }
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  ))}
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    ))
+                  )}
                 </div>
 
                 <div
                   style={{
                     position: 'absolute',
-                    bottom: '1.5rem',
+                    bottom: '1rem',
                     right: '2rem',
                     display: 'flex',
                     justifyContent: 'flex-end',
@@ -1545,12 +1345,12 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
       {showRestartPopup && (
         <Alert
           icon={<ResetIcon />}
-          title="복원 세션 초기화"
+          title="새 복구 시작"
           isDarkMode={isDarkMode}
           description={
             <>
-              새 복원을 시작하시면 현재 복구하신 파일의<br />
-              분석 작업이 모두 초기화 됩니다. <br />
+              새 복구를 시작하면 이전에 복구한 파일의<br />
+              분석 결과가 모두 삭제됩니다.<br />
               계속 진행하시겠습니까?
             </>
           }
@@ -1561,8 +1361,7 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
               onClick={() => {
                 setShowRestartPopup(false);
                 setShowComplete(false);         
-                setSelectedAnalysisFile(null);
-                setSelectedJDRFilePath(null);
+                setSelectedAnalysisFile(null);  
                 setIsRecovering(false);
                 setRecoveryDone(true);         
                 setView && setView('result');
@@ -1579,7 +1378,6 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
                 resetSession();
                 setShowComplete(false);
                 setSelectedAnalysisFile(null);
-                setSelectedJDRFilePath(null);
                 setIsRecovering(false);
                 setRecoveryDone(false);
                 setView && setView('upload'); 
@@ -1630,36 +1428,30 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
           }}
         >
           <div style={{ position: 'absolute', top: 20, right: 30, display: 'flex', gap: 8 }}>
-            {(() => {
-              const lowerCaseName = String(selectedSlackFile?.name ?? '').toLowerCase();
-              const isMultiChannel = lowerCaseName.endsWith('.avi') || lowerCaseName.endsWith('.jdr');
-              if (isMultiChannel) {
-                return ['front', 'rear', 'side'].map((ch) => {
-                  const media = getSlackForChannel(selectedSlackFile, ch);
-                  if (!media) return null;
-                  const label = ch === 'front' ? '전방' : ch === 'rear' ? '후방' : '사이드';
-                  const active = slackChannel === ch;
-                  return (
-                    <Badge 
-                      key={ch}
-                      label={label}
-                      onClick={() => {
-                        setSlackChannel(ch);
-                        setSlackMedia(media);
-                      }}
-                      style={{
-                        cursor: 'pointer',
-                        opacity: active ? 1 : 0.6,
-                        border: active ? '1px solid #fff' : '1px solid transparent',
-                        background: '#333',
-                        color: '#fff'
-                      }}
-                    />
-                  );
-                });
-              }
-              return null;
-            })()}
+            {String(selectedSlackFile?.name ?? '').toLowerCase().endsWith('.avi') &&
+              ['front', 'rear', 'side'].map((ch) => {
+                const media = getSlackForChannel(selectedSlackFile, ch);
+                if (!media) return null;
+                const label = ch === 'front' ? '전방' : ch === 'rear' ? '후방' : '사이드';
+                const active = slackChannel === ch;
+                return (
+                  <Badge 
+                    key={ch}
+                    label={label}
+                    onClick={() => {
+                      setSlackChannel(ch);
+                      setSlackMedia(media);
+                    }}
+                    style={{
+                      cursor: 'pointer',
+                      opacity: active ? 1 : 0.6,
+                      border: active ? '1px solid #fff' : '1px solid transparent',
+                      background: '#333',
+                      color: '#fff'
+                    }}
+                  />
+                );
+              })}
             <Button variant="gray" onClick={() => setShowSlackPopup(false)}>
               닫기
             </Button>
@@ -1763,7 +1555,7 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
                   value={selectedPath}
                   readOnly
                   className={`custom-path-input ${isDarkMode ? 'dark-mode' : ''}`}
-                  style={{ flex: 1 }}
+                  style={{ flex: 1, height: '26px' }}
                   placeholder="경로를 지정해주세요"
                 />
                 <Button variant="gray" onClick={handlePathSelect}>
