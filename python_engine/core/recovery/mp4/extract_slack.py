@@ -391,8 +391,12 @@ def recover_mp4_slack(filepath, output_h264_dir, output_video_dir, target_format
                         "image_path": jpeg_path,
                         "is_image_fallback": True,
                         "slack_rate": slack_rate,
-                        "audio_path": audio_result.get("audio_path"),
-                        "audio_size": audio_result.get("audio_size", "0 B")
+                        "audio": {
+                            "slack": {
+                                "path": audio_path,
+                                "size": audio_size
+                            }
+                        } if audio_result.get('recovered', False) and audio_path else {}
                     }
                 else:
                     # jpeg 추출 실패 시 mp4 경로 반환
@@ -404,12 +408,16 @@ def recover_mp4_slack(filepath, output_h264_dir, output_video_dir, target_format
                         "image_path": None,
                         "is_image_fallback": False,
                         "slack_rate": slack_rate,
-                        "audio_path": audio_result.get("audio_path"),
-                        "audio_size": audio_result.get("audio_size", "0 B")
+                        "audio": {
+                            "slack": {
+                                "path": audio_path,
+                                "size": audio_size
+                            }
+                        } if audio_result.get('recovered', False) and audio_path else {}
                     }
 
             final_size = os.path.getsize(mp4_path) if os.path.exists(mp4_path) else recovered_bytes
-            return {
+            result = {
                 "recovered": True,
                 "slack_size": bytes_to_unit(int(final_size)),
                 "video_path": mp4_path,
@@ -417,6 +425,17 @@ def recover_mp4_slack(filepath, output_h264_dir, output_video_dir, target_format
                 "is_image_fallback": False,
                 "slack_rate": slack_rate,
             }
+            
+            # 오디오 정보 추가
+            if audio_result.get('recovered', False) and audio_path:
+                result["audio"] = {
+                    "slack": {
+                        "path": audio_path,
+                        "size": audio_size
+                    }
+                }
+            
+            return result
         
         else:
             logger.error(f"{filename} → mp4 파일 미생성")
@@ -480,7 +499,13 @@ def _fallback_wholefile(data, filename, h264_path, mp4_path, jpeg_path, use_gpu)
                     "video_path": None,
                     "image_path": jpeg_path,
                     "is_image_fallback": True,
-                    "slack_rate": slack_rate
+                    "slack_rate": slack_rate,
+                    "audio": {
+                        "slack": {
+                            "path": None,  # fallback에서는 오디오 없음
+                            "size": "0 B"
+                        }
+                    }
                 }
             else:
                 # jpeg 추출 실패 시 mp4 경로 반환
@@ -491,7 +516,13 @@ def _fallback_wholefile(data, filename, h264_path, mp4_path, jpeg_path, use_gpu)
                     "video_path": mp4_path,
                     "image_path": None,
                     "is_image_fallback": False,
-                    "slack_rate": slack_rate
+                    "slack_rate": slack_rate,
+                    "audio": {
+                        "slack": {
+                            "path": None,  # fallback에서는 오디오 없음
+                            "size": "0 B"
+                        }
+                    }
                 }
             
         final_size = os.path.getsize(mp4_path) if os.path.exists(mp4_path) else recovered_bytes
@@ -502,6 +533,12 @@ def _fallback_wholefile(data, filename, h264_path, mp4_path, jpeg_path, use_gpu)
             "image_path": None,
             "is_image_fallback": False,
             "slack_rate": slack_rate,
+            "audio": {
+                "slack": {
+                    "path": None,  # fallback에서는 오디오 없음
+                    "size": "0 B"
+                }
+            }
         }
     
     else: 
