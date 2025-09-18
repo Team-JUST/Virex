@@ -1,4 +1,3 @@
-
 import os
 import re
 import struct
@@ -6,8 +5,10 @@ import logging
 import subprocess
 import json
 import math
-from python_engine.core.recovery.utils.ffmpeg_wrapper import convert_video
+from python_engine.core.recovery.utils.ffmpeg_wrapper import convert_video, convert_audio
+from python_engine.core.recovery.mp4.get_slack_after_moov import get_slack_after_moov
 from python_engine.core.recovery.utils.unit import bytes_to_unit
+from python_engine.core.recovery.mp4.extract_audio import extract_mp4_audio
 
 logger = logging.getLogger(__name__)
 
@@ -33,30 +34,6 @@ def _process_one_mp4(path: str, h264_root: str, out_root: str):
 def _choose_workers(max_cap=4):
     cpu = os.cpu_count() or 4
     return max(2, min(max_cap, math.ceil(cpu/2))) 
-
-def get_slack_after_moov(data):
-    offset = 0
-    total_size = len(data)
-
-    while offset + MIN_BOX_SIZE <= total_size:
-        try:
-            size = struct.unpack('>I', data[offset:offset + 4])[0]
-        except struct.error:
-            logger.error(f"size 언팩 실패 @ offset=0x{offset:X}")
-            break
-
-        box_type = data[offset + 4:offset + 8].decode("utf-8", errors="ignore")
-        if box_type == "moov":
-            slack = data[offset + size:]
-            return slack, offset + size, data[offset:offset + size]
-
-        if size < MIN_BOX_SIZE:
-            logger.warning(f"비정상적인 박스 크기(size={size}) → 루프 종료 @ offset=0x{offset:X}")
-            break
-
-        offset += size
-
-    return b'', None, None
 
 def extract_sps_pps(moov_data):
     avcc_pos = moov_data.find(b'avcC')
@@ -266,8 +243,10 @@ def recover_mp4_slack(filepath, output_h264_dir, output_video_dir, target_format
     os.makedirs(output_video_dir, exist_ok=True)
 
     filename = os.path.splitext(os.path.basename(filepath))[0]
-
-    h264_path, mp4_path, jpeg_path = _paths_for(filename, output_h264_dir, output_video_dir, "slack")
+    h264_path = os.path.join(output_h264_dir, f"{filename}_slack.h264")
+    mp4_path  = os.path.join(output_video_dir, f"{filename}_slack.{target_format}")
+    jpeg_path = os.path.join(output_video_dir, f"{filename}_slack.jpeg")
+    audio_dir = os.path.join(output_video_dir, "audio")
 
     try:
         with open(filepath, 'rb') as f:
@@ -323,11 +302,21 @@ def recover_mp4_slack(filepath, output_h264_dir, output_video_dir, target_format
             }
 
         try:
-            convert_video(h264_path, mp4_path, extra_args=['-c:v', 'copy'], use_gpu=use_gpu, wait=True)
+            common_args = [
+                '-fflags', '+genpts',
+                '-c:v', 'copy',
+                '-movflags', '+faststart'
+            ]
+            convert_video(h264_path, mp4_path, extra_args=common_args)
             logger.info(f"{filename} → mp4 변환 완료")
         except Exception as convert_err:
             logger.error(f"{filename} → mp4 변환 실패: {convert_err}")
-
+            if os.path.exists(mp4_path):
+                try:
+                    os.remove(mp4_path)
+                except Exception:
+                    pass
+            return _fail_result()
 
         if os.path.exists(h264_path):
             try:
@@ -335,6 +324,54 @@ def recover_mp4_slack(filepath, output_h264_dir, output_video_dir, target_format
             except Exception:
                 pass
         
+        # 오디오 추출 및 처리
+        audio_result = extract_mp4_audio(filepath, audio_dir)
+        audio_path = None
+        audio_size = "0 B"
+
+        if audio_result.get('recovered', False):
+            audio_path = audio_result['audio_path']
+            audio_size = audio_result['audio_size']
+            logger.info(f"{filename} → 오디오 추출 성공: {audio_path}")
+
+            # 오디오 변환 (raw → mp3)
+            if os.path.exists(audio_path):
+                mp3_path = os.path.join(audio_dir, f"{filename}_audio.mp3")
+                
+                # 오디오 샘플레이트 확인
+                try:
+                    probe_out = subprocess.check_output([
+                        FFPROBE, "-v", "quiet",
+                        "-print_format", "json",
+                        "-show_streams",
+                        filepath
+                    ], stderr=subprocess.DEVNULL)
+                    probe_data = json.loads(probe_out.decode('utf-8', 'ignore'))
+                    
+                    audio_rate = 48000  # 기본값
+                    for stream in probe_data.get('streams', []):
+                        if stream.get('codec_type') == 'audio':
+                            audio_rate = int(stream.get('sample_rate', 48000))
+                            break
+                except Exception:
+                    logger.warning("오디오 샘플레이트 정보를 가져오는데 실패했습니다. 기본값 48000Hz를 사용합니다.")
+                
+                try:
+                    convert_audio(audio_path, mp3_path, sample_rate=audio_rate, extra_args=[
+                        '-c:a', 'libmp3lame',
+                        '-q:a', '4'
+                    ])
+                    logger.info(f"{filename} → MP3 변환 성공 (sample_rate: {audio_rate}Hz)")
+                    
+                    try:
+                        os.remove(audio_path)  # 원본 raw 파일 제거
+                        audio_path = mp3_path  # 새 mp3 파일 경로로 업데이트
+                        audio_size = bytes_to_unit(os.path.getsize(mp3_path))
+                    except Exception:
+                        pass
+                except Exception as e:
+                    logger.warning(f"{filename} → MP3 변환 실패: {e}")
+
         if os.path.exists(mp4_path):
             duration = get_video_duration_sec(mp4_path)
 
@@ -353,7 +390,9 @@ def recover_mp4_slack(filepath, output_h264_dir, output_video_dir, target_format
                         "video_path": None,
                         "image_path": jpeg_path,
                         "is_image_fallback": True,
-                        "slack_rate": slack_rate
+                        "slack_rate": slack_rate,
+                        "audio_path": audio_result.get("audio_path"),
+                        "audio_size": audio_result.get("audio_size", "0 B")
                     }
                 else:
                     # jpeg 추출 실패 시 mp4 경로 반환
@@ -363,20 +402,24 @@ def recover_mp4_slack(filepath, output_h264_dir, output_video_dir, target_format
                         "slack_size": bytes_to_unit(int(final_size)),
                         "video_path": mp4_path,
                         "image_path": None,
-                        "is_image_fallback": False, 
-                        "slack_rate": slack_rate
+                        "is_image_fallback": False,
+                        "slack_rate": slack_rate,
+                        "audio_path": audio_result.get("audio_path"),
+                        "audio_size": audio_result.get("audio_size", "0 B")
                     }
-
-            final_size = os.path.getsize(mp4_path) if os.path.exists(mp4_path) else recovered_bytes
-            return {
-                "recovered": True,
-                "slack_size": bytes_to_unit(int(final_size)),
-                "video_path": mp4_path,
-                "image_path": None,
-                "is_image_fallback": False,
-                "slack_rate": slack_rate,
-            }
-        
+            else:
+                # 1초 이상 영상인 경우 정상 반환
+                final_size = os.path.getsize(mp4_path) if os.path.exists(mp4_path) else recovered_bytes
+                return {
+                    "recovered": True,
+                    "slack_size": bytes_to_unit(int(final_size)),
+                    "video_path": mp4_path,
+                    "image_path": None,
+                    "is_image_fallback": False,
+                    "slack_rate": slack_rate,
+                    "audio_path": audio_result.get("audio_path"),
+                    "audio_size": audio_result.get("audio_size", "0 B")
+                }
         else:
             logger.error(f"{filename} → mp4 파일 미생성")
             return _fail_result()
@@ -452,17 +495,6 @@ def _fallback_wholefile(data, filename, h264_path, mp4_path, jpeg_path, use_gpu)
                     "is_image_fallback": False,
                     "slack_rate": slack_rate
                 }
-            
-        final_size = os.path.getsize(mp4_path) if os.path.exists(mp4_path) else recovered_bytes
-        return {
-            "recovered": True,
-            "slack_size": bytes_to_unit(int(final_size)),
-            "video_path": mp4_path,
-            "image_path": None,
-            "is_image_fallback": False,
-            "slack_rate": slack_rate,
-        }
     
-    else: 
-        logger.info(f"[fallback] {filename} → mp4 생성 실패")
-        return _fail_result()
+    logger.info(f"[fallback] {filename} → mp4 생성 실패")
+    return _fail_result()

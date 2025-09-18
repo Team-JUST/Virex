@@ -35,7 +35,12 @@ def convert_video(input_path, output_path, fps=None, extra_args=None, use_gpu=Tr
             cmd += ['-r', str(fps)]
         else:
             cmd += ['-r', '30']
-        cmd += ['-i', input_path, '-c:v', vcodec, '-preset', 'medium', '-crf', '23', '-movflags', '+faststart']
+        
+        # want_copy가 True이면 copy 옵션 사용, 아니면 인코딩
+        if want_copy:
+            cmd += ['-i', input_path, '-c:v', 'copy', '-movflags', '+faststart']
+        else:
+            cmd += ['-i', input_path, '-c:v', vcodec, '-preset', 'medium', '-crf', '23', '-movflags', '+faststart']
         cmd += [output_path]
     else:
         if use_gpu:
