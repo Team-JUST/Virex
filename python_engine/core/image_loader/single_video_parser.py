@@ -1,7 +1,6 @@
 import os
 import json
 import tempfile
-import time
 from python_engine.core.recovery.mp4.extract_slack import recover_mp4_slack
 from python_engine.core.recovery.avi.extract_slack import recover_avi_slack
 from python_engine.core.recovery.jdr.extract_jdr import recover_jdr
