@@ -5,7 +5,7 @@ from python_engine.core.analyzer.basic_info_parser import video_metadata
 # FFmpeg 실행 파일 경로 
 FFMPEG_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../../bin/ffmpeg.exe'))
 
-def convert_video(input_path, output_path, extra_args=None, use_gpu=True, wait=True):
+def convert_video(input_path, output_path, extra_args=None, use_gpu=True, wait=True, fps=None):
     cmd = [FFMPEG_PATH, '-hide_banner', '-loglevel', 'info']
 
     try:
