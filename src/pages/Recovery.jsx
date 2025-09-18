@@ -598,11 +598,21 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
   // 16-1) 오디오 재생 핸들러
   // 오디오 재생 (문자열 path 또는 {path: "..."} 모두 지원)
   const handleAudioPlay = (audioType, file) => {
-    if (!file?.channels?.audio || !audioType) {
+    // AVI는 channels.audio, MP4는 slack_info.audio 구조 사용
+    const isMP4File = file?.name?.toLowerCase().endsWith('.mp4');
+    const hasAudio = isMP4File 
+      ? file?.slack_info?.audio?.[audioType]
+      : file?.channels?.audio?.[audioType];
+    
+    if (!hasAudio || !audioType) {
       return;
     }
 
-    const raw = file.channels.audio[audioType];
+    // AVI와 MP4의 오디오 데이터 구조 통일 처리
+    const raw = isMP4File 
+      ? file.slack_info.audio[audioType] 
+      : file.channels.audio[audioType];
+    
     if (!raw) return;
 
     // audio 데이터 형태: { path: '...' } 또는 문자열 직접
@@ -1229,8 +1239,8 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
                             );
                           })}
                           
-                          {/* 오디오 배지 추가 - AVI 파일에만 표시 */}
-                          {selectedResultFile?.channels?.audio && (
+                          {/* 오디오 배지 추가 */}
+                          {(selectedResultFile?.channels?.audio || selectedResultFile?.slack_info?.audio) && (
                             <Badge
                               label={
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -1669,22 +1679,22 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
                                               <Badge label="손상" variant="red" />
                                             )
                                           ) : (
-                                            <Badge
-                                              label="슬랙"
-                                              style={{ cursor: 'pointer' }}
-                                              onClick={() => {
-                                                setSelectedSlackFile(file);
-                                                if (isAVI) {
-                                                  const [ch, media] = pickFirstAvailableChannel(file);
-                                                  setSlackChannel(ch);
-                                                  setSlackMedia(media || { type: null, src: '' });
-                                                } else {
-                                                  setSlackChannel(null);
-                                                  setSlackMedia(mp4Media || { type: null, src: '' });
-                                                }
-                                                setShowSlackPopup(true);
-                                              }}
-                                            />
+                                              <Badge
+                                                label="슬랙"
+                                                style={{ cursor: 'pointer' }}
+                                                onClick={() => {
+                                                  setSelectedSlackFile(file);
+                                                  if (isAVI) {
+                                                    const [ch, media] = pickFirstAvailableChannel(file);
+                                                    setSlackChannel(ch);
+                                                    setSlackMedia(media || { type: null, src: '' });
+                                                  } else {
+                                                    setSlackChannel(null);
+                                                    setSlackMedia(mp4Media || { type: null, src: '' });
+                                                  }
+                                                  setShowSlackPopup(true);
+                                                }}
+                                              />
                                           )
                                         )}
                                         <div className="file-meta">
@@ -1892,6 +1902,23 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
                 ) : null;
 
                 return [...channelBadges.filter(Boolean), audioBadge].filter(Boolean);
+              }
+              // MP4 slack에 오디오가 있으면 오디오 뱃지 추가
+              if (lowerCaseName.endsWith('.mp4') && selectedSlackFile?.slack_info?.audio?.slack) {
+                return [
+                  <Badge
+                    key="audio"
+                    label={<div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><span>Audio</span></div>}
+                    onClick={() => handleAudioPlay('slack', selectedSlackFile)}
+                    style={{
+                      cursor: 'pointer',
+                      opacity: currentAudio?.file?.name === selectedSlackFile?.name ? 1 : 0.6,
+                      border: currentAudio?.file?.name === selectedSlackFile?.name ? '1px solid #fff' : '1px solid transparent',
+                      background: isAudioPlaying && currentAudio?.file?.name === selectedSlackFile?.name ? '#555' : '#333',
+                      color: '#fff'
+                    }}
+                  />
+                ];
               }
               return null;
             })()}
