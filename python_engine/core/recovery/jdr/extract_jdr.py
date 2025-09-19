@@ -470,9 +470,7 @@ def recover_jdr(input_jdr, base_dir, target_format='mp4'):
         if channel in results and results[channel].get('video_path'):
             merged_files = []
             normal_merged_files = []
-            slack_merged_files = []
-            
-            # Normal 비디오들 머지
+            # Normal 비디오들만 머지
             for video_path in results[channel]['normal']['video_path']:
                 try:
                     video_name = os.path.basename(video_path)
@@ -495,29 +493,6 @@ def recover_jdr(input_jdr, base_dir, target_format='mp4'):
                 except Exception as e:
                     logger.error(f"Failed to merge normal video and audio: {e}")
 
-            # Slack 비디오들 머지
-            for video_path in results[channel]['slack']['video_path']:
-                try:
-                    video_name = os.path.basename(video_path)
-                    vdate = re.search(r'(\d{4}_\d{2}_\d{2}_\d{2}_\d{2}_\d{2})', video_name)
-                    if not vdate:
-                        continue
-                    date_str = vdate.group(1)
-                    matching_audio = audio_by_date.get(date_str)
-                    if not matching_audio:
-                        continue
-
-                    channel_prefix = {'front': 'F', 'rear': 'R', 'side': 'S'}[channel]
-                    merged_filename = f"{channel_prefix}_{date_str}_slack_merged.mp4"
-                    merged_path = os.path.join(output_root, merged_filename)
-
-                    ffmpeg_wrapper.merge_video_audio(video_path, matching_audio, merged_path)
-                    merged_files.append(merged_path)
-                    slack_merged_files.append(merged_path)
-                    logger.info(f"Created slack merged file: {merged_path}")
-                except Exception as e:
-                    logger.error(f"Failed to merge slack video and audio: {e}")
-
             if merged_files:
                 merged_any = True
                 if 'merge' not in results:
@@ -529,8 +504,6 @@ def recover_jdr(input_jdr, base_dir, target_format='mp4'):
                     }
                 results['merge']['merged_files'].extend(merged_files)
                 results['merge']['normal_merged_files'].extend(normal_merged_files)
-                results['merge']['slack_merged_files'].extend(slack_merged_files)
-                
                 # 파일 크기 기록
                 for merged_file in merged_files:
                     try:
@@ -540,6 +513,18 @@ def recover_jdr(input_jdr, base_dir, target_format='mp4'):
                             results['merge']['file_sizes'][filename] = bytes_to_unit(file_size)
                     except Exception as e:
                         logger.warning(f"Could not get size of merged file {merged_file}: {e}")
+
+    # 슬랙 오디오(mp3)만 따로 정리해서 결과에 추가
+    slack_audio_mp3 = {}
+    for mp3_path in audio_mp3_paths:
+        m = re.search(r'(\d{4}_\d{2}_\d{2}_\d{2}_\d{2}_\d{2})', os.path.basename(mp3_path))
+        if m:
+            date_key = m.group(1)
+            # 슬랙 영역 오디오 파일명에 slack이 들어가면 슬랙 오디오로 간주
+            if 'slack' in os.path.basename(mp3_path):
+                slack_audio_mp3[date_key] = mp3_path
+
+    results['slack_audio_mp3'] = slack_audio_mp3
 
     try:
         import shutil
