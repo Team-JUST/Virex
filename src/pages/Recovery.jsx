@@ -26,10 +26,7 @@ import IntegrityIcon from '../images/integrity.svg?react';
 import SlackIcon from '../images/slack.svg?react';
 import StructureIcon from '../images/struc.svg?react';
 import RecoveryPauseIcon from '../images/recoveryPauseIcon.svg?react';
-import ReplayIcon from '../images/view_replay.svg?react';
-import PauseIcon from '../images/view_pause.svg?react';
 import ResetIcon from '../images/resetIcon.svg?react';
-import FullscreenIcon from '../images/view_fullscreen.svg?react';
 import IntegrityGreen from '../images/integrity_g.svg?react';
 import IntegrityRed from '../images/integrity_r.svg?react';
 import CompleteIcon from '../images/complete.svg?react';
@@ -237,7 +234,6 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
     });
     return off;
   }, []);
-
 
 // 6) 라우팅/초기파일 자동시작 상태
   const location = useLocation();
@@ -1141,6 +1137,7 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
                   className="progress-bar-fill"
                   style={{ width: `${progress}%` }}
                 />
+
                 <div
                   className="progress-bubble dynamic"
                   style={{
@@ -1271,7 +1268,7 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
                 </div>
               </div>
 
-              <div className="result-scroll-area">
+              <div className="result-scroll-area scrollbar-area">
                 {/* 뷰 */}
                 <div className="video-container">
                   <video
@@ -1508,7 +1505,7 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
                   </p>
                 )}
 
-                <div className="result-scroll-area" style={{ position: 'relative' }}>
+                <div className="result-scroll-area scrollbar-area" style={{ position: 'relative' }}>
                   {resultsLoading ? (
                     <>
                       {Object.entries(groupedResults).map(([category, files]) => (
@@ -1541,182 +1538,188 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
                       ))}
                     </>
                   ) : (
-                    <>
-                      {Object.entries(groupedResults).map(([category, files]) => (
-                        <div className="result-group" key={category}>
-                          <div
-                            className={`result-group-header ${openGroups[category] ? 'open' : ''}`}
-                            onClick={() => toggleGroup(category)}
-                          >
-                            <span className="result-group-toggle" />
-                            {React.createElement(getCategoryIcon(category), { className: "result-group-icon" })}
-                            {category} ({files.length})
-                          </div>
-                          {openGroups[category] && (
-                            <div className="result-file-list">
-                              {(files || []).filter(Boolean).map((file, index) => {
-                                if (!file) return null;
-                                const isJDRChannelFile = file.originalFile && file.channelName && file.recoveredPath;
-                                if (isJDRChannelFile) {
-                                  const checked = selectedFilesForDownload.includes(file.recoveredPath);
-                                  const channelData = file.originalFile.channels?.[file.channelName];
-                                  let videoSize = '알 수 없음';
-                                  if (file.channelName === 'merge') {
-                                    const filename = file.fileName;
-                                    const fileSizes = channelData?.file_sizes || {};
-                                    videoSize = fileSizes[filename] || '알 수 없음';
-                                  } else {
-                                    videoSize = channelData?.video_size || '알 수 없음';
-                                  }
-                                  return (
-                                    <div className="result-file-item" key={`${file.originalFile.name}-${file.channelName}-${index}`}>
-                                      <div className="result-file-info">
-                                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}>
-                                          <input
-                                            type="checkbox"
-                                            checked={checked}
-                                            onChange={(e) => {
-                                              let updated;
-                                              if (e.target.checked) {
-                                                updated = [...selectedFilesForDownload, file.recoveredPath];
-                                              } else {
-                                                updated = selectedFilesForDownload.filter((p) => p !== file.recoveredPath);
-                                              }
-                                              setSelectedFilesForDownload(updated);
-                                            }}
-                                          />
-                                          <div>
-                                            <button
-                                              className="text-button"
-                                              onClick={() => {
-                                                setSelectedAnalysisFile(file.originalFile.name);
-                                                setSelectedChannel(file.channelName);
-                                                setSelectedJDRFilePath(file.recoveredPath);
-                                                setActiveTab('basic');
-                                                setHistory((prev) => [...prev, 'parser']);
-                                                setView('parser');
-                                              }}
-                                            >
-                                              {file.fileName}
-                                            </button>
-                                            <br />
-                                            {videoSize}
-                                          </div>
-                                        </div>
-                                      </div>
-                                    </div>
-                                  );
+                    Object.entries(groupedResults).map(([category, files]) => (
+                      <div className="result-group" key={category}>
+
+                        <div
+                          className={`result-group-header ${openGroups[category] ? 'open' : ''}`}
+                          onClick={() => toggleGroup(category)}
+                        >
+                          <span className="result-group-toggle" />
+                          {React.createElement(getCategoryIcon(category), { className: "result-group-icon" })}
+                          {category} ({files.length})
+                        </div>
+                      
+                      {openGroups[category] && (
+                        <div className="result-file-list">
+                          {(files || []).filter(Boolean).map((file, index) => {
+                              if (!file) return null;
+                              const isJDRChannelFile = file.originalFile && file.channelName && file.recoveredPath;
+
+                              if (isJDRChannelFile) {
+                                const checked = selectedFilesForDownload.includes(file.recoveredPath);
+                                const channelData = file.originalFile.channels?.[file.channelName];
+                                let videoSize = '알 수 없음';
+                                if (file.channelName === 'merge') {
+                                  const filename = file.fileName;
+                                  const fileSizes = channelData?.file_sizes || {};
+                                  videoSize = fileSizes[filename] || '알 수 없음';
+                                } else {
+                                  videoSize = channelData?.video_size || '알 수 없음';
                                 }
-                                // 일반 파일 처리
-                                const sizeLabel = typeof file.size === 'string' ? file.size : bytesToUnit(file.size);
-                                const filename = String(file?.name ?? '');
-                                const isJDR = filename.toLowerCase().endsWith('.jdr');
-                                const isAVI = filename.toLowerCase().endsWith('.avi');
-                                const isMP4 = filename.toLowerCase().endsWith('.mp4');
-                                const totalBytes = unitToBytes(file.size || 0);
-                                const aviSlackBytes =
-                                  isAVI && file.channels
-                                    ? Object.values(file.channels)
-                                        .filter(Boolean)
-                                        .reduce((sum, ch) => sum + (ch?.slack_size ? unitToBytes(ch.slack_size) : 0),
-                                          0
-                                        )
-                                    : 0;
-                                let mp4SlackBytes = 0;
-                                if (isMP4 && file.slack_info) {
-                                  const s = file.slack_info;
-                                  mp4SlackBytes = s.slack_size
-                                    ? unitToBytes(s.slack_size)
-                                    : Number(s.slack_rate) > 0 && totalBytes
-                                    ? Math.round(totalBytes * (Number(s.slack_rate) / 100))
-                                    : 0;
-                                }
-                                const mp4Media = isMP4 ? getSlackForMp4(file) : null;
-                                const aviHasMedia =
-                                  isAVI && ['front', 'rear', 'side'].some((ch) => !!getSlackForChannel(file, ch));
-                                const hasSlackMedia = isAVI ? aviHasMedia : !!mp4Media;
-                                const slackRatePercent = (() => {
-                                  if (!totalBytes) return 0;
-                                  if (isAVI) {
-                                    const p = (aviSlackBytes / totalBytes) * 100;
-                                    return p > 0 && p < 1 ? 1 : Math.round(p);
-                                  }
-                                  if (isMP4) {
-                                    const r = Number(file?.slack_info?.slack_rate ?? 0);
-                                    const pct = Number.isFinite(r) ? (r <= 1 ? r * 100 : r) : (mp4SlackBytes / totalBytes) * 100;
-                                    return pct > 0 && pct < 1 ? 1 : Math.round(pct);
-                                  }
-                                  return 0;
-                                })();
-                                const hasSlackBytes = isJDR ? false : (isAVI ? aviSlackBytes : mp4SlackBytes) > 0;
-                                const hasSlackBadge = !isJDR && hasSlackBytes && hasSlackMedia;
-                                const checked = selectedFilesForDownload.includes(file.path);
                                 return (
-                                  <div className="result-file-item" key={file.path}>
-                                    <input
-                                      type="checkbox"
-                                      checked={checked}
-                                      onChange={(e) => {
-                                        let updated;
-                                        if (e.target.checked) {
-                                          updated = [...selectedFilesForDownload, file.path];
-                                        } else {
-                                          updated = selectedFilesForDownload.filter((p) => p !== file.path);
-                                        }
-                                        setSelectedFilesForDownload(updated);
-                                      }}
-                                    />
+                                  <div className="result-file-item" key={`${file.originalFile.name}-${file.channelName}-${index}`}>
                                     <div className="result-file-info">
-                                      <div className="result-file-title-row">              
-                                        <button className="text-button" onClick={() => handleFileClick(file.name)}>
-                                            {file.name}
-                                        </button>
-                                        {hasSlackBadge && (
-                                          file?.analysis?.integrity?.damaged ? (
-                                            file?.slack_info?.recovered ? (
-                                              <Badge label="복원 완료" variant="yellow" />
-                                            ) : (
-                                              <Badge label="손상" variant="red" />
-                                            )
-                                          ) : (
-                                              <Badge
-                                                label="슬랙"
-                                                style={{ cursor: 'pointer' }}
-                                                onClick={() => {
-                                                  setSelectedSlackFile(file);
-                                                  if (isAVI) {
-                                                    const [ch, media] = pickFirstAvailableChannel(file);
-                                                    setSlackChannel(ch);
-                                                    setSlackMedia(media || { type: null, src: '' });
-                                                  } else {
-                                                    setSlackChannel(null);
-                                                    setSlackMedia(mp4Media || { type: null, src: '' });
-                                                  }
-                                                  setShowSlackPopup(true);
-                                                }}
-                                              />
-                                          )
-                                        )}
-                                        <div className="file-meta">
-                                          {isJDR
-                                            ? sizeLabel
-                                            : `${sizeLabel} ・ ${
-                                                file?.analysis?.integrity?.damaged && file?.slack_info?.recovered
-                                                  ? '복원 비율'
-                                                  : '슬랙 비율'
-                                              }: ${slackRatePercent} %`}
+                                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}>
+                                        <input
+                                          type="checkbox"
+                                          checked={checked}
+                                          onChange={(e) => {
+                                            let updated;
+                                            if (e.target.checked) {
+                                              updated = [...selectedFilesForDownload, file.recoveredPath];
+                                            } else {
+                                              updated = selectedFilesForDownload.filter((p) => p !== file.recoveredPath);
+                                            }
+                                            setSelectedFilesForDownload(updated);
+                                          }}
+                                        />
+                                        <div>
+                                          <button
+                                            className="text-button"
+                                            onClick={() => {
+                                              setSelectedAnalysisFile(file.originalFile.name);
+                                              setSelectedChannel(file.channelName);
+                                              setSelectedJDRFilePath(file.recoveredPath);
+                                              setActiveTab('basic');
+                                              setHistory((prev) => [...prev, 'parser']);
+                                              setView('parser');
+                                            }}
+                                          >
+                                            {file.fileName}
+                                          </button>
+                                          <br />
+                                          {videoSize}
                                         </div>
                                       </div>
                                     </div>
                                   </div>
                                 );
-                              })}
-                            </div>
-                          )}
+                              }
+
+                              // 일반 파일 처리
+                              const sizeLabel = typeof file.size === 'string' ? file.size : bytesToUnit(file.size);
+                              const filename = String(file?.name ?? '');
+                              const isJDR = filename.toLowerCase().endsWith('.jdr');
+                              const isAVI = filename.toLowerCase().endsWith('.avi');
+                              const isMP4 = filename.toLowerCase().endsWith('.mp4');
+                              const totalBytes = unitToBytes(file.size || 0);
+
+                              const aviSlackBytes =
+                                isAVI && file.channels
+                                  ? Object.values(file.channels)
+                                      .filter(Boolean)
+                                      .reduce((sum, ch) => sum + (ch?.slack_size ? unitToBytes(ch.slack_size) : 0),
+                                        0
+                                      )
+                                  : 0;
+
+                              let mp4SlackBytes = 0;
+                              if (isMP4 && file.slack_info) {
+                                const s = file.slack_info;
+                                mp4SlackBytes = s.slack_size
+                                  ? unitToBytes(s.slack_size)
+                                  : Number(s.slack_rate) > 0 && totalBytes
+                                  ? Math.round(totalBytes * (Number(s.slack_rate) / 100))
+                                  : 0;
+                              }
+
+                              const mp4Media = isMP4 ? getSlackForMp4(file) : null;
+                              const aviHasMedia =
+                                isAVI && ['front', 'rear', 'side'].some((ch) => !!getSlackForChannel(file, ch));
+                              const hasSlackMedia = isAVI ? aviHasMedia : !!mp4Media;
+
+                              const slackRatePercent = (() => {
+                                if (!totalBytes) return 0;
+                                if (isAVI) {
+                                  const p = (aviSlackBytes / totalBytes) * 100;
+                                  return p > 0 && p < 1 ? 1 : Math.round(p);
+                                }
+                                const r = Number(file?.slack_info?.slack_rate ?? 0);
+                                const pct = Number.isFinite(r) ? r <= 1 ? r * 100 : r : (mp4SlackBytes / totalBytes) * 100;
+                                return pct > 0 && pct < 1 ? 1 : Math.round(pct);
+                              })();
+
+                              const hasSlackBytes = isJDR ? false : (isAVI ? aviSlackBytes : mp4SlackBytes) > 0;
+                              const hasSlackBadge = !isJDR && hasSlackBytes && hasSlackMedia;
+                              const checked = selectedFilesForDownload.includes(file.path);
+
+                              return (
+                                <div className="result-file-item" key={file.path}>
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={(e) => {
+                                      let updated;
+                                      if (e.target.checked) {
+                                        updated = [...selectedFilesForDownload, file.path];
+                                      } else {
+                                        updated = selectedFilesForDownload.filter((p) => p !== file.path);
+                                      }
+                                      setSelectedFilesForDownload(updated);
+                                    }}
+                                  />
+                                  <div className="result-file-info">
+                                    <div className="result-file-title-row">
+                                      <button className="text-button" onClick={() => handleFileClick(file.name)}>
+                                        {file.name}
+                                      </button>
+                                      {hasSlackBadge && (
+                                        file?.analysis?.integrity?.damaged ? (
+                                          file?.slack_info?.recovered ? (
+                                            <Badge label="복원 완료" variant="yellow" />
+                                          ) : (
+                                            <Badge label="손상" variant="red" />
+                                          )
+                                        ) : (
+                                          <Badge
+                                            label="슬랙"
+                                            style={{ cursor: 'pointer' }}
+                                            onClick={() => {
+                                              setSelectedSlackFile(file);
+                                              if (isAVI) {
+                                                const [ch, media] = pickFirstAvailableChannel(file);
+                                                setSlackChannel(ch);
+                                                setSlackMedia(media || { type: null, src: '' });
+                                              } else {
+                                                setSlackChannel(null);
+                                                setSlackMedia(mp4Media || { type: null, src: '' });
+                                              }
+                                              setShowSlackPopup(true);
+                                            }}
+                                            variant="blue"
+                                          />
+                                        )
+                                      )}
+                                    </div>
+                                    <div className="file-meta">
+                                      {isJDR
+                                        ? sizeLabel
+                                        : `${sizeLabel} ・ ${
+                                            file?.analysis?.integrity?.damaged && file?.slack_info?.recovered
+                                              ? '복원 비율'
+                                              : '슬랙 비율'
+                                          }: ${slackRatePercent} %`}
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
                         </div>
-                      ))}
-                    </>
-                  )}
+                      )}
+                    </div>
+                  )))
+                }
                 </div>
 
                 <div
@@ -1736,7 +1739,8 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
               </div>
             </>
           )
-        ) : null}
+        ) : null
+      }
       </Box>
 
     {/* Alert 조건문 */}
@@ -1762,12 +1766,12 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
       {showRestartPopup && (
         <Alert
           icon={<ResetIcon />}
-          title="복원 세션 초기화"
+          title="새 복구 시작"
           isDarkMode={isDarkMode}
           description={
             <>
-              새 복원을 시작하시면 현재 복구하신 파일의<br />
-              분석 작업이 모두 초기화 됩니다. <br />
+              새 복구를 시작하면 이전에 복구한 파일의<br />
+              분석 결과가 모두 삭제됩니다.<br />
               계속 진행하시겠습니까?
             </>
           }
@@ -2025,7 +2029,7 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
                   value={selectedPath}
                   readOnly
                   className={`custom-path-input ${isDarkMode ? 'dark-mode' : ''}`}
-                  style={{ flex: 1 }}
+                  style={{ flex: 1, height: '26px' }}
                   placeholder="경로를 지정해주세요"
                 />
                 <Button variant="gray" onClick={handlePathSelect}>
