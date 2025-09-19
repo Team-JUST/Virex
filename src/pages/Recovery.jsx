@@ -103,6 +103,9 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
     rollbackRef.current();
   }
 
+  // JDR 슬랙/노멀 모드 상태
+  const [jdrViewMode, setJdrViewMode] = useState('normal'); // 'normal' | 'slack'
+
 // 2) 복원 진행률 관련 이펙트
   useEffect(() => {
     window.__recoverGuard = { isRecovering, progress };
@@ -167,7 +170,7 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
     }, {})
   };
 
-  // 4-1) 결과 목록 -> JDR 채널별로 그룹핑
+  // 4-1) 결과 목록 -> JDR 채널별로 그룹핑 (normal/slack 구분)
   function groupJDRByChannels(jdrFiles) {
     const channels = {
       front: [],
@@ -182,7 +185,6 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
           if (channelName !== 'audio') {
             // merge 채널은 merged_files 사용, 나머지는 video_path 사용
             const files = channelName === 'merge' ? channelData.merged_files : channelData.video_path;
-            
             if (files && Array.isArray(files)) {
               files.forEach(recoveredFile => {
                 channels[channelName]?.push({
@@ -193,26 +195,65 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
                 });
               });
             }
+            // normal/slack 구분 파일들도 추가
+            if (channelData.normal && channelData.normal.video_path && Array.isArray(channelData.normal.video_path)) {
+              channelData.normal.video_path.forEach(recoveredFile => {
+                channels[channelName]?.push({
+                  originalFile: file,
+                  channelName,
+                  recoveredPath: recoveredFile,
+                  fileName: recoveredFile.split(/[/\\]/).pop() || recoveredFile,
+                  region: 'normal'
+                });
+              });
+            }
+            if (channelData.slack && channelData.slack.video_path && Array.isArray(channelData.slack.video_path)) {
+              channelData.slack.video_path.forEach(recoveredFile => {
+                channels[channelName]?.push({
+                  originalFile: file,
+                  channelName,
+                  recoveredPath: recoveredFile,
+                  fileName: recoveredFile.split(/[/\\]/).pop() || recoveredFile,
+                  region: 'slack'
+                });
+              });
+            }
           }
         });
       }
+      // 슬랙 오디오(mp3)만 있는 경우 Audio 뱃지용 정보 추가
+      if (file.slack_audio_mp3 && Object.keys(file.slack_audio_mp3).length > 0) {
+        channels['slack_audio'] = Object.entries(file.slack_audio_mp3).map(([date, mp3Path]) => ({
+          originalFile: file,
+          channelName: 'slack_audio',
+          recoveredPath: mp3Path,
+          fileName: mp3Path.split(/[/\\]/).pop() || mp3Path,
+          region: 'slack',
+          isSlackAudio: true
+        }));
+      }
     });
 
-    return channels;
+  return channels;
   }
 
   const groupedResults = useMemo(() => {
     const regularGroups = groupByCategory(results.filter(f => !f.name?.toLowerCase().endsWith('.jdr')));
     const jdrFiles = results.filter(f => f.name?.toLowerCase().endsWith('.jdr'));
-    const jdrChannels = groupJDRByChannels(jdrFiles);
 
-    if (jdrFiles.length > 0) {
-      if (jdrChannels.front.length > 0) regularGroups['Front'] = jdrChannels.front;
-      if (jdrChannels.rear.length > 0) regularGroups['Rear'] = jdrChannels.rear;
-      if (jdrChannels.side.length > 0) regularGroups['Side'] = jdrChannels.side;
-      if (jdrChannels.merge.length > 0) regularGroups['Merge'] = jdrChannels.merge;
-    }
-
+    // JDR 파일들을 원본 파일명으로 그룹에 추가
+    jdrFiles.forEach(jdrFile => {
+      const hasSlack = jdrFile.channels && Object.values(jdrFile.channels).some(channel => 
+        channel && channel.slack && channel.slack.video_path && channel.slack.video_path.length > 0
+      );
+      const hasSlackAudio = jdrFile.slack_audio_mp3 && Object.keys(jdrFile.slack_audio_mp3).length > 0;
+      regularGroups[jdrFile.name] = [{
+        ...jdrFile,
+        isJDRGroup: true,
+        hasSlack,
+        hasSlackAudio
+      }];
+    });
     return regularGroups;
   }, [results]);
 
@@ -331,12 +372,25 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
     const lowerCaseName = f.name?.toLowerCase() || '';
     
     if (lowerCaseName.endsWith('.jdr')) {
+      // JDR 파일의 경우 normal/slack 모드에 따라 다른 채널 표시
       return ['front','rear','side','merge'].filter((ch) => {
         const channelData = f.channels?.[ch];
-        if (ch === 'merge') {
-          return channelData?.merged_files && channelData.merged_files.length > 0;
+        if (!channelData) return false;
+        
+        if (jdrViewMode === 'slack') {
+          // 슬랙 모드: slack 데이터가 있는 채널만
+          return channelData.slack && channelData.slack.video_path && channelData.slack.video_path.length > 0;
         } else {
-          return channelData?.video_path && channelData.video_path.length > 0;
+          // 노멀 모드: normal 데이터 또는 기존 video_path/merged_files가 있는 채널
+          if (channelData.normal && channelData.normal.video_path && channelData.normal.video_path.length > 0) {
+            return true;
+          }
+          // 기존 구조 호환성
+          if (ch === 'merge') {
+            return channelData.merged_files && channelData.merged_files.length > 0;
+          } else {
+            return channelData.video_path && channelData.video_path.length > 0;
+          }
         }
       });
     }
@@ -346,7 +400,7 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
     }
     
     return [];
-  }, [selectedResultFile]);
+  }, [selectedResultFile, jdrViewMode]);
 
   const currentVideoSrc = useMemo(() => {
     const f = selectedResultFile;
@@ -364,21 +418,42 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
         if (selectedJDRFilePath) {
           path = selectedJDRFilePath;
         } else {
-          // 폴백: video_path 또는 merged_files에서 첫 번째 파일 가져오기
+          // JDR 모드에 따른 비디오 경로 선택
           const pref = selectedChannel || ['front', 'rear', 'side', 'merge'].find((ch) => {
             const channelData = f.channels?.[ch];
-            if (ch === 'merge') {
-              return channelData?.merged_files && channelData.merged_files.length > 0;
+            if (!channelData) return false;
+            
+            if (jdrViewMode === 'slack') {
+              return channelData.slack && channelData.slack.video_path && channelData.slack.video_path.length > 0;
             } else {
-              return channelData?.video_path && channelData.video_path.length > 0;
+              if (channelData.normal && channelData.normal.video_path && channelData.normal.video_path.length > 0) {
+                return true;
+              }
+              // 기존 구조 호환성
+              if (ch === 'merge') {
+                return channelData.merged_files && channelData.merged_files.length > 0;
+              } else {
+                return channelData.video_path && channelData.video_path.length > 0;
+              }
             }
           });
 
           if (pref && f.channels?.[pref]) {
-            if (pref === 'merge' && f.channels[pref].merged_files) {
-              path = f.channels[pref].merged_files[0];
-            } else if (f.channels[pref].video_path) {
-              path = f.channels[pref].video_path[0];
+            const channelData = f.channels[pref];
+            
+            if (jdrViewMode === 'slack' && channelData.slack && channelData.slack.video_path) {
+              path = channelData.slack.video_path[0];
+            } else if (jdrViewMode === 'normal') {
+              if (channelData.normal && channelData.normal.video_path) {
+                path = channelData.normal.video_path[0];
+              } else {
+                // 기존 구조 호환성
+                if (pref === 'merge' && channelData.merged_files) {
+                  path = channelData.merged_files[0];
+                } else if (channelData.video_path) {
+                  path = channelData.video_path[0];
+                }
+              }
             }
           }
         }
@@ -405,16 +480,16 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
     }
 
     return toFileUrl(f.origin_video || '');
-  }, [selectedResultFile, selectedChannel, selectedJDRFilePath]);
+  }, [selectedResultFile, selectedChannel, selectedJDRFilePath, jdrViewMode]);
 
   const slack_info = selectedResultFile?.slack_info ?? { recovered: false, slack_size: '0 B', slack_rate: 0,  };
   const totalBytes = unitToBytes(selectedResultFile?.size || '0 B');
-  const isDamagedAndRecovered = Boolean(analysis?.integrity?.damaged && slack_info?.recovered && isMP4);
   const lowerCaseName = selectedResultFile?.name?.toLowerCase() || '';
   const isJDR = lowerCaseName.endsWith('.jdr');
   const isAVI = lowerCaseName.endsWith('.avi');
   const isMP4 = lowerCaseName.endsWith('.mp4');
   const isMultiChannel = isAVI || isJDR;
+  const isDamagedAndRecovered = Boolean(analysis?.integrity?.damaged && slack_info?.recovered && isMP4);
 
   const multiChannelSlackBytes = isMultiChannel && selectedResultFile?.channels && isAVI
     ? Object.values(selectedResultFile.channels)
@@ -807,6 +882,7 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
     setSelectedAnalysisFile(filename);
     setActiveTab('basic');
     setSelectedJDRFilePath(null); // JDR 파일 경로 초기화
+    setJdrViewMode('normal'); // JDR 모드 초기화
 
     const f = results.find((r) => r.name === filename);
     const lowerCaseName = filename.toLowerCase();
@@ -986,23 +1062,27 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
           setSelectedAnalysisFile(null);
           setSelectedChannel(null);
           setSelectedJDRFilePath(null);
+          setJdrViewMode('normal');
         } else if (prevView === 'recovering') {
           setIsRecovering(true);
           setRecoveryDone(false);
           setShowComplete(false);
           setSelectedAnalysisFile(null);
           setSelectedJDRFilePath(null);
+          setJdrViewMode('normal');
         } else if (prevView === 'result') {
           setIsRecovering(false);
           setRecoveryDone(true);
           setShowComplete(false);
           setSelectedAnalysisFile(null);
           setSelectedJDRFilePath(null);
+          setJdrViewMode('normal');
         } else if (prevView === 'parser') {
           setIsRecovering(false);
           setRecoveryDone(true);
           setShowComplete(false);
           setSelectedJDRFilePath(null);
+          setJdrViewMode('normal');
         }
       }
     };
@@ -1203,9 +1283,14 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
                     const lowerCaseName = selectedResultFile?.name?.toLowerCase() || '';
                     const isJDR = lowerCaseName.endsWith('.jdr');
                     
-                    if (isJDR && selectedJDRFilePath) {
-                      // JDR 파일인 경우 실제 영상 파일명(.mp4) 표시
-                      return selectedJDRFilePath.split(/[/\\]/).pop() || selectedAnalysisFile;
+                    if (isJDR) {
+                      if (selectedJDRFilePath) {
+                        // 특정 JDR 파일을 선택한 경우 실제 영상 파일명 표시
+                        return selectedJDRFilePath.split(/[/\\]/).pop() || selectedAnalysisFile;
+                      } else {
+                        // JDR 그룹 모드일 때 원본 파일명과 모드 표시
+                        return `${selectedAnalysisFile} (${jdrViewMode === 'slack' ? '슬랙' : '원본'})`;
+                      }
                     }
                     return selectedAnalysisFile;
                   })()}
@@ -1216,7 +1301,32 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
                     const isJDR = lowerCaseName.endsWith('.jdr');
                     const isAVI = lowerCaseName.endsWith('.avi');
                     
-                    if (isAVI && availableChannels.length > 0) {
+                    if (isJDR && !selectedJDRFilePath && availableChannels.length > 0) {
+                      // JDR 그룹 모드: 채널별 뱃지 표시
+                      return (
+                        <>
+                          {availableChannels.map((ch) => {
+                            const label = ch === 'front' ? 'Front' : 
+                                         ch === 'rear' ? 'Rear' : 
+                                         ch === 'side' ? 'Side' :
+                                         ch === 'merge' ? 'Merge' : ch;
+                            const active = selectedChannel === ch;
+                            return (
+                              <Badge
+                                key={ch}
+                                label={label}
+                                onClick={() => setSelectedChannel(ch)}
+                                style={{
+                                  cursor: 'pointer',
+                                  opacity: active ? 1 : 0.6,
+                                  border: active ? '1px solid #333' : '1px solid transparent',
+                                }}
+                              />
+                            );
+                          })}
+                        </>
+                      );
+                    } else if (isAVI && availableChannels.length > 0) {
                       return (
                         <>
                           {availableChannels.map((ch) => {
@@ -1556,6 +1666,85 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
                             <div className="result-file-list">
                               {(files || []).filter(Boolean).map((file, index) => {
                                 if (!file) return null;
+                                
+                                // JDR 그룹 파일 처리 (새로운 구조)
+                                if (file.isJDRGroup) {
+                                  const checked = selectedFilesForDownload.includes(file.path);
+                                  const sizeLabel = typeof file.size === 'string' ? file.size : bytesToUnit(file.size);
+                                  return (
+                                    <div className="result-file-item" key={file.path}>
+                                      <input
+                                        type="checkbox"
+                                        checked={checked}
+                                        onChange={(e) => {
+                                          let updated;
+                                          if (e.target.checked) {
+                                            updated = [...selectedFilesForDownload, file.path];
+                                          } else {
+                                            updated = selectedFilesForDownload.filter((p) => p !== file.path);
+                                          }
+                                          setSelectedFilesForDownload(updated);
+                                        }}
+                                      />
+                                      <div className="result-file-info">
+                                        <div className="result-file-title-row">              
+                                          <button 
+                                            className="text-button" 
+                                            onClick={() => {
+                                              // JDR 원본 클릭 - normal 영상들을 채널별로 보여줌
+                                              setSelectedAnalysisFile(file.name);
+                                              setActiveTab('basic');
+                                              setSelectedJDRFilePath(null);
+                                              setJdrViewMode('normal');
+                                              setHistory(prev => [...prev, 'parser']);
+                                              setView('parser');
+                                            }}
+                                          >
+                                            {file.name}
+                                          </button>
+                                          {file.hasSlack && (
+                                            <Badge
+                                              label="슬랙"
+                                              style={{ cursor: 'pointer' }}
+                                              onClick={() => {
+                                                setSelectedAnalysisFile(file.name);
+                                                setActiveTab('basic');
+                                                setSelectedJDRFilePath(null);
+                                                setJdrViewMode('slack');
+                                                setHistory(prev => [...prev, 'parser']);
+                                                setView('parser');
+                                              }}
+                                            />
+                                          )}
+                                          {file.hasSlackAudio && (
+                                            <Badge
+                                              label={<div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><span>Audio</span></div>}
+                                              style={{ cursor: 'pointer', background: '#333', color: '#fff', marginLeft: 4 }}
+                                              onClick={() => {
+                                                // 슬랙 오디오(mp3)만 있을 때 오디오 재생
+                                                setSelectedAnalysisFile(file.name);
+                                                setActiveTab('basic');
+                                                setSelectedJDRFilePath(null);
+                                                setJdrViewMode('slack');
+                                                setHistory(prev => [...prev, 'parser']);
+                                                setView('parser');
+                                                // 슬랙 오디오 중 첫 번째 mp3 재생
+                                                const mp3s = file.slack_audio_mp3 ? Object.values(file.slack_audio_mp3) : [];
+                                                if (mp3s.length > 0) {
+                                                  handleAudioPlay('slack', { ...file, slackAudioMp3Path: mp3s[0] });
+                                                }
+                                              }}
+                                            />
+                                          )}
+                                          <div className="file-meta">
+                                            {sizeLabel}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                }
+
                                 const isJDRChannelFile = file.originalFile && file.channelName && file.recoveredPath;
                                 if (isJDRChannelFile) {
                                   const checked = selectedFilesForDownload.includes(file.recoveredPath);
@@ -1599,6 +1788,16 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
                                             >
                                               {file.fileName}
                                             </button>
+                                            {/* Audio 뱃지: slack_audio 채널이면 노출 */}
+                                            {file.channelName === 'slack_audio' && (
+                                              <Badge
+                                                label={<div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><span>Audio</span></div>}
+                                                style={{ cursor: 'pointer', background: '#333', color: '#fff', marginLeft: 4 }}
+                                                onClick={() => {
+                                                  handleAudioPlay('slack', { ...file.originalFile, slackAudioMp3Path: file.recoveredPath });
+                                                }}
+                                              />
+                                            )}
                                             <br />
                                             {videoSize}
                                           </div>
