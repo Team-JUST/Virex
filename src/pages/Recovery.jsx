@@ -1235,30 +1235,6 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
                               />
                             );
                           })}
-                          
-                          {/* 오디오 배지 추가 */}
-                          {(selectedResultFile?.channels?.audio || selectedResultFile?.slack_info?.audio) && (
-                            <Badge
-                              label={
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                  <span>Audio</span>
-                                </div>
-                              }
-                              onClick={() => {
-                                // 현재 선택된 채널에 따라 적절한 오디오 타입 결정
-                                // 슬랙 영상(slack)을 보고 있으면 slack 오디오, 원본 영상을 보고 있으면 original 오디오
-                                const isSlackVideo = currentVideoSrc?.includes('_slack.mp4');
-                                const audioType = isSlackVideo ? 'slack' : 'original';
-                                handleAudioPlay(audioType, selectedResultFile);
-                              }}
-                              style={{
-                                cursor: 'pointer',
-                                opacity: currentAudio?.file?.name === selectedResultFile?.name ? 1 : 0.6,
-                                border: currentAudio?.file?.name === selectedResultFile?.name ? '1px solid #333' : '1px solid transparent',
-                                backgroundColor: isAudioPlaying && currentAudio?.file?.name === selectedResultFile?.name ? '#e8f4fd' : undefined,
-                              }}
-                            />
-                          )}
                         </>
                       );
                     }
