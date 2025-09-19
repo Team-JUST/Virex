@@ -43,6 +43,10 @@ function waitForUnallocReady(baseDir, { timeoutMs = 120000, intervalMs = 800 } =
 }
 
 function runVolCarver(baseDir, sender) {
+
+  volCarverStarted = true;           
+  volCarverDone = false;
+
   return new Promise((resolve) => {
     const args = [VOL_CARVER, baseDir, '--ffmpeg-dir', FFMPEG_DIR];
     const child = spawn('python', args, {
@@ -81,6 +85,7 @@ function runVolCarver(baseDir, sender) {
         console.warn('[vol_carver] no carved_index yet:', e?.message || e);
       }
 
+      volCarverDone = true; 
       resolve(code);
     });
   });
@@ -132,6 +137,8 @@ let currentRecoveryProc = null;
 let currentTempDir = null;
 let isCancellingRecovery = false;
 let volCarverStarted = false;
+let volCarverPromise = null; 
+let volCarverDone = false;   
 
 // Classify drive type
 function classifyDrive(drive) {

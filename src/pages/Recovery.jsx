@@ -18,9 +18,6 @@ import '../styles/Alert.css';
 
 import AlertIcon from '../images/alert_file.svg?react';
 import DrivingIcon from '../images/driving.svg?react';
-import ParkingIcon from '../images/parking.svg?react';
-import EventIcon from '../images/event.svg?react';
-import DeletedIcon from '../images/deleted.svg?react';
 import DownloadIcon from '../images/download.svg?react';
 import BasicIcon from '../images/information_t.svg?react';
 import IntegrityIcon from '../images/integrity.svg?react';
@@ -225,7 +222,6 @@ async function listCarvedFromFS(baseDir) {
   }
 }
 
-
   const getSlackForChannel = (file, ch) => {
     const info = file?.channels?.[ch];
     if (!info || !info.recovered) return null;
@@ -352,10 +348,7 @@ async function listCarvedFromFS(baseDir) {
 // 11) 카테고리 아이콘 매핑 및 아이콘 선택 헬퍼
   const categoryIcons = {
     driving: DrivingIcon,
-    parking: ParkingIcon,
-    event: EventIcon,
     slack: SlackIcon,
-    deleted: DeletedIcon,
   };
 
   const specialCategoryMap = {
@@ -363,18 +356,15 @@ async function listCarvedFromFS(baseDir) {
   };
 
   const getCategoryIcon = (category) => {
-    if (category === CARVED_TITLE) return SlackIcon;
-    const cat = category.toLowerCase();
-    for (const [match, iconKey] of Object.entries(specialCategoryMap)) {
-      if (cat.includes(match)) {
-        return categoryIcons[iconKey];
-      }
+    if (!category) return DrivingIcon;
+
+    if (category === CARVED_TITLE || category.toLowerCase().includes('slack')) {
+      return SlackIcon;
     }
-    const prefix = Object.keys(categoryIcons).find((k) =>
-      cat.startsWith(k)
-    );
-    return prefix ? categoryIcons[prefix] : SlackIcon;
+
+    return DrivingIcon;
   };
+
 
   // 12) 메인 IPC: 진행률/완료 리스너 등록
   useEffect(() => {
@@ -1506,8 +1496,8 @@ async function listCarvedFromFS(baseDir) {
             <div
               style={{
                 position: 'fixed',
-                right: 40,
-                bottom: 40,
+                right: 70,
+                bottom: 80,
                 zIndex: 2000,
               }}
             >
