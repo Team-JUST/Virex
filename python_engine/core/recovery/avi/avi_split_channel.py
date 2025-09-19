@@ -79,8 +79,14 @@ def split_channel_bytes(data, label):
 
 def extract_full_channel_bytes(data, label):
     sig = CHUNK_SIG[label]
+
+    riff_end = len(data)
+    if data.startswith(b'RIFF'):
+        total = struct.unpack('<I', data[4:8])[0]
+        riff_end = 8 + total
+
     offset = 0
-    file_end = len(data)
+    file_end = riff_end
 
     out = bytearray()
 

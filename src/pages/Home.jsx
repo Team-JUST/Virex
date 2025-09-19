@@ -2,14 +2,24 @@ import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import '../styles/Home.css';
 import '../styles/Button.css';
+import '../styles/Scrollbar.css';
 import Button from '../components/Button.jsx';
 import DriveIcon from '../images/drive.svg?react';
 import FolderIcon from '../images/folder.svg?react';
 import FileIcon from '../images/file.svg?react';
 
-function bytesToGB(n) {
-  if (!n || n <= 0) return '0 GB';
-  return `${(n / (1024 ** 3)).toFixed(1)} GB`;
+function formatBytes(n) {
+  if (!n || n <= 0) return '0 KB';
+  const units = ['KB', 'MB', 'GB', 'TB'];
+  let size = n / 1024;
+  let i = 0;
+  while (size >= 1024 && i < units.length - 1) {
+    size /= 1024;
+    i++;
+  }
+  let str = size.toFixed(1);
+  if (str.endsWith('.0')) str = str.slice(0, -2);
+  return `${str} ${units[i]}`;
 }
 
 function normalizePath(p) {
@@ -35,7 +45,7 @@ function DriveCard({ drive, onClick }) {
 
   const sizeText =
     size > 0
-      ? `${bytesToGB(used)} / ${bytesToGB(size)}`
+      ? `${formatBytes(used)} / ${formatBytes(size)}`
       : '정보 없음';
 
   return (
@@ -45,12 +55,12 @@ function DriveCard({ drive, onClick }) {
       title={drive.mount}
     >
       <div className="info">
-        <div className="drive_title">
+        <div className="drive_title" style = {{ marginBottom: '8px' }}>
           <DriveIcon className="drive_icon" />
           <strong>{drive.label || drive.mount}</strong>
         </div>
         <div>
-          <div>{sizeText}</div>
+          <div style={{ marginBottom: '8px' }}>{sizeText}</div>
           <div className="bar">
             <div
               className="bar_fill"
@@ -67,11 +77,11 @@ function ExplorerView({
   mountPath,
   currentPath,
   entries,
-  selectedE01,
+  selectedFile,
   onBack,
   onSelectDrive,
   onOpenDir,
-  onSelectE01,
+  onSelectFile,
   isDarkMode,
 }) {
   const displayPath = formatDrivePath(currentPath, mountPath);
@@ -83,14 +93,14 @@ function ExplorerView({
     navigate('/recovery', {
       state: {
         autoStart: true,
-        e01File: selectedE01
+        file: selectedFile
       }
     });
   };
 
   return (
     <div id="explorer" className={isDarkMode ? 'dark-mode' : ''}>
-      <div className={`drive_category ${isDarkMode ? 'dark-mode' : ''}`}>
+      <div className={`drive_category ${isDarkMode ? 'dark-mode' : ''} scrollbar-area`}>
         <div className="drive_header">
           <div className="drive_header_left">
             <DriveIcon className="drive_icon" />
@@ -109,44 +119,45 @@ function ExplorerView({
           </div>
         </div>
 
-        <div className="folder_wrapper">
+        <div className="folder_wrapper scrollbar-area">
           <div className="folder_list">
-            {entries.map((entry) => (
-              <div
-                key={entry.path}
-                className="folder_item"
-                onClick={() => (entry.isDirectory ? onOpenDir(entry.path) : onSelectE01(entry))}
-                style={{ fontWeight: entry.isDirectory ? 'bold' : 'normal', cursor: 'pointer' }}
-              >
-                {entry.isDirectory ? (
-                  <FolderIcon className="folder_icon" />
-                ) : (
-                  <FileIcon className="file_icon" />
-                )}
-                <span>{entry.name}</span>
-                {entry.isE01 && entry.size ? (
-                  <span className="file_size">({bytesToGB(entry.size)})</span>
-                ) : null}
-              </div>
-            ))}
-          </div>
+            {entries.map((entry) => {
+              const isSelected = selectedFile?.path === entry.path;
 
-          <div id="selected_file_info">
-            {selectedE01 && (
-              <div className="selected_box">
-                <h4 style={{ marginLeft: '10px' }}>선택된 파일</h4>
-                <p style={{ marginLeft: '10px' }}><strong>파일명:</strong> {selectedE01.name}</p>
-                <p style={{ marginLeft: '10px' }}><strong>크기:</strong> {bytesToGB(selectedE01.size)}</p>
-                <p style={{ marginLeft: '10px' }}><strong>경로:</strong> {selectedE01.path}</p>
-                <Button
-                  variant="dark"
-                  onClick={handleStart}
-                  disabled={!selectedE01 || !selectedE01.path || !selectedE01.name}
-                >
-                  복원 시작
-                </Button>
-              </div>
-            )}
+              return (
+                <React.Fragment key={entry.path}>
+                  <div
+                    className="folder_item"
+                    onClick={() =>
+                      entry.isDirectory
+                        ? onOpenDir(entry.path)
+                        : typeof onSelectFile === 'function' && onSelectFile(entry)
+                    }
+                  >
+                    <div className="folder_inner" style={{ fontWeight: entry.isDirectory ? 'bold' : 'normal', cursor: 'pointer' }}>
+                      {entry.isDirectory ? <FolderIcon className="folder_icon" /> : <FileIcon className="file_icon" />}
+                      <span>{entry.name}</span>
+                      {entry.isSupported && entry.size ? <span className="file_size">({formatBytes(entry.size)})</span> : null}
+                    </div>
+                  </div>
+                  {isSelected && (
+                    <div id="selected_file_info" className="selected_box">
+                      <h4>선택된 파일</h4>
+                      <p><strong>파일명:</strong> {selectedFile.name}</p>
+                      <p><strong>크기:</strong> {formatBytes(selectedFile.size)}</p>
+                      <p><strong>경로:</strong> {selectedFile.path}</p>
+                      <Button
+                        variant="dark"
+                        onClick={handleStart}
+                        disabled={!selectedFile || !selectedFile.path || !selectedFile.name}
+                      >
+                        복원 시작
+                      </Button>
+                    </div>
+                  )}
+                </React.Fragment>
+              );
+            })}
           </div>
         </div>
       </div>
@@ -170,16 +181,47 @@ function DriveSection({ title, drives, onDriveClick }) {
   );
 }
 
+function DriveCardSkeleton() {
+  return (
+    <div className="skeleton drive_card">
+      <div className="info">
+        <div
+          className="drive_title skeleton-bar"
+          style={{ marginBottom: "8px", width: "60%", height: 24 }}
+        />
+        <div
+          className="skeleton-bar"
+          style={{ width: "40%", height: 16, marginBottom: 8 }}
+        />
+        <div className="bar">
+          <div
+            className="bar_fill skeleton-bar bar-thick"
+            style={{ width: "80%", height: "100%"  }}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const Home = ({ isDarkMode }) => {
   const [drives, setDrives] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [currentPath, setCurrentPath] = useState('');
   const [entries, setEntries] = useState([]);
-  const [selectedE01, setSelectedE01] = useState(null);
+  const [selectedFile, setSelectedFile] = useState(null);
   const [mountPath, setMountPath] = useState('');
 
   useEffect(() => {
-    window.api.getDrives().then(setDrives);
-    const unsubscribe = window.api.onDrivesUpdated(setDrives);
+    setIsLoading(true);
+    window.api.getDrives().then((data) => {
+      setDrives(data);
+      setIsLoading(false);
+    });
+    const unsubscribe = window.api.onDrivesUpdated((data) => {
+      setDrives(data);
+      setIsLoading(false);
+    });
     return () => typeof unsubscribe === 'function' && unsubscribe();
   }, []);
 
@@ -193,14 +235,14 @@ const Home = ({ isDarkMode }) => {
 
   const loadFolder = useCallback(async (folderPath) => {
     setCurrentPath(folderPath);
-    setSelectedE01(null);
+    setSelectedFile(null);
     const raw = await window.api.readFolder(folderPath);
     raw.sort((a, b) => {
       if (a.isDirectory && !b.isDirectory) return -1;
       if (!a.isDirectory && b.isDirectory) return 1;
       return a.name.localeCompare(b.name);
     });
-    setEntries(raw.filter((e) => e.isDirectory || e.isE01));
+    setEntries(raw.filter((e) => !e.isHidden && (e.isDirectory || e.isSupported)));
   }, []);
 
   const handleDriveClick = (mount) => {
@@ -222,7 +264,7 @@ const Home = ({ isDarkMode }) => {
   };
 
   const handleOpenDir = (p) => loadFolder(p);
-  const handleSelectE01 = (entry) => setSelectedE01(entry);
+  const handleSelectFile = (entry) => setSelectedFile(entry);
 
   return (
     <div className={`main_content ${isDarkMode ? 'dark-mode' : ''}`}>
@@ -230,22 +272,36 @@ const Home = ({ isDarkMode }) => {
         <>
           <h1 className={`home_title${isDarkMode ? ' dark-mode' : ''}`}>드라이브를 선택해 복원을 시작하세요</h1>
 
-          <div className={`drive_wrapper${isDarkMode ? ' dark-mode' : ''}`}>
-            <DriveSection
-              title="내장 드라이브"
-              drives={categorized.internal}
-              onDriveClick={handleDriveClick}
-            />
-            <DriveSection
-              title="외장 드라이브"
-              drives={categorized.external}
-              onDriveClick={handleDriveClick}
-            />
-            <DriveSection
-              title="이동식 드라이브"
-              drives={categorized.removable}
-              onDriveClick={handleDriveClick}
-            />
+          <div className={`drive_wrapper${isDarkMode ? ' dark-mode' : ''} scrollbar-area`}>
+            {isLoading ? (
+              <>
+                <div className="drive_category">
+                  <h2>내장 드라이브</h2>
+                  <div className="drive_list">
+                    <DriveCardSkeleton />
+                    <DriveCardSkeleton />
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                <DriveSection
+                  title="내장 드라이브"
+                  drives={categorized.internal}
+                  onDriveClick={handleDriveClick}
+                />
+                <DriveSection
+                  title="외장 드라이브"
+                  drives={categorized.external}
+                  onDriveClick={handleDriveClick}
+                />
+                <DriveSection
+                  title="이동식 드라이브"
+                  drives={categorized.removable}
+                  onDriveClick={handleDriveClick}
+                />
+              </>
+            )}
           </div>
         </>
       )}
@@ -255,11 +311,11 @@ const Home = ({ isDarkMode }) => {
           mountPath={mountPath}
           currentPath={currentPath}
           entries={entries}
-          selectedE01={selectedE01}
+          selectedFile={selectedFile}
           onBack={handleBack}
           onSelectDrive={handleSelectDrive}
           onOpenDir={handleOpenDir}
-          onSelectE01={handleSelectE01}
+          onSelectFile={handleSelectFile}
           isDarkMode={isDarkMode}
         />
       )}

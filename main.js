@@ -9,6 +9,7 @@ const readline = require('readline');
 const drivelist = require('drivelist');
 const checkDiskSpace = require('check-disk-space').default;
 const os = require('os');
+const winattr = require('winattr');
 
 const VOL_CARVER = path.join(__dirname, 'python_engine', 'core', 'recovery', 'vol_recover', 'vol_carver.py');
 const FFMPEG_DIR = path.join(__dirname, 'bin');
@@ -111,7 +112,6 @@ if (process.env.NODE_ENV === 'development') {
 }
 
 
-
 const isSafeTempDir = (dir) => {
   if (!dir) return false;
   const tmp= path.resolve(os.tmpdir());
@@ -139,6 +139,17 @@ let isCancellingRecovery = false;
 let volCarverStarted = false;
 let volCarverPromise = null; 
 let volCarverDone = false;   
+
+function openFileDialog(extensions) {
+  return dialog.showOpenDialog({
+    title: '복구할 파일 선택',
+    properties: ['openFile'],
+    filters: [
+      { name: 'Supported', extensions },
+      { name: 'All Files', extensions: ['*'] },
+    ],
+  });
+}
 
 // Classify drive type
 function classifyDrive(drive) {
@@ -277,6 +288,16 @@ ipcMain.handle('read-folder', async (_event, folderPath) => {
     const dirents = await fs.readdir(folderPath, { withFileTypes: true });
     dirents.sort((a, b) => a.name.localeCompare(b.name, 'en', { sensitivity: 'base' }));
 
+    const SUPPORTED_EXTS = ['.e01', '.001', '.mp4', '.avi', '.jdr'];
+
+    const isKnownSystemFolder = (name) => {
+          const lower = name.toLowerCase();
+          if (lower === 'system volume information') return true;
+          if (lower === '$recycle.bin' || lower === 'recycler') return true;
+          if (/^found\.\d{3}$/i.test(name)) return true;
+          return false;
+        };
+
     const items = [];
     for (const e of dirents) {
       const full = path.join(folderPath, e.name);
@@ -288,12 +309,31 @@ ipcMain.handle('read-folder', async (_event, folderPath) => {
           try { size = fssync.statSync(full).size; } catch { }
         }
       }
+      const lower = e.name.toLowerCase();
+      const ext = path.extname(lower);
+      const isSupported = SUPPORTED_EXTS.includes(ext);
+
+      let isHidden = false;
+      try {
+        const attr = await new Promise((resolve, reject) => 
+          winattr.get(full, (err, result) => err ? reject(err) : resolve(result))
+        );
+        if (attr.hidden || attr.system) isHidden = true;
+      } catch (err) {
+        if (isKnownSystemFolder(e.name)) {
+          isHidden = true;
+        } else {
+          console.warn('[HiddenAttrFallback] attr check failed:', full, err?.message || err);
+        }
+      }
+
       items.push({
         name: e.name,
         path: full,
         isDirectory: e.isDirectory(),
-        isE01: e.name.toLowerCase().endsWith('.e01'),
+        isSupported,
         size,
+        isHidden,
       });
     }
     return items;
@@ -671,21 +711,12 @@ ipcMain.handle('clear-cache', async () => {
   return deleted;
 });
 
-
-
-ipcMain.handle('dialog:openE01File', async () => {
-  const { canceled, filePaths } = await dialog.showOpenDialog({
-    title: 'E01 파일 선택',
-    filters: [{ name: 'E01 Files', extensions: ['e01'] }],
-    properties: ['openFile'],
-  });
-  if (canceled) return null;
-  return filePaths[0];  // 선택된 파일 경로 하나 반환
+ipcMain.handle('dialog:openSupportedFile', async () => {
+  const { canceled, filePaths } = await openFileDialog(['e01','001','mp4','avi','jdr']);
+  return canceled || !filePaths?.[0] ? null : filePaths[0];
 });
 
-
 // 볼륨 슬랙 리스트
-
 ipcMain.handle('listCarvedDir', async (_event, baseDir) => {
   if (!baseDir) return [];
   const carvedDir = path.join(baseDir, 'carved');
@@ -695,18 +726,22 @@ ipcMain.handle('listCarvedDir', async (_event, baseDir) => {
 
     const out = [];
     for (const ent of entries) {
-      if (!ent.isFile()) continue;                      // 파일만
+      if (!ent.isFile()) continue;                    
       const abs = path.join(carvedDir, ent.name);
-      const st = await fs.stat(abs).catch(() => null);  // 크기 확인
-      if (!st || st.size <= 0) continue;                // 0바이트 제외
+      const st = await fs.stat(abs).catch(() => null);  
+      if (!st || st.size <= 0) continue;               
       out.push({ name: ent.name, path: abs, size: st.size });
     }
 
-    // 보기 좋게 정렬
     out.sort((a, b) => a.name.localeCompare(b.name, 'ko'));
     return out;
   } catch (e) {
     console.warn('[listCarvedDir] failed:', e?.message || e);
     return [];
   }
+});
+
+ipcMain.handle('dialog:openE01File', async () => {
+  const { canceled, filePaths } = await openFileDialog(['e01']);
+  return canceled || !filePaths?.[0] ? null : filePaths[0];
 });

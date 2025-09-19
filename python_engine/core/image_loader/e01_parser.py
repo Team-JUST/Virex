@@ -12,13 +12,14 @@ import sys
 from io import BytesIO
 from python_engine.core.recovery.mp4.extract_slack import recover_mp4_slack
 from python_engine.core.recovery.avi.extract_slack import recover_avi_slack
+from python_engine.core.recovery.jdr.extract_jdr import recover_jdr
 from python_engine.core.analyzer.basic_info_parser import get_basic_info_with_meta
 from python_engine.core.analyzer.integrity import get_integrity_info
 from python_engine.core.analyzer.struc import get_structure_info
 from python_engine.core.recovery.utils.unit import bytes_to_unit
 
 logger = logging.getLogger(__name__)
-VIDEO_EXTENSIONS = ('.mp4', '.avi')
+VIDEO_EXTENSIONS = ('.mp4', '.avi', '.jdr')
 
 class EWFImgInfo(pytsk3.Img_Info):
     def __init__(self, ewf_handle):
@@ -72,11 +73,11 @@ def read_file_content(file_obj):
         offset += len(chunk)
     return buffer.getvalue()
 
-def build_analysis(origin_video_path, meta):
+def build_analysis(basic_target_path, origin_video_path, meta):
     return {
-        'basic': get_basic_info_with_meta(origin_video_path, meta),
+        'basic': get_basic_info_with_meta(basic_target_path, meta),
         'integrity': get_integrity_info(origin_video_path),
-        'structure': get_structure_info(origin_video_path),
+        'structure': get_structure_info(basic_target_path),
     }
 
 def handle_mp4_file(name, filepath, data, file_obj, output_dir, category):
@@ -96,8 +97,32 @@ def handle_mp4_file(name, filepath, data, file_obj, output_dir, category):
         output_video_dir=slack_dir,
         target_format="mp4"
     )
+    if not slack_info:
+        slack_info = {
+            "recovered": False,
+            "video_path": None,
+            "image_path": None,
+            "is_image_fallback": False,
+            "slack_size": "0 B",
+            "slack_rate": 0.0,
+            "source_path": original_path
+        }
 
     origin_video_path = slack_info.get('source_path', original_path)
+    recovered_mp4 = slack_info.get('video_path')
+    
+    analysis_target = (
+        recovered_mp4
+        if (slack_info.get('recovered') and recovered_mp4 and os.path.exists(recovered_mp4))
+        else origin_video_path
+    )
+
+    try:
+        has_slack_output = bool(slack_info.get('video_path') or slack_info.get('image_path'))
+        if not has_slack_output and os.path.exists(slack_dir):
+            os.rmdir(slack_dir)
+    except Exception:
+        pass
 
     return {
         'name': name,
@@ -105,7 +130,7 @@ def handle_mp4_file(name, filepath, data, file_obj, output_dir, category):
         'size': bytes_to_unit(len(data)),
         'origin_video': origin_video_path,
         'slack_info': slack_info,
-        'analysis': build_analysis(origin_video_path, file_obj.info.meta)
+        'analysis': build_analysis(analysis_target, origin_video_path, file_obj.info.meta)
     }
 
 def handle_avi_file(name, filepath, data, file_obj, output_dir, category):
@@ -134,7 +159,33 @@ def handle_avi_file(name, filepath, data, file_obj, output_dir, category):
         'size': bytes_to_unit(len(data)),
         'origin_video': origin_video_path,
         'channels': channels_only,
-        'analysis': build_analysis(origin_video_path, file_obj.info.meta)
+        'analysis': build_analysis(origin_video_path, origin_video_path, file_obj.info.meta)
+    }
+
+def handle_jdr_file(name, filepath, data, file_obj, output_dir, category):
+    video_stem = os.path.splitext(name)[0]
+    orig_dir = os.path.join(output_dir, category, video_stem)
+    os.makedirs(orig_dir, exist_ok=True)
+
+    original_path = os.path.join(orig_dir, name)
+    with open(original_path, 'wb') as wf:
+        wf.write(data)
+
+    jdr_info = recover_jdr(
+        input_jdr=original_path,
+        base_dir=orig_dir,
+        target_format="mp4"
+    )
+    if jdr_info is None:
+        return None
+
+    channels_only = {k: v for k, v in jdr_info.items() if isinstance(v, dict)}
+    
+    return {
+        'name': name,
+        'path': filepath,
+        'size': bytes_to_unit(len(data)),
+        'channels': channels_only
     }
 
 def extract_video_files(fs_info, output_dir, path="/", total_count=None, progress=None):
@@ -165,8 +216,12 @@ def extract_video_files(fs_info, output_dir, path="/", total_count=None, progres
 
         if name_str.lower().endswith('.mp4'):
             result = handle_mp4_file(name_str, filepath, data, file_obj, output_dir, category)
-        else: 
+        elif name_str.lower().endswith('.avi'): 
             result = handle_avi_file(name_str, filepath, data, file_obj, output_dir, category)
+        elif name_str.lower().endswith('.jdr'):
+            result = handle_jdr_file(name_str, filepath, data, file_obj, output_dir, category)
+        else:
+            continue
 
         if result:
             results.append(result)
