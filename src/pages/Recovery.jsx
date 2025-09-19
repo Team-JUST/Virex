@@ -197,7 +197,7 @@ const totalCount = results.length + volumeSlackCount;
     }
 
   if ((volumeSlack?.length || 0) > 0) {
-     regularGroups[CARVED_TITLE] = volumeSlack; // 이미 setVolumeSlack에서 category 붙였음
+     regularGroups[CARVED_TITLE] = volumeSlack; 
    }
 
     return regularGroups;
