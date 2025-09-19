@@ -13,7 +13,7 @@ AUDIO_SIG_RE = re.compile(br"\x00\x00\x00\x02\x09[\x10\x30]\x00\x00")
 
 GSENSORI = b"gsensori"
 
-def extract_mp4_audio(filepath, output_audio_dir):
+def extract_mp4_audio(filepath, output_audio_dir, also_try_0x1000=True):
     os.makedirs(output_audio_dir, exist_ok=True)
     name, _ = os.path.splitext(os.path.basename(filepath))
     raw_out = os.path.join(output_audio_dir, f"{name}_audio.raw")
@@ -24,7 +24,7 @@ def extract_mp4_audio(filepath, output_audio_dir):
         if slack_offset is None:
             logger.error(f"{filepath} → moov 박스 없음(slack 없음)")
             return _fail_result()
-        stats = extract_mp4_audio_between_frames(slack, raw_out)
+        stats = extract_mp4_audio_between_frames(slack, raw_out, also_try_0x1000=also_try_0x1000)
         recovered = stats["total_audio_bytes"] > 0
         return {
             "recovered": recovered,
@@ -35,7 +35,7 @@ def extract_mp4_audio(filepath, output_audio_dir):
         logger.error(f"{filepath} 오디오 추출 중 예외 발생: {type(e).__name__}: {e}")
         return _fail_result()
 
-def extract_mp4_audio_between_frames(buffer: bytes, raw_out_path: str) -> dict:
+def extract_mp4_audio_between_frames(buffer: bytes, raw_out_path: str, also_try_0x1000: bool = True) -> dict:
     total_audio_bytes = 0
     blocks = 0
 
@@ -93,8 +93,10 @@ def extract_mp4_audio_between_frames(buffer: bytes, raw_out_path: str) -> dict:
                 else:
                     logger.debug("자막 길이 읽기 범위 초과")
 
-            # 4) 오디오 블록 후보 거리들
+            # 4) 오디오 블록 후보 거리들(우선순위: 0x800 → 0xA00 → [옵션] 0x1000)
             candidate_steps = [0x800, 0xA00]
+            if also_try_0x1000:
+                candidate_steps.append(0x1000)
 
             wrote_block = False
 
