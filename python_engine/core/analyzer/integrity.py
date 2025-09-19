@@ -2,18 +2,25 @@ import os
 import struct
 
 # MP4 파일 내 특정 box(atom)의 위치와 크기 탐색
-def find_box(data, box_type):
+def find_all_boxes(data, box_type):
     offset = 0
+    found = []
     while offset < len(data) - 8:
         try:
             size = struct.unpack('>I', data[offset:offset + 4])[0]
             typ = data[offset + 4:offset + 8]
             if typ == box_type.encode():
-                return offset, size
+                found.append((offset, size))
             offset += size if size > 0 else 8
         except Exception:
             break
-    return None, None
+    return found
+
+def find_box(data, box_type):
+    boxes = find_all_boxes(data, box_type)
+    if not boxes:
+        return None, None
+    return boxes[0]
 
 # 비디오 파일 무결성 검사
 def get_integrity_info(file_path):
@@ -81,21 +88,26 @@ def get_integrity_info(file_path):
             result["reasons"].append("[박스 크기 이상] 'ftyp' size=0")
 
         # moov 박스 검증
-        moov_offset, moov_size = find_box(data, 'moov')
-        if moov_offset is None:
-            result["damaged"] = True
-            result["reasons"].append("[필수 박스 누락] 'moov' 없음")
-        elif moov_size == 0:
-            result["damaged"] = True
-            result["reasons"].append("[박스 크기 이상] 'moov' size=0")
+            moov_boxes = find_all_boxes(data, 'moov')
+            if not moov_boxes:
+                result["damaged"] = True
+                result["reasons"].append("[필수 박스 누락] 'moov' 없음")
+            else:
+                # 크기 0인 moov 박스가 하나라도 있으면 경고
+                for moov_size in moov_boxes:
+                    if moov_size == 0:
+                        result["damaged"] = True
+                        result["reasons"].append("[박스 크기 이상] 'moov' size=0")
         
         # mdat 박스 검증
-        mdat_offset, mdat_size = find_box(data, 'mdat')
-        if mdat_offset is None:
+        mdat_boxes = find_all_boxes(data, 'mdat')
+        if not mdat_boxes:
             result["damaged"] = True
             result["reasons"].append("[필수 박스 누락] 'mdat' 없음")
-        elif mdat_size == 0:
-            result["damaged"] = True
-            result["reasons"].append("[박스 크기 이상] 'mdat' size=0")
+        else:
+            for mdat_offset, mdat_size in mdat_boxes:
+                if mdat_size == 0:
+                    result["damaged"] = True
+                    result["reasons"].append(f"[박스 크기 이상] 'mdat' offset={mdat_offset} size=0")
 
     return result
