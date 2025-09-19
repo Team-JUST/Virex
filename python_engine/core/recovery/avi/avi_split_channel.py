@@ -1,7 +1,8 @@
 import re
 import struct
 
-MAX_CHUNK = 10 * 1024 * 1024
+MAX_REASONABLE_CHUNK_SIZE = 10 * 1024 * 1024
+MIN_REASONABLE_CHUNK_SIZE = 16  # 최소 청크 크기(0x10). idx 무시
 
 CHUNK_SIG = {
     'front': b'00dc',
@@ -64,7 +65,7 @@ def split_channel_bytes(data, label):
         end = start + size
         offset = end
 
-        if size > MAX_CHUNK or end > len(data):
+        if size > MAX_REASONABLE_CHUNK_SIZE or end > len(data):
             continue
 
         chunk = data[start:end]
@@ -100,8 +101,14 @@ def extract_full_channel_bytes(data, label):
         end = start + size
 
         # 손상된 청크 건너뛰기
-        if size > MAX_CHUNK or end > file_end:
-            offset = idx + 1
+        if size > MAX_REASONABLE_CHUNK_SIZE:
+            offset = idx + 4
+            continue
+        elif size <= MIN_REASONABLE_CHUNK_SIZE:
+            offset = idx + 4
+            continue
+        if end > file_end:
+            offset = idx + 4
             continue
 
         out += data[start:end]

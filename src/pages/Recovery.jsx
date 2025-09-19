@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect, useMemo, use } from 'react';
+import React, { useRef, useState, useEffect, useMemo, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 
 import { useSessionStore } from '../session.js';
@@ -132,6 +132,27 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
 
   const [currentCount, setCurrentCount] = useState(0);
   const [totalFiles, setTotalFiles] = useState(0);
+
+// 3-1) 오디오 재생 상태
+  const audioRef = useRef(null);
+  const [currentAudio, setCurrentAudio] = useState(null); // { type, file }
+  const [isAudioPlaying, setIsAudioPlaying] = useState(false);
+
+  // 오디오 정지 및 초기화 공통 함수
+  const stopAudio = useCallback(() => {
+    if (audioRef.current) {
+      try {
+        audioRef.current.pause();
+        audioRef.current.currentTime = 0;
+      } catch {}
+    }
+    audioRef.current = null;
+    setIsAudioPlaying(false);
+    setCurrentAudio(null);
+  }, []);
+
+  // 언마운트시 정리
+  useEffect(() => () => stopAudio(), [stopAudio]);
 
 // 4) 결과 목록 → 카테고리 그룹핑 유틸/파생값
   function groupByCategory(list) {
@@ -323,8 +344,6 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
     return [];
   }, [selectedResultFile]);
 
-  const slack_info = selectedResultFile?.slack_info ?? { recovered: false, slack_size: '0 B', slack_rate: 0,  };
-  
   const currentVideoSrc = useMemo(() => {
     const f = selectedResultFile;
     if (!f) return '';
@@ -361,7 +380,14 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
         }
       } else if (isAVI) {
         const pref = selectedChannel || ['front', 'rear', 'side'].find((ch) => f.channels?.[ch]?.full_video_path);
+        
+        // 오리지널 오디오가 병합된 영상이 있으면 우선 사용
+        if (pref && f.channels?.[pref]?.merged_video_path) {
+          path = f.channels[pref].merged_video_path;
+        } else {
+          // 병합된 영상이 없으면 기존 full_video_path 사용
         path = pref ? f.channels?.[pref]?.full_video_path : null;
+        }
       }
       
       return toFileUrl(path || f.origin_video || '');
@@ -377,6 +403,7 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
     return toFileUrl(f.origin_video || '');
   }, [selectedResultFile, selectedChannel, selectedJDRFilePath]);
 
+  const slack_info = selectedResultFile?.slack_info ?? { recovered: false, slack_size: '0 B', slack_rate: 0,  };
   const totalBytes = unitToBytes(selectedResultFile?.size || '0 B');
   const isDamagedAndRecovered = Boolean(analysis?.integrity?.damaged && slack_info?.recovered && isMP4);
   const lowerCaseName = selectedResultFile?.name?.toLowerCase() || '';
@@ -564,6 +591,81 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
   }, [isRecovering, recoveryDone]);
 
 // 16) 파일/다운로드 등 핸들러
+  // 16-1) 오디오 재생 핸들러
+  // 오디오 재생 (문자열 path 또는 {path: "..."} 모두 지원)
+  const handleAudioPlay = (audioType, file) => {
+    // AVI는 channels.audio, MP4는 slack_info.audio 구조 사용
+    const isMP4File = file?.name?.toLowerCase().endsWith('.mp4');
+    const hasAudio = isMP4File 
+      ? file?.slack_info?.audio?.[audioType]
+      : file?.channels?.audio?.[audioType];
+    
+    if (!hasAudio || !audioType) {
+      return;
+    }
+
+    // AVI와 MP4의 오디오 데이터 구조 통일 처리
+    const raw = isMP4File 
+      ? file.slack_info.audio[audioType] 
+      : file.channels.audio[audioType];
+    
+    if (!raw) return;
+
+    // audio 데이터 형태: { path: '...' } 또는 문자열 직접
+    const realPath = typeof raw === 'string' ? raw : raw.path;
+    if (!realPath) return;
+
+    const audioPath = toFileUrl(realPath);
+    console.debug('[Audio] 요청 재생', { file: file.name, audioType, audioPath });
+
+    // 이미 동일한 오디오 재생 중이면 토글(정지)
+    if (
+      currentAudio?.type === audioType &&
+      currentAudio?.file?.name === file?.name &&
+      isAudioPlaying
+    ) {
+      console.debug('[Audio] 동일 소스 → 정지');
+      stopAudio();
+      return;
+    }
+
+    // 기존 다른 오디오 정지
+    if (audioRef.current) {
+      stopAudio();
+    }
+
+    // 새 오디오 객체 생성
+    try {
+      const audioEl = new Audio(audioPath);
+      audioRef.current = audioEl;
+      setCurrentAudio({ type: audioType, file });
+
+      audioEl.onplay = () => {
+        setIsAudioPlaying(true);
+      };
+      audioEl.onpause = () => {
+        // 사용자가 수동 pause 한 경우
+        setIsAudioPlaying(false);
+      };
+      audioEl.onended = () => {
+        console.debug('[Audio] 재생 종료 이벤트');
+        stopAudio();
+      };
+      audioEl.onerror = (e) => {
+        console.error('[Audio] 재생 오류', e);
+        stopAudio();
+      };
+
+      audioEl.play().catch(err => {
+        console.error('[Audio] play() 실패', err);
+        stopAudio();
+      });
+    } catch (err) {
+      console.error('[Audio] Audio 객체 생성 실패', err);
+      stopAudio();
+    }
+  };
+
   const handleFile = (file) => {
     const lower = file.name.toLowerCase();
     const ok =
@@ -742,6 +844,7 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
   };
 
   const resetToUpload = () => {
+    stopAudio();
     resetSession();
     setShowComplete(false);
     setSelectedAnalysisFile(null);
@@ -763,7 +866,93 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
     currentStep = 0;
   }
 
-// 18) 다운로드 완료 후 복원 재시작 핸들러
+// 18) 파서 뷰어 DOM 세팅(useEffect)
+  useEffect(() => {
+    if (!selectedAnalysisFile) return;
+
+    const waitForDOMAndSetup = () => {
+      const video = document.getElementById('parser-video');
+      const playPauseBtn = document.getElementById('playPauseBtn');
+      const playPauseIcon = document.getElementById('playPauseIcon');
+      const replayBtn = document.getElementById('replayBtn');
+      const fullscreenBtn = document.getElementById('fullscreenBtn');
+      const progressBar = document.getElementById('progressBar');
+      const timeText = document.getElementById('timeText');
+
+      if (!video || !playPauseBtn || !replayBtn || !fullscreenBtn || !progressBar || !timeText || !playPauseIcon) {
+        console.warn("[Debug] video or control element : not ready, retrying");
+        requestAnimationFrame(waitForDOMAndSetup);
+        return;
+      }
+
+      fullscreenBtn.onclick = () => {
+        if (!document.fullscreenElement) {
+          if (video.requestFullscreen) {
+            video.requestFullscreen().catch(err => {
+              console.error("[Debug] fullscreen enter failed : ", err);
+            });
+          } else if (video.webkitRequestFullscreen) {
+            video.webkitRequestFullscreen();
+          } else if (video.msRequestFullscreen) {
+            video.msRequestFullscreen();
+          }
+        } else {
+          if (document.exitFullscreen) {
+            document.exitFullscreen();
+          } else if (document.webkitExitFullscreen) {
+            document.webkitExitFullscreen();
+          } else if (document.msExitFullscreen) {
+            document.msExitFullscreen();
+          }
+        }
+      };
+
+      playPauseBtn.onclick = () => {
+        if (video.paused) {
+          video.play();
+          playPauseIcon.src = 'view_pause.svg';
+          playPauseIcon.style.filter = 'none';
+        } else {
+          video.pause();
+          playPauseIcon.src = 'view_play.svg';
+          playPauseIcon.style.filter = 'grayscale(100%) brightness(0.8)';
+        }
+      };
+
+      replayBtn.onclick = () => {
+        video.currentTime = 0;
+        video.play();
+        playPauseIcon.style.filter = 'none';
+      };
+
+      progressBar.oninput = () => {
+        video.currentTime = progressBar.value;
+      };
+
+      function formatTime(seconds) {
+        if (isNaN(seconds) || seconds === undefined) return '--:--';
+        const min = Math.floor(seconds / 60).toString().padStart(2, '0');
+        const sec = Math.floor(seconds % 60).toString().padStart(2, '0');
+        return `${min}:${sec}`;
+      }
+
+      video.ontimeupdate = () => {
+        progressBar.value = video.currentTime;
+        const durationText = isNaN(video.duration) ? '--:--' : formatTime(video.duration);
+        timeText.textContent = `${formatTime(video.currentTime)} / ${durationText}`;
+      };
+
+      video.onloadedmetadata = () => {
+        progressBar.max = video.duration;
+        const durationText = isNaN(video.duration) ? '--:--' : formatTime(video.duration);
+        timeText.textContent = `${formatTime(0)} / ${durationText}`;
+      };
+    };
+  
+    requestAnimationFrame(waitForDOMAndSetup);
+  }, [selectedAnalysisFile, selectedChannel]);
+
+// 19) 다운로드 완료 후 복원 재시작 핸들러
     const startRecoveryFromDownload = () => {
       setShowDownloadPopup(false);
       setShowComplete(false);
@@ -773,11 +962,12 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
       setTotalFiles(300);
     };
 
-// 19) 화면 전환/탭 가드 네비게이션
+// 20) 화면 전환/탭 가드 네비게이션
     const [view, setView] = useState('upload');
     const [history, setHistory] = useState(['upload']);
 
     const handleBack = () => {
+      stopAudio();
       if (history.length > 1) {
         const newHistory = [...history];
         newHistory.pop();
@@ -833,7 +1023,7 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
       setPendingTab(null);
     };
 
-  // 20) 디스크 용량 부족 이벤트 수신
+  // 21) 디스크 용량 부족 이벤트 수신
   useEffect(() => {
     if (!window.api?.onDiskFull) return;
     const off = window.api.onDiskFull(() => {
@@ -847,7 +1037,7 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
     return () => { try { off && off(); } catch {} };
   }, []);
   
-  // 21) 리셋 팝업 핸들러
+  // 22) 리셋 팝업 핸들러
   const [showRestartPopup, setShowRestartPopup] = useState(false);
   const [showClosePopup, setShowClosePopup] = useState(false);
 
@@ -876,8 +1066,10 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
                   <Button
                     variant="dark"
                     onClick={() => {
+                      stopAudio();
                       setShowComplete(false);
                       setSelectedAnalysisFile(null);
+                      setSelectedJDRFilePath(null);
                       setIsRecovering(false);
                       setRecoveryDone(true);
                       setView && setView('result');
@@ -885,7 +1077,6 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
                   >
                     뒤로가기
                   </Button>
-
                   <Button variant="gray" onClick={() => setShowRestartPopup(true)}>
                     새 복원 시작
                   </Button>
@@ -1292,29 +1483,36 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
 
                 <div className="result-scroll-area scrollbar-area" style={{ position: 'relative' }}>
                   {resultsLoading ? (
-                    <div className="result-group">
-                      <div className="result-group-header">
-
-                        <span className="skeleton-bar result-skel-header" />
-                      </div>
-
-                      <div className="result-file-list">
-                        {Array.from({ length: 6 }).map((_, i) => (
-                          <div className="result-file-item" key={i}>
-                            <div className="result-skel-checkbox" />
-                            <div className="result-file-info" style={{ flex: 1 }}>
-                              <div className="result-file-title-row">
-                                <span className="skeleton-bar result-skel-title" />
-                                <span className="skeleton-bar result-skel-badge" style={{ width: "60px" }} />
-                              </div>
-                              <div className="file-meta">
-                                <span className="skeleton-bar result-skel-meta" />
-                              </div>
-                            </div>
+                    <>
+                      {Object.entries(groupedResults).map(([category, files]) => (
+                        <div className="result-group" key={category}>
+                          <div
+                            className={`result-group-header ${openGroups[category] ? 'open' : ''}`}
+                            onClick={() => toggleGroup(category)}
+                          >
+                            <span className="result-group-toggle" />
+                            {React.createElement(getCategoryIcon(category), { className: "result-group-icon" })}
+                            {category} ({files.length})
                           </div>
-                        ))}
-                      </div>
-                    </div>
+                          <div className="result-file-list">
+                            {Array.from({ length: 6 }).map((_, i) => (
+                              <div className="result-file-item" key={i}>
+                                <div className="result-skel-checkbox" />
+                                <div className="result-file-info" style={{ flex: 1 }}>
+                                  <div className="result-file-title-row">
+                                    <span className="skeleton-bar result-skel-title" />
+                                    <span className="skeleton-bar result-skel-badge" style={{ width: "60px" }} />
+                                  </div>
+                                  <div className="file-meta">
+                                    <span className="skeleton-bar result-skel-meta" />
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </>
                   ) : (
                     Object.entries(groupedResults).map(([category, files]) => (
                       <div className="result-group" key={category}>
@@ -1575,6 +1773,7 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
               variant="dark"
               onClick={() => {
                 setShowRestartPopup(false);
+                stopAudio();
                 resetSession();
                 setShowComplete(false);
                 setSelectedAnalysisFile(null);
@@ -1632,11 +1831,13 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
             {(() => {
               const lowerCaseName = String(selectedSlackFile?.name ?? '').toLowerCase();
               const isMultiChannel = lowerCaseName.endsWith('.avi') || lowerCaseName.endsWith('.jdr');
+              const isAVI = lowerCaseName.endsWith('.avi');
+              
               if (isMultiChannel) {
-                return ['front', 'rear', 'side'].map((ch) => {
+                const channelBadges = ['front', 'rear', 'side'].map((ch) => {
                   const media = getSlackForChannel(selectedSlackFile, ch);
                   if (!media) return null;
-                  const label = ch === 'front' ? '전방' : ch === 'rear' ? '후방' : '사이드';
+                  const label = ch === 'front' ? 'Front' : ch === 'rear' ? 'Rear' : 'Side';
                   const active = slackChannel === ch;
                   return (
                     <Badge 
@@ -1656,10 +1857,52 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
                     />
                   );
                 });
+
+                // AVI 파일에만 Audio 배지 추가
+                const audioBadge = isAVI && selectedSlackFile?.channels?.audio ? (
+                  <Badge 
+                    key="audio"
+                    label={
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <span>Audio</span>
+                      </div>
+                    }
+                    onClick={() => {
+                      // 슬랙 팝업에서는 항상 슬랙 오디오를 재생
+                      handleAudioPlay('slack', selectedSlackFile);
+                    }}
+                    style={{
+                      cursor: 'pointer',
+                      opacity: currentAudio?.file?.name === selectedSlackFile?.name ? 1 : 0.6,
+                      border: currentAudio?.file?.name === selectedSlackFile?.name ? '1px solid #fff' : '1px solid transparent',
+                      background: isAudioPlaying && currentAudio?.file?.name === selectedSlackFile?.name ? '#555' : '#333',
+                      color: '#fff'
+                    }}
+                  />
+                ) : null;
+
+                return [...channelBadges.filter(Boolean), audioBadge].filter(Boolean);
+              }
+              // MP4 slack에 오디오가 있으면 오디오 뱃지 추가
+              if (lowerCaseName.endsWith('.mp4') && selectedSlackFile?.slack_info?.audio?.slack) {
+                return [
+                  <Badge
+                    key="audio"
+                    label={<div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><span>Audio</span></div>}
+                    onClick={() => handleAudioPlay('slack', selectedSlackFile)}
+                    style={{
+                      cursor: 'pointer',
+                      opacity: currentAudio?.file?.name === selectedSlackFile?.name ? 1 : 0.6,
+                      border: currentAudio?.file?.name === selectedSlackFile?.name ? '1px solid #fff' : '1px solid transparent',
+                      background: isAudioPlaying && currentAudio?.file?.name === selectedSlackFile?.name ? '#555' : '#333',
+                      color: '#fff'
+                    }}
+                  />
+                ];
               }
               return null;
             })()}
-            <Button variant="gray" onClick={() => setShowSlackPopup(false)}>
+            <Button variant="gray" onClick={() => { stopAudio(); setShowSlackPopup(false); }}>
               닫기
             </Button>
           </div>
@@ -1804,7 +2047,7 @@ const setOpenGroups = (next) => patchSession({ openGroups: next });
           }
         >
           <div className="alert-buttons">
-            <Button variant="gray" onClick={() => setShowClosePopup(false)}>취소</Button>
+            <Button variant="gray" onClick={() => { stopAudio(); setShowClosePopup(false); }}>취소</Button>
             <Button
               variant="dark"
               onClick={() => {
