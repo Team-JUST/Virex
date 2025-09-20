@@ -10,8 +10,11 @@ def convert_video(input_path, output_path, fps=None, extra_args=None, use_gpu=Tr
 
     try:
         meta = video_metadata(input_path)
-        fps = meta.get('frame_rate', 0.0)
-        fps = round(fps, 2) if fps else None
+        # fps 인자가 명시적으로 들어오면 그 값을 우선 사용, 아니면 meta에서 추출
+        meta_fps = meta.get('frame_rate', 0.0)
+        meta_fps = round(meta_fps, 2) if meta_fps else None
+        if fps is None:
+            fps = meta_fps
         if not (fps and 10 <= fps <= 120):
             fps = 30
         codec = meta.get('codec', 'unknown')
