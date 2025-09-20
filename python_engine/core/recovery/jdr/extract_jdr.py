@@ -93,18 +93,16 @@ class AudioChunk:
 def find_total_blocks_from_1vej(data):
     """파일 맨 앞에서 제일 처음 나오는 1VEJ 시그니처를 찾고 4바이트 뒤에서 빅 엔디안으로 총 블록 개수를 읽는 함수"""
     signature = b'1VEJ'
-    offset = data.find(signature)  # 제일 처음 나오는 1VEJ만 사용
+    offset = data.find(signature)
     if offset == -1:
         logger.warning("1VEJ signature not found in data")
         return None
     
-    # 1VEJ 시그니처 뒤 4바이트 위치
     count_offset = offset + len(signature)
     if count_offset + 4 > len(data):
         logger.warning("Not enough data after 1VEJ signature to read block count")
         return None
     
-    # 빅 엔디안으로 4바이트 읽기
     total_blocks = struct.unpack('<I', data[count_offset:count_offset + 4])[0]
     logger.info(f"Found total blocks from first 1VEJ at offset {offset}: {total_blocks}")
     return total_blocks
@@ -122,51 +120,25 @@ def find_1bej_blocks(data):
         blocks.append(pos)
         offset = pos + len(signature)
     
-    logger.info(f"Found {len(blocks)} 1BEJ blocks")
     return blocks
 
 def classify_normal_slack_regions(data):
-    """1VEJ와 1BEJ를 이용해 정상/슬랙 영역 구분"""
-    # 1. 1VEJ에서 총 블록 개수 파싱
     total_blocks = find_total_blocks_from_1vej(data)
     if total_blocks is None:
-        logger.warning("Could not find total blocks, treating all data as normal region")
         return data, b''
     
-    # 2. 1BEJ 블록들 찾기
     bej_blocks = find_1bej_blocks(data)
     if len(bej_blocks) == 0:
-        logger.warning("No 1BEJ blocks found, treating all data as normal region")
         return data, b''
-    
-    # 디버깅 로그 추가
-    print(f"=== JDR Slack Classification Debug ===")
-    print(f"Total blocks from 1VEJ: {total_blocks}")
-    print(f"Found 1BEJ blocks: {len(bej_blocks)}")
-    for i, offset in enumerate(bej_blocks):
-        print(f"  1BEJ[{i+1}] offset: {offset} (0x{offset:x})")
-    
-    # 3. 정상 영역과 슬랙 영역 구분
+
     if len(bej_blocks) <= total_blocks:
-        # 모든 1BEJ 블록이 정상 영역에 포함
-        print(f"All {len(bej_blocks)} 1BEJ blocks are in normal region (total: {total_blocks})")
-        print(f"=> No slack region (all normal)")
         return data, b''
     
-    # 4. total_blocks번째 이후 블록들의 시작 위치 찾기 (슬랙 영역 시작점)
-    # total_blocks가 1이면 인덱스 1(두 번째 블록)부터가 슬랙
-    slack_start_pos = bej_blocks[total_blocks]  # 0-based 인덱스에서 total_blocks번째가 슬랙 시작
+    slack_start_pos = bej_blocks[total_blocks] 
     
     normal_data = data[:slack_start_pos]
     slack_data = data[slack_start_pos:]
-    
-    print(f"Normal region: 0 to {slack_start_pos} ({len(normal_data)} bytes)")
-    print(f"  - Normal 1BEJ offsets: {bej_blocks[:total_blocks]}")
-    print(f"Slack region: {slack_start_pos} to {len(data)} ({len(slack_data)} bytes)")
-    print(f"  - Slack 1BEJ offsets: {bej_blocks[total_blocks:]}")
-    print(f"Normal blocks: 1-{total_blocks} (indices 0-{total_blocks-1}), Slack blocks: {total_blocks+1}-{len(bej_blocks)} (indices {total_blocks}-{len(bej_blocks)-1})")
-    print(f"=== End Debug ===")
-    
+
     return normal_data, slack_data
 
 def calculate_fps(chunks):
@@ -341,13 +313,12 @@ def recover_jdr(input_jdr, base_dir, target_format='mp4'):
         with open(input_jdr, 'rb') as f:
             data = f.read()
     except FileNotFoundError:
-        logger.error(f"Input file not found: {input_jdr}")
         return {}
     except Exception as e:
-        logger.error(f"Error reading input file: {e}")
         return {}
 
     output_root = base_dir
+
 
     results = {}
     labels = ['front', 'rear', 'side']
@@ -377,18 +348,27 @@ def recover_jdr(input_jdr, base_dir, target_format='mp4'):
             results[label] = {
                 "recovered": False,
                 "video_path": None,
-                "video_size": "0 B",
-                "normal": {"video_path": [], "video_size": "0 B"},
-                "slack": {"video_path": [], "video_size": "0 B"}
+                "slack_rate": 0,
+                "slack_size": "0 B",
+                "full_video_path": None,
+                "merged_video_path": None,
+                "merged_video_size": "0 B"
             }
             continue
 
         # normal/slack별로 비디오 파일 변환 처리
         normal_video_paths = []
         slack_video_paths = []
-        
+        normal_video_size = 0
+        slack_video_size = 0
+        merged_video_path = None
+        merged_video_size = "0 B"
+        full_video_path = None
+        slack_rate = 0
+        slack_size = "0 B"
+
         regions = channel_result.get("regions", {})
-        
+
         # Normal 영역 처리
         for i, video_path in enumerate(regions.get('normal', {}).get('video_paths', [])):
             try:
@@ -397,6 +377,7 @@ def recover_jdr(input_jdr, base_dir, target_format='mp4'):
 
                 ffmpeg_wrapper.convert_video(video_path, output_path, fps=channel_result.get("fps", 30))
                 normal_video_paths.append(output_path)
+                normal_video_size += os.path.getsize(output_path) if os.path.exists(output_path) else 0
                 logger.info(f"Successfully created normal video {output_path}")
 
                 # 첫 비디오의 타임스탬프 문자열 확보
@@ -404,6 +385,8 @@ def recover_jdr(input_jdr, base_dir, target_format='mp4'):
                     match = re.search(r'\d{4}_\d{2}_\d{2}_\d{2}_\d{2}_\d{2}', os.path.basename(video_path))
                     if match:
                         first_timestamp_str = match.group(0)
+                if i == 0:
+                    full_video_path = output_path
             except Exception as e:
                 logger.error(f"Failed to process normal video for {video_path}: {e}")
 
@@ -415,29 +398,38 @@ def recover_jdr(input_jdr, base_dir, target_format='mp4'):
 
                 ffmpeg_wrapper.convert_video(video_path, output_path, fps=channel_result.get("fps", 30))
                 slack_video_paths.append(output_path)
+                slack_video_size += os.path.getsize(output_path) if os.path.exists(output_path) else 0
                 logger.info(f"Successfully created slack video {output_path}")
             except Exception as e:
                 logger.error(f"Failed to process slack video for {video_path}: {e}")
 
-        # 전체 비디오 경로 (하위 호환성)
-        all_video_paths = normal_video_paths + slack_video_paths
+        # slack_rate/slack_size 계산
+        if slack_video_paths:
+            # 슬랙 비디오 용량 및 비율 계산
+            slack_size = bytes_to_unit(slack_video_size)
+            total_size = normal_video_size + slack_video_size
+            slack_rate = round((slack_video_size / total_size) * 100, 2) if total_size > 0 else 0
 
-        # 결과 구조체에 normal/slack 구분 정보 추가
+        if normal_video_paths:
+            video_name = os.path.basename(normal_video_paths[0])
+            vdate = re.search(r'(\d{4}_\d{2}_\d{2}_\d{2}_\d{2}_\d{2})', video_name)
+            if vdate:
+                date_str = vdate.group(1)
+                # 오디오 mp3는 아래에서 생성됨, audio_by_date에서 찾음
+                # merged_video_path는 아래에서 실제로 생성됨
+                pass
+
+        # 결과 구조체에 AVI와 동일한 필드로 저장
         results[label] = {
             "recovered": True,
-            "video_path": all_video_paths,  # 전체 경로 (하위 호환성)
-            "video_size": channel_result.get("video_size", "0 B"),
-            "normal": {
-                "video_path": normal_video_paths,
-                "video_size": bytes_to_unit(sum(len(chunk.data) for chunk in regions.get('normal', {}).get('video_chunks', [])))
-            },
-            "slack": {
-                "video_path": slack_video_paths,
-                "video_size": bytes_to_unit(sum(len(chunk.data) for chunk in regions.get('slack', {}).get('video_chunks', [])))
-            }
+            "video_path": slack_video_paths[0] if slack_video_paths else None,
+            "slack_rate": slack_rate,
+            "slack_size": slack_size,
+            "full_video_path": full_video_path,
+            "merged_video_path": None,  # 아래에서 실제 경로 할당
+            "merged_video_size": "0 B"
         }
 
-    # 오디오 파일 처리 (기존과 동일)
     audio_mp3_paths = []
     if all_audio_bin_files:
         try:
@@ -458,73 +450,64 @@ def recover_jdr(input_jdr, base_dir, target_format='mp4'):
             logger.error(f"Failed to process audio files: {e}")
 
     audio_by_date = {}
+    slack_audio_by_date = {}
     for mp3_path in audio_mp3_paths:
         m = re.search(r'(\d{4}_\d{2}_\d{2}_\d{2}_\d{2}_\d{2})', os.path.basename(mp3_path))
         if m:
             date_key = m.group(1)
-            audio_by_date.setdefault(date_key, mp3_path)
+            if 'slack' in os.path.basename(mp3_path):
+                slack_audio_by_date[date_key] = mp3_path
+            else:
+                audio_by_date[date_key] = mp3_path
 
     # 채널별 비디오에 대해 같은 날짜의 오디오가 있으면 머지
-    merged_any = False
     for channel in ['front', 'rear', 'side']:
-        if channel in results and results[channel].get('video_path'):
-            merged_files = []
-            normal_merged_files = []
-            # Normal 비디오들만 머지
-            for video_path in results[channel]['normal']['video_path']:
-                try:
-                    video_name = os.path.basename(video_path)
-                    vdate = re.search(r'(\d{4}_\d{2}_\d{2}_\d{2}_\d{2}_\d{2})', video_name)
-                    if not vdate:
-                        continue
+        if channel in results and results[channel].get('recovered'):
+            normal_video_path = results[channel]['full_video_path']
+            merged_path = None
+            merged_size = "0 B"
+            if normal_video_path:
+                video_name = os.path.basename(normal_video_path)
+                vdate = re.search(r'(\d{4}_\d{2}_\d{2}_\d{2}_\d{2}_\d{2})', video_name)
+                if vdate:
                     date_str = vdate.group(1)
                     matching_audio = audio_by_date.get(date_str)
-                    if not matching_audio:
-                        continue
+                    if matching_audio:
+                        channel_prefix = {'front': 'F', 'rear': 'R', 'side': 'S'}[channel]
+                        merged_filename = f"{channel_prefix}_{date_str}_with_audio.mp4"
+                        merged_path = os.path.join(output_root, merged_filename)
+                        try:
+                            ffmpeg_wrapper.merge_video_audio(normal_video_path, matching_audio, merged_path)
+                            merged_size = bytes_to_unit(os.path.getsize(merged_path)) if os.path.exists(merged_path) else "0 B"
+                            logger.info(f"Created merged file: {merged_path}")
+                        except Exception as e:
+                            logger.error(f"Failed to merge video and audio: {e}")
+            results[channel]["merged_video_path"] = merged_path
+            results[channel]["merged_video_size"] = merged_size
 
-                    channel_prefix = {'front': 'F', 'rear': 'R', 'side': 'S'}[channel]
-                    merged_filename = f"{channel_prefix}_{date_str}_normal_merged.mp4"
-                    merged_path = os.path.join(output_root, merged_filename)
+    audio_result = {
+        "slack": {
+            "path": None,
+            "size": "0 B"
+        }
+    }
+    # original/slack 오디오 파일 경로 및 크기 할당
+    for date_key, path in audio_by_date.items():
+        if os.path.exists(path):
+            audio_result["original"] = {
+                "path": path,
+                "size": bytes_to_unit(os.path.getsize(path))
+            }
+            break
+    for date_key, path in slack_audio_by_date.items():
+        if os.path.exists(path):
+            audio_result["slack"] = {
+                "path": path,
+                "size": bytes_to_unit(os.path.getsize(path))
+            }
+            break
 
-                    ffmpeg_wrapper.merge_video_audio(video_path, matching_audio, merged_path)
-                    merged_files.append(merged_path)
-                    normal_merged_files.append(merged_path)
-                    logger.info(f"Created normal merged file: {merged_path}")
-                except Exception as e:
-                    logger.error(f"Failed to merge normal video and audio: {e}")
-
-            if merged_files:
-                merged_any = True
-                if 'merge' not in results:
-                    results['merge'] = {
-                        'merged_files': [], 
-                        'file_sizes': {},
-                        'normal_merged_files': [],
-                        'slack_merged_files': []
-                    }
-                results['merge']['merged_files'].extend(merged_files)
-                results['merge']['normal_merged_files'].extend(normal_merged_files)
-                # 파일 크기 기록
-                for merged_file in merged_files:
-                    try:
-                        if os.path.exists(merged_file):
-                            file_size = os.path.getsize(merged_file)
-                            filename = os.path.basename(merged_file)
-                            results['merge']['file_sizes'][filename] = bytes_to_unit(file_size)
-                    except Exception as e:
-                        logger.warning(f"Could not get size of merged file {merged_file}: {e}")
-
-    # 슬랙 오디오(mp3)만 따로 정리해서 결과에 추가
-    slack_audio_mp3 = {}
-    for mp3_path in audio_mp3_paths:
-        m = re.search(r'(\d{4}_\d{2}_\d{2}_\d{2}_\d{2}_\d{2})', os.path.basename(mp3_path))
-        if m:
-            date_key = m.group(1)
-            # 슬랙 영역 오디오 파일명에 slack이 들어가면 슬랙 오디오로 간주
-            if 'slack' in os.path.basename(mp3_path):
-                slack_audio_mp3[date_key] = mp3_path
-
-    results['slack_audio_mp3'] = slack_audio_mp3
+    results["audio"] = audio_result
 
     try:
         import shutil
