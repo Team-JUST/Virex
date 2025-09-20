@@ -82,6 +82,7 @@ const volumeSlackCount = volumeSlack?.length || 0;
 const volumeSlackBytes = (volumeSlack || []).reduce((s, f) => s + Number(f.size || 0), 0);
 const CARVED_TITLE = 'Volume & Partition Unallocated Space';
 const totalCount = results.length + volumeSlackCount;
+const [isDiskImage, setIsDiskImage] = useState(false);
 
 
 // 1) 화면 제어 상태 정의
@@ -92,7 +93,19 @@ const totalCount = results.length + volumeSlackCount;
   const [showDiskFullAlert, setShowDiskFullAlert] = useState(false);
   const navigate = useNavigate();
   const [selectAll, setSelectAll] = useState(false);
-  
+
+  const recoveryDoneRef = useRef(recoveryDone);
+  const selectedAnalysisFileRef = useRef(selectedAnalysisFile);
+
+
+  useEffect(() => { recoveryDoneRef.current = recoveryDone; }, [recoveryDone]);
+  useEffect(() => { selectedAnalysisFileRef.current = selectedAnalysisFile; }, [selectedAnalysisFile]);
+  const [view, setView] = useState('upload');
+  const [history, setHistory] = useState(['upload']);
+  const viewRef = useRef('upload');
+
+  useEffect(() => { viewRef.current = view; }, [view]);
+    
   const rollbackRef = useRef(() => {});
   const [selectedChannel, setSelectedChannel] = useState(null);
   const [selectedJDRFilePath, setSelectedJDRFilePath] = useState(null);
@@ -465,15 +478,6 @@ const currentVideoSrc = useMemo(() => {
     return pct > 0 && pct < 1 ? 1 : Math.round(pct);
   })();
 
-// 10) 진행률 변화 시 뷰 전환 로직
-  useEffect(() => {
-    if (progress >= 100) {
-      setIsRecovering(false);
-      setRecoveryDone(true);
-      setView('result');
-      setHistory(prev => [...prev, 'result']);
-    }
-  }, [progress]);
 
 // 11) 카테고리 아이콘 매핑 및 아이콘 선택 헬퍼
   const categoryIcons = {
@@ -526,15 +530,24 @@ const currentVideoSrc = useMemo(() => {
 
 // 13) 결과 수신 리스너
 useEffect(() => {
-  console.log("[Debug] onResults listener : registered");
   const off = window.api.onResults(data => {
-    console.log("[Debug] onResults data : ", data);
     if (data.error) {
       setResultError(data.error);
-     setResultsLoading(false);
-    } else {
-      setResults(data);
-     setResultsLoading(false);
+      setResultsLoading(false);
+      return;
+    }
+    setResults(data);
+    setResultsLoading(false);
+
+    const hasResults = Array.isArray(data) && data.length > 0;
+    if (!hasResults) return;
+
+    if (!recoveryDoneRef.current) setRecoveryDone(true);
+
+    // 파서 화면에 있으면 덮어쓰지 않기
+    if (!selectedAnalysisFileRef.current && viewRef.current !== 'parser') {
+      setView('result');
+      setHistory(prev => prev[prev.length - 1] === 'result' ? prev : [...prev, 'result']);
     }
   });
   return off;
@@ -545,6 +558,11 @@ useEffect(() => {
     const offPath = window.api.onAnalysisPath(async (dir) => {
       console.log("[Debug] analysis path :", dir);
       setTempOutputDir(dir);
+
+      if (!isDiskImage) {
+       setVolumeSlack([]);
+       return;
+    }
 
       try {
         let list = [];
@@ -595,8 +613,10 @@ useEffect(() => {
         // carved 있으면 결과 화면 열고 그룹 오픈
         if (list.length > 0) {
           setRecoveryDone(true);
-          setView('result');
-          setHistory(prev => [...prev, 'result']);
+          if (viewRef.current !== 'parser') {
+            setView('result');
+            setHistory(prev => prev[prev.length - 1] === 'result' ? prev : [...prev, 'result']);
+          }
           if (!openGroups?.[CARVED_TITLE]) {
             setOpenGroups({ ...openGroups, [CARVED_TITLE]: true });
           }
@@ -609,7 +629,7 @@ useEffect(() => {
     });
 
     return () => offPath();
-  }, []);
+  }, [isDiskImage]);
 
 
 
@@ -679,6 +699,9 @@ useEffect(() => {
   setShowAlert(false);
   startSession(file);           
   setTotalFiles(0);
+  const disk = lower.endsWith('.e01') || lower.endsWith('.001');
+  setIsDiskImage(disk);
+  if (!disk) setVolumeSlack([]);
 };
 
   const handleDrop = (e) => {
@@ -876,6 +899,8 @@ const handleDownloadConfirm = async () => {
     setIsRecovering(false);
     setRecoveryDone(false);
     setView('upload');
+    setIsDiskImage(false);
+    setVolumeSlack([]);
   }
 
 // 17) 스텝바 계산
@@ -902,8 +927,6 @@ const handleDownloadConfirm = async () => {
     };
 
 // 19) 화면 전환/탭 가드 네비게이션
-    const [view, setView] = useState('upload');
-    const [history, setHistory] = useState(['upload']);
 
     const handleBack = () => {
       if (history.length > 1) {
@@ -1026,7 +1049,7 @@ const handleDownloadConfirm = async () => {
 
   // 재진입/새로고침 시에도 JSON→FS 순으로 로드
   useEffect(() => {
-    if (!recoveryDone || !tempOutputDir || !window.api?.readCarvedIndex) return;
+    if (!recoveryDone || !tempOutputDir || !window.api?.readCarvedIndex || !isDiskImage) return;
 
     (async () => {
       try {
@@ -1069,7 +1092,7 @@ const handleDownloadConfirm = async () => {
         console.warn("readCarvedIndex/FS refresh failed:", e);
       }
     })();
-  }, [recoveryDone, tempOutputDir]);
+  }, [recoveryDone, tempOutputDir, isDiskImage]);
 
 
   return (
@@ -1480,7 +1503,7 @@ const handleDownloadConfirm = async () => {
                       </div>
                     ) : (
                       <p className="result-summary">
-                        총 {results.length}개의 파일, 용량{" "}
+                        총 {results.length + volumeSlack.length}개의 파일, 용량{" "}
                         {bytesToUnit(
                           results.reduce((sum, f) => sum + unitToBytes(f.size), 0) + (volumeSlackBytes || 0)
                         )}
@@ -1741,9 +1764,9 @@ const handleDownloadConfirm = async () => {
           isDarkMode={isDarkMode}
           description={
             <>
-              선택한 파일은 E01 이미지 형식이 아닙니다<br />
-              해당 도구는 .E01 형식만 지원됩니다<br />
-              올바른 파일을 다시 선택해 주세요
+            지원되는 형식: .E01 / .001 / .MP4 / .AVI / .JDR<br />
+            다른 형식은 업로드할 수 없습니다.<br />
+            올바른 파일을 다시 선택해 주세요.
             </>
           }
         >
@@ -1790,6 +1813,8 @@ const handleDownloadConfirm = async () => {
                 setIsRecovering(false);
                 setRecoveryDone(false);
                 setView && setView('upload'); 
+                setIsDiskImage(false);
+                setVolumeSlack([]);
               }}
             >
               확인
