@@ -52,8 +52,8 @@ const setIsRecovering = (v) => patchSession({ isRecovering: v });
 const recoveryDone = session.recoveryDone;
 const setRecoveryDone = (v) => patchSession({ recoveryDone: v });
 
-const results = session.results;
-const setResults = (arr) => patchSession({ results: arr });
+const results = Array.isArray(session.results) ? session.results : [];
+const setResults = (arr) => patchSession({ results: Array.isArray(arr) ? arr : [] });
 
 const tempOutputDir = session.tempOutputDir;
 const setTempOutputDir = (p) => patchSession({ tempOutputDir: p });
@@ -777,34 +777,45 @@ useEffect(() => {
   };
 
   // 다운로드 백엔드
-  const handleDownloadConfirm = async () => {
-    if (
-      selectedFilesForDownload.length === 0 ||
-      !tempOutputDir ||
-      !selectedPath
-    ) {
-      return;
-    }
+// 다운로드 백엔드
+const handleDownloadConfirm = async () => {
+  if (
+    !Array.isArray(selectedFilesForDownload) ||
+    selectedFilesForDownload.length === 0 ||
+    !tempOutputDir ||
+    !selectedPath
+  ) {
+    return;
+  }
 
-    const choice = saveFrames ? 'both' : 'video';
+  const choice = saveFrames ? 'both' : 'video';
 
-    try {
-      setShowDownloadPopup(false);
-      setIsDownloading(true);
+  // ← 필수: 하위 저장 폴더명 (누락 시 폴더 생성에서 오류)
+  const now = new Date();
+  const yyyy = String(now.getFullYear());
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const dd = String(now.getDate()).padStart(2, '0');
+  const subdirName = `Virex_${yyyy}${mm}${dd}_download`;
 
-      await window.api.runDownload({
-        e01Path: tempOutputDir,
-        choice,
-        downloadDir: selectedPath,
-        files: selectedFilesForDownload // 선택된 파일만 전달
-      });
+  try {
+    setShowDownloadPopup(false);
+    setIsDownloading(true);
 
-      // 다운로드 완료는 onDownloadComplete 이벤트에서 처리
-    } catch (err) {
-      console.error("[Debug] download failed : ", err);
-      setIsDownloading(false);
-    }
-  };
+    await window.api.runDownload({
+      e01Path: tempOutputDir,
+      choice,                // 'video' | 'both'
+      downloadDir: selectedPath,
+      files: selectedFilesForDownload, // 선택된 파일만
+      subdirName            // ★ 이거 추가
+    });
+
+    // 완료 처리는 onDownloadComplete에서
+  } catch (err) {
+    console.error("[Debug] download failed : ", err);
+    setIsDownloading(false);
+  }
+};
+
 
   const handleDownloadCancel = () => {
     setShowDownloadPopup(false);

@@ -467,6 +467,7 @@ ipcMain.handle('start-recovery', async (event, e01FilePath) => {
               console.log(`[Debug] result ${index} : name=${result.name}, slack_info = `, result.slack_info);
             });
             win?.webContents.send('recovery-results', results);
+            sentResults = true; 
           } catch (err) {
             console.error("[Debug] failed to read analysis.json : ", err);
             const win = BrowserWindow.fromWebContents(event.sender);
@@ -552,11 +553,13 @@ ipcMain.handle('cancel-recovery', async () => {
   }
 });
 
-ipcMain.handle('run-download', async (_event, { e01Path, choice, downloadDir, files }) => {
-  // 1) 호출된 인자 찍기
-  console.log("[Debug] run-download called with : ", { e01Path, choice, downloadDir, files });
+ipcMain.handle('run-download', async (_event, {
+  e01Path, choice, downloadDir, files,
+  subdirName
+}) => {
+  console.log("[Debug] run-download called with : ", { e01Path, choice, downloadDir, files, subdirName });
 
-  // 2) 인자 유효성 검사
+  // 1) 인자 검증
   if (
     typeof e01Path !== 'string' ||
     typeof choice !== 'string' ||
@@ -565,31 +568,34 @@ ipcMain.handle('run-download', async (_event, { e01Path, choice, downloadDir, fi
     !choice.trim() ||
     !downloadDir.trim()
   ) {
-
     console.error("[Debug] run-download invalid args : ", { e01Path, choice, downloadDir });
-
-    mainWindow.webContents.send(
-      'download-error',
-      `Invalid args for run-download: ${JSON.stringify({ e01Path, choice, downloadDir })}`
-    );
+    mainWindow?.webContents.send('download-error', `Invalid args for run-download`);
     throw new Error('run-download: invalid args');
   }
-
   if (!Array.isArray(files) || files.length === 0) {
     const msg = 'No files selected';
     console.error('[Debug] run-download:', msg);
-    mainWindow.webContents.send('download-error', msg);
-  throw new Error(msg);
+    mainWindow?.webContents.send('download-error', msg);
+    throw new Error(msg);
   }
 
+  // 2) 선택 파일 이름 리스트 저장 (Python이 읽음)
   const baseNames = files.map(p => path.basename(p));
   const selectedJsonPath = path.join(e01Path, 'selected_files.json');
   await fs.writeFile(selectedJsonPath, JSON.stringify(baseNames, null, 2), 'utf-8');
 
+  // 3) 출력 루트 결정
+  const effectiveOutRoot = subdirName
+    ? path.join(downloadDir, subdirName)
+    : downloadDir;
+
+  try { await fs.mkdir(effectiveOutRoot, { recursive: true }); } catch {}
+
+  // 4) 실행
   return new Promise((resolve, reject) => {
     const scriptPath = path.join(__dirname, 'python_engine', 'main.py');
     const env = { ...process.env, PYTHONPATH: __dirname };
-    const args = [scriptPath, e01Path, choice, downloadDir, selectedJsonPath];
+    const args = [scriptPath, e01Path, choice, effectiveOutRoot, selectedJsonPath];
 
     console.log("[Debug] spawning python with args : ", args);
 
@@ -598,46 +604,93 @@ ipcMain.handle('run-download', async (_event, { e01Path, choice, downloadDir, fi
       shell: true,
       env,
     });
+
     python.on('error', (err) => {
-    console.error('[spawn error:run-download]', err);
-    mainWindow?.webContents.send('download-error', String(err?.message || err));
-  });
+      console.error('[spawn error:run-download]', err);
+      mainWindow?.webContents.send('download-error', String(err?.message || err));
+    });
 
     const rl = readline.createInterface({ input: python.stdout });
     rl.on('line', line => {
       console.log("[Debug] download line : ", line);
-      mainWindow.webContents.send('download-log', line);
+      mainWindow?.webContents.send('download-log', line);
     });
 
     python.stderr.on('data', buf => {
-    const msg = buf.toString();
-    console.error("[Debug] python stderr (download) : ", msg);
-    mainWindow.webContents.send('download-error', msg);
-  });
+      const msg = buf.toString();
+      console.error("[Debug] python stderr (download) : ", msg);
+      mainWindow?.webContents.send('download-error', msg);
+    });
 
-    python.on('close', code => {
+    // ---- close 처리 ----
+    python.on('close', async (code) => {
       console.log("[Debug] download python exited with code : ", code);
       rl.close();
-      if (code === 0) {
-        mainWindow.webContents.send('download-complete');
-        resolve();
-      } else {
 
-        const err = new Error(`run-download exit ${code} with args ${JSON.stringify(args)}`);
-        reject(err);
+      if (code === 0) {
+        try {
+          const recoveryDir = path.join(effectiveOutRoot, 'recovery');
+          const slackRoot   = path.join(effectiveOutRoot, 'recovery_slack');
+
+          // 폴더 보장
+          try { await fs.mkdir(recoveryDir, { recursive: true }); } catch {}
+          try { await fs.mkdir(slackRoot,   { recursive: true }); } catch {}
+
+          // 슬랙 파일 판단: *_slack.* 또는 *_slack_image.*
+          const isSlackName = (name) => /_slack(?:_image)?\.[^.]+$/i.test(name);
+          const isSlackDirname = (dir) => /(^|[\\/])slack([\\/]|$)/i.test(dir);
+
+          // 재귀 순회
+          const walkAndMove = async (dir) => {
+            let entries = [];
+            try {
+              entries = await fs.readdir(dir, { withFileTypes: true });
+            } catch (e) {
+              console.warn('[post-move] read fail:', dir, e?.message || e);
+              return;
+            }
+
+            for (const ent of entries) {
+              const abs = path.join(dir, ent.name);
+              if (ent.isDirectory()) {
+                await walkAndMove(abs);
+                continue;
+              }
+              if (!ent.isFile()) continue;
+
+              const relFromRecovery = path.relative(recoveryDir, abs);
+              const parentRelDir = path.dirname(relFromRecovery);
+              const shouldMove = isSlackName(ent.name) || isSlackDirname(parentRelDir);
+
+              if (shouldMove) {
+                const destDir  = path.join(slackRoot, parentRelDir === '.' ? '' : parentRelDir);
+                const destPath = path.join(destDir, ent.name);
+                try { await fs.mkdir(destDir, { recursive: true }); } catch {}
+                try {
+                  await fs.rename(abs, destPath);
+                  console.log('[post-move] moved slack file ->', destPath);
+                } catch (err) {
+                  console.warn('[post-move] move fail:', ent.name, err?.message || err);
+                }
+              }
+            }
+          };
+
+          await walkAndMove(recoveryDir);
+        } catch (postErr) {
+          console.warn('[post-move] error:', postErr?.message || postErr);
+        }
+
+        mainWindow?.webContents.send('download-complete');
+        return resolve();
       }
+
+      const err = new Error(`run-download exit ${code} with args ${JSON.stringify(args)}`);
+      return reject(err);
     });
   });
 });
 
-ipcMain.handle('dialog:openDirectory', async (_event, options = {}) => {
-  const { canceled, filePaths } = await dialog.showOpenDialog({
-    properties: ['openDirectory'],
-    ...options
-  });
-  if (canceled) return null;
-  return filePaths[0];
-});
 
 
 // carved_index.json 탐색 함수
@@ -744,4 +797,23 @@ ipcMain.handle('listCarvedDir', async (_event, baseDir) => {
 ipcMain.handle('dialog:openE01File', async () => {
   const { canceled, filePaths } = await openFileDialog(['e01']);
   return canceled || !filePaths?.[0] ? null : filePaths[0];
+});
+
+ipcMain.handle('dialog:openDirectory', async (_event, options = {}) => {
+  const { canceled, filePaths } = await dialog.showOpenDialog({
+    title: '폴더 선택',
+    properties: ['openDirectory', 'createDirectory'],
+    ...options,
+  });
+  return { canceled, filePaths: filePaths || [] };
+});
+
+// 편의용: 문자열 경로 하나만 반환 (handlePathSelect / selectFolder에서 기대)
+ipcMain.handle('select-folder', async (_event, options = {}) => {
+  const { canceled, filePaths } = await dialog.showOpenDialog({
+    title: '저장 경로 선택',
+    properties: ['openDirectory', 'createDirectory'],
+    ...options,
+  });
+  return canceled ? null : (filePaths?.[0] ?? null);
 });
