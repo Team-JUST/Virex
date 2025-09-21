@@ -103,8 +103,13 @@ def find_total_blocks_from_1vej(data):
         logger.warning("Not enough data after 1VEJ signature to read block count")
         return None
     
-    total_blocks = struct.unpack('<I', data[count_offset:count_offset + 4])[0]
-    logger.info(f"Found total blocks from first 1VEJ at offset {offset}: {total_blocks}")
+    total_blocks_raw = struct.unpack('<I', data[count_offset:count_offset + 4])[0]
+    # 16진수로 끝에 0이 하나 더 붙는 경우(0x6000 등) 0x10으로 나눠서 실제 값으로 변환
+    if total_blocks_raw % 0x10 == 0:
+        total_blocks = total_blocks_raw // 0x10
+    else:
+        total_blocks = total_blocks_raw
+    logger.info(f"Found total blocks from first 1VEJ at offset {offset}: {total_blocks} (raw: {total_blocks_raw})")
     return total_blocks
 
 def find_1bej_blocks(data):
@@ -125,20 +130,36 @@ def find_1bej_blocks(data):
 def classify_normal_slack_regions(data):
     total_blocks = find_total_blocks_from_1vej(data)
     if total_blocks is None:
-        return data, b''
-    
-    bej_blocks = find_1bej_blocks(data)
-    if len(bej_blocks) == 0:
+        print("[슬랙 offset] 블록 개수 정보를 찾을 수 없습니다.")
         return data, b''
 
-    if len(bej_blocks) <= total_blocks:
+    # 2. 블록 count 정보 이후로부터 0x14 * (n-1)만큼 오프셋 이동
+    signature = b'1VEJ'
+    offset = data.find(signature)
+    if offset == -1:
+        print("[슬랙 offset] 1VEJ 시그니처를 찾을 수 없습니다.")
         return data, b''
-    
-    slack_start_pos = bej_blocks[total_blocks] 
-    
-    normal_data = data[:slack_start_pos]
-    slack_data = data[slack_start_pos:]
+    count_offset = offset + len(signature)
+    block_table_offset = count_offset + 4 + 0x14 * (total_blocks - 1)
+    if block_table_offset + 4 > len(data):
+        print("[슬랙 offset] 마지막 블록 오프셋 위치가 데이터 범위를 벗어납니다.")
+        return data, b''
+    # block_table_offset에서 4바이트 리틀엔디안으로 읽고, 0x10으로 나눔
+    last_block_offset_raw = struct.unpack('<I', data[block_table_offset:block_table_offset+4])[0]
+    last_block_offset = last_block_offset_raw // 0x10
 
+    # 마지막 블록 오프셋에서 0xC8만큼 이동
+    slack_offset_ptr = last_block_offset + 0xC8
+    if slack_offset_ptr + 4 > len(data):
+        print("[슬랙 offset] 슬랙 offset 위치가 데이터 범위를 벗어납니다.")
+        return data, b''
+    # 슬랙 offse
+    slack_offset = struct.unpack('<I', data[slack_offset_ptr:slack_offset_ptr+4])[0]
+    if slack_offset > len(data):
+        print("[슬랙 offset] 슬랙 시작 offset이 데이터 범위를 벗어납니다.")
+        return data, b''
+    normal_data = data[:slack_offset]
+    slack_data = data[slack_offset:]
     return normal_data, slack_data
 
 def calculate_fps(chunks):
