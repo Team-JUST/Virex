@@ -60,6 +60,8 @@ def find_next(data, start, sigs):
     return sig, idx
 
 def parse_timestamp(data):
+    if len(data) < 20:
+        return None  # 또는 적절한 기본값/예외 처리
     YYYY = struct.unpack('<H', data[4:6])[0]
     MM = struct.unpack('<H', data[6:8])[0]
     DD = struct.unpack('<H', data[10:12])[0]
