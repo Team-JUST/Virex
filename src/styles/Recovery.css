@@ -672,7 +672,7 @@ input[type="checkbox"] {
   box-sizing: border-box;
   position: relative;
   height: 100%;
-  border-radius: 6px;
+  border-radius: 12px;
 }
 
 .data-bar-wrapper.is-single .data-bar-text {
