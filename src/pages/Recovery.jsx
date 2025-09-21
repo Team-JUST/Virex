@@ -1261,7 +1261,12 @@ const handleDownloadConfirm = async () => {
                       }
                       return null;
                     })()}
-                  <button className="close-btn" onClick={handleBack}>✕</button>
+                  <button className="close-btn" onClick={() => {
+                    if (typeof stopAudio === 'function') stopAudio();
+                    setSelectedAnalysisFile(null);
+                    setRecoveryDone(true);
+                    setView && setView('result');
+                  }}>✕</button>
                 </div>
               </div>
 
