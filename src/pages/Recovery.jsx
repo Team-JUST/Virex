@@ -319,7 +319,13 @@ const [isDiskImage, setIsDiskImage] = useState(false);
       // selectedChannel이 없으면 front를 기본값으로 사용
       const ch = selectedChannel || (f.channels?.front ? 'front' : null);
       if (ch && f.channels?.[ch]) {
-        return toFileUrl(f.channels[ch].merged_video_path || '');
+        // 손상된 영상인데 복원된 경우 full_video_path 우선
+        const channelInfo = f.channels[ch];
+        if (f.analysis?.integrity?.damaged && channelInfo?.full_video_path) {
+          return toFileUrl(channelInfo.full_video_path);
+        }
+        // 아니면 기존 merged_video_path
+        return toFileUrl(channelInfo.merged_video_path || '');
       }
     }
 
@@ -1200,33 +1206,61 @@ const handleDownloadConfirm = async () => {
                     const lowerCaseName = selectedResultFile?.name?.toLowerCase() || '';
                     const isAVI = lowerCaseName.endsWith('.avi');
                     const isJDR = lowerCaseName.endsWith('.jdr');
-                    if ((isAVI || isJDR) && availableChannels.length > 0) {
-                      return (
-                        <>
-                          {availableChannels.map((ch) => {
-                            const label = ch === 'front' ? 'Front' :
-                                        ch === 'rear' ? 'Rear' :
-                                        ch === 'side' ? 'Side' :
-                                        ch === 'merge' ? 'Merge' : ch;
-                            const active = selectedChannel === ch;
-                            return (
-                              <Badge
-                                key={ch}
-                                label={label}
-                                onClick={() => setSelectedChannel(ch)}
-                                style={{
-                                  cursor: 'pointer',
-                                  opacity: active ? 1 : 0.6,
-                                  border: active ? '1px solid #333' : '1px solid transparent',
-                                }}
-                              />
-                            );
-                          })}
-                        </>
-                      );
-                    }
-                    return null;
-                  })()}
+                      let channelList = availableChannels;
+                      let audioInfo = null;
+                      if ((isAVI || isJDR) && selectedResultFile?.channels) {
+                        channelList = Object.entries(selectedResultFile.channels)
+                          .filter(([ch, info]) => ch !== 'audio' && info && (info.full_video_path || info.merged_video_path))
+                          .map(([ch]) => ch);
+                        if (selectedResultFile.channels.audio && selectedResultFile.channels.audio.slack && selectedResultFile.channels.audio.slack.path) {
+                          audioInfo = selectedResultFile.channels.audio.slack;
+                        }
+                      }
+                      if ((isAVI || isJDR) && (channelList.length > 0 || audioInfo)) {
+                        return (
+                          <>
+                            {channelList.map((ch) => {
+                              const label = ch === 'front' ? 'Front' :
+                                          ch === 'rear' ? 'Rear' :
+                                          ch === 'side' ? 'Side' :
+                                          ch === 'merge' ? 'Merge' : ch;
+                              const active = selectedChannel === ch;
+                              return (
+                                <Badge
+                                  key={ch}
+                                  label={label}
+                                  onClick={() => setSelectedChannel(ch)}
+                                  style={{
+                                    cursor: 'pointer',
+                                    opacity: active ? 1 : 0.6,
+                                    border: active ? '1px solid #333' : '1px solid transparent',
+                                  }}
+                                />
+                              );
+                            })}
+                            <Badge
+                              key="audio"
+                              label="Audio"
+                              onClick={() => {
+                                if (audioInfo && audioInfo.path) {
+                                  const audio = new Audio(audioInfo.path);
+                                  audio.play();
+                                }
+                              }}
+                              style={{
+                                cursor: 'pointer',
+                                opacity: 1,
+                                border: '1px solid #333',
+                                background: '#333',
+                                color: '#fff',
+                                marginLeft: 8
+                              }}
+                            />
+                          </>
+                        );
+                      }
+                      return null;
+                    })()}
                   <button className="close-btn" onClick={handleBack}>✕</button>
                 </div>
               </div>
