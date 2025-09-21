@@ -1933,6 +1933,7 @@ const handleDownloadConfirm = async () => {
                     key="audio"
                     label={<div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><span>Audio</span></div>}
                     onClick={() => handleAudioPlay('slack', selectedSlackFile)}
+                    size="big"
                     style={{
                       cursor: 'pointer',
                       opacity: currentAudio?.file?.name === selectedSlackFile?.name ? 1 : 0.6,
