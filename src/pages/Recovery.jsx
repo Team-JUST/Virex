@@ -316,15 +316,12 @@ const [isDiskImage, setIsDiskImage] = useState(false);
     if (!f) return '';
     const isAVIorJDR = f.name?.toLowerCase().endsWith('.avi') || f.name?.toLowerCase().endsWith('.jdr');
     if (isAVIorJDR) {
-      // selectedChannel이 없으면 front를 기본값으로 사용
       const ch = selectedChannel || (f.channels?.front ? 'front' : null);
       if (ch && f.channels?.[ch]) {
-        // 손상된 영상인데 복원된 경우 full_video_path 우선
         const channelInfo = f.channels[ch];
         if (f.analysis?.integrity?.damaged && channelInfo?.full_video_path) {
           return toFileUrl(channelInfo.full_video_path);
         }
-        // 아니면 기존 merged_video_path
         return toFileUrl(channelInfo.merged_video_path || '');
       }
     }
@@ -1230,11 +1227,6 @@ const handleDownloadConfirm = async () => {
                                   key={ch}
                                   label={label}
                                   onClick={() => setSelectedChannel(ch)}
-                                  style={{
-                                    cursor: 'pointer',
-                                    opacity: active ? 1 : 0.6,
-                                    border: active ? '1px solid #333' : '1px solid transparent',
-                                  }}
                                 />
                               );
                             })}
@@ -1246,14 +1238,6 @@ const handleDownloadConfirm = async () => {
                                 onClick={() => {
                                   const audio = new Audio(audioInfo.path);
                                   audio.play();
-                                }}
-                                style={{
-                                  cursor: 'pointer',
-                                  opacity: 1,
-                                  border: '1px solid #333',
-                                  background: '#333',
-                                  color: '#fff',
-                                  marginLeft: 8
                                 }}
                               />
                             )}
@@ -1692,7 +1676,6 @@ const handleDownloadConfirm = async () => {
                                             {isAVI && file?.analysis?.integrity?.damaged && hasSlackBadge && (
                                               <Badge
                                                 label="슬랙"
-                                                style={{ cursor: 'pointer' }}
                                                 onClick={() => {
                                                   setSelectedSlackFile(file);
                                                   setSlackChannel('front');
@@ -1712,7 +1695,6 @@ const handleDownloadConfirm = async () => {
                                             {hasSlackBadge && !file?.analysis?.integrity?.damaged && (
                                               <Badge
                                                 label="슬랙"
-                                                style={{ cursor: 'pointer' }}
                                                 onClick={() => {
                                                   setSelectedSlackFile(file);
                                                   const isAVIorJDR = file.name.toLowerCase().endsWith('.avi') || file.name.toLowerCase().endsWith('.jdr');
