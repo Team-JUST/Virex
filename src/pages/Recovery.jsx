@@ -1688,7 +1688,7 @@ const handleDownloadConfirm = async () => {
                                         )}
                                         {!isCarvedGroup && (
                                           <>
-                                            {isAVI && hasSlackBadge && (
+                                            {isAVI && file?.analysis?.integrity?.damaged && hasSlackBadge && (
                                               <Badge
                                                 label="슬랙"
                                                 style={{ cursor: 'pointer' }}
