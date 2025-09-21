@@ -6,6 +6,9 @@ import tempfile
 import shutil
 import json
 import time
+import struct
+import subprocess
+import sys
 from io import BytesIO
 from python_engine.core.recovery.mp4.extract_slack import recover_mp4_slack
 from python_engine.core.recovery.avi.extract_slack import recover_avi_slack
@@ -224,6 +227,8 @@ def extract_video_files(fs_info, output_dir, path="/", total_count=None, progres
             results.append(result)
     return results
 
+
+
 def extract_videos_from_e01(e01_path):
     logger.info(f"▶ 분석용 E01 파일: {e01_path}")
     start_time = time.time()
@@ -235,11 +240,11 @@ def extract_videos_from_e01(e01_path):
         logger.error(f"이미지 열기 실패: {e}")
         return [], None, 0
 
+    # 임시 출력 디렉토리 준비 + 여유 공간 확인
     temp_base = tempfile.gettempdir()
     e01_size = os.stat(e01_path).st_size
     needed = int(e01_size * 1.2) + 1_000_000_000
     free = shutil.disk_usage(temp_base).free
-
     if free < needed:
         print(json.dumps({"event": "disk_full", "free": free, "needed": needed}), flush=True)
         return [], None, 0
@@ -247,21 +252,223 @@ def extract_videos_from_e01(e01_path):
     output_dir = tempfile.mkdtemp(prefix="Virex_", dir=temp_base)
     print(json.dumps({"tempDir": output_dir}), flush=True)
 
+    all_results, all_total = [], 0
+
     for partition in volume:
+        # Unallocated 엔트리/MBR 영역(0) 스킵
         if partition.flags == pytsk3.TSK_VS_PART_FLAG_UNALLOC or partition.start == 0:
             logger.info(f"건너뜀: Unallocated 파티션 (offset: {partition.start})")
             continue
 
-        fs_info = pytsk3.FS_Info(img_info, offset=partition.start * 512)
-        total = count_video_files(fs_info)
-        print(json.dumps({"processed": 0, "total": total}), flush=True)
+        # === 여기서 bps 자동 감지 후 FS_Info 마운트 오프셋 계산 ===
+        bps = _detect_bps_for_partition(img_info, partition.start)
+        fs_byte_offset = partition.start * bps
 
-        results = extract_video_files(fs_info, output_dir, path="/", total_count=total, progress=[0])
+        try:
+            fs_info = pytsk3.FS_Info(img_info, offset=fs_byte_offset)
+        except Exception as e:
+            logger.warning(f"FS mount 실패 (offset={fs_byte_offset}): {e}")
+            # 파일시스템 마운트 실패해도 비할당 덤프/카빙은 계속 진행
+            fs_info = None
 
-        elapsed = int(time.time() - start_time)
-        h, m = divmod(elapsed, 60)
-        logger.info(f"소요 시간: {h // 60}시간 {m % 60}분 {m}초")
+        # ==== 비할당 덤프 (FAT32만 해당) + vol_carver 연계 ====
+        fat_res = dump_unalloc_fat32(
+            img_info,
+            part_start_sector=partition.start,
+            out_dir=output_dir,
+            label=f"p{partition.addr}_fs_unalloc"
+        )
+        if fat_res.get("ok"):
+            print(json.dumps({
+                "event": "fs_unalloc_done",
+                "chunks": fat_res["chunks"],
+                "bytes": fat_res["bytes"]
+            }), flush=True)
 
-        return results, output_dir, total
+            try:
+                ffmpeg_dir = os.environ.get("VIREX_FFMPEG_DIR")
+                cmd = [
+                        sys.executable,
+                        os.path.normpath(
+                            os.path.join(
+                                os.path.dirname(__file__),
+                                "..", "recovery", "vol_recover", "vol_carver.py"
+                            )
+                        ),
+                        os.path.join(output_dir, f"p{partition.addr}_fs_unalloc"),
+                    ]
 
-    return [], output_dir, 0
+                if ffmpeg_dir:
+                    cmd += ["--ffmpeg-dir", ffmpeg_dir]
+
+                # vol_carver 실행 (한 번만)
+                subprocess.run(cmd, check=True)
+
+                # carved_index.json 읽기
+                carved_index_path = os.path.join(
+                    output_dir, f"p{partition.addr}_fs_unalloc", "carved_index.json"
+                )
+                if os.path.isfile(carved_index_path):
+                    with open(carved_index_path, "r", encoding="utf-8") as cf:
+                        carved_result = json.load(cf)
+                    print(json.dumps({
+                        "event": "carved_done",
+                        "partition": partition.addr,
+                        "carved_total": carved_result.get("carved_total", 0),
+                        "rebuilt_total": carved_result.get("rebuilt_total", 0),
+                        "items": carved_result.get("items", [])
+                    }, ensure_ascii=False), flush=True)
+                else:
+                    print(json.dumps({
+                        "event": "carved_none",
+                        "partition": partition.addr
+                    }), flush=True)
+
+            except Exception as e:
+                logger.warning(f"vol_carver run failed: {e}")
+                print(json.dumps({
+                    "event": "carved_error",
+                    "partition": partition.addr,
+                    "error": str(e)
+                }), flush=True)
+        else:
+            print(json.dumps({
+                "event": "fs_unalloc_skip",
+                "reason": fat_res.get("reason", "unknown")
+            }), flush=True)
+
+        # ==== 기존 파일 시스템 내 비디오 스캔/추출 (fs_info가 있을 때만) ====
+        if fs_info is not None:
+            total = count_video_files(fs_info)
+            all_total += total
+            print(json.dumps({"processed": 0, "total": total}), flush=True)
+
+            part_results = extract_video_files(
+                fs_info, output_dir, path="/", total_count=total, progress=[0]
+            )
+            all_results.extend(part_results)
+
+    elapsed = int(time.time() - start_time)
+    h, rem = divmod(elapsed, 3600)
+    m, s = divmod(rem, 60)
+    logger.info(f"소요 시간: {h}시간 {m}분 {s}초")
+
+    return all_results, output_dir, all_total
+
+
+
+def _b_u8(b, o):  return b[o]
+def _b_u16(b, o): return struct.unpack_from("<H", b, o)[0]
+def _b_u32(b, o): return struct.unpack_from("<I", b, o)[0]
+
+def _fat32_looks_like_bpb(bpb: bytes) -> bool:
+    if not bpb or len(bpb) < 512:
+        return False
+    if bpb[510] != 0x55 or bpb[511] != 0xAA:
+        return False
+    if bpb[3:11] == b"EXFAT   ":
+        return False
+    return True
+
+def _fat32_parse_layout(bpb: bytes):
+    bps = _b_u16(bpb, 11)
+    spc = _b_u8(bpb, 13)
+    rsv = _b_u16(bpb, 14)
+    nf  = _b_u8(bpb, 16)
+    fatsz16 = _b_u16(bpb, 22)
+    fatsz32 = _b_u32(bpb, 36)
+    fatsz = fatsz32 if fatsz16 == 0 else fatsz16
+
+    fat_start_bytes  = rsv * bps
+    fat_bytes        = fatsz * bps
+    data_start_bytes = (rsv + nf * fatsz) * bps
+    cluster_bytes    = bps * spc
+    return fat_start_bytes, fat_bytes, data_start_bytes, cluster_bytes
+
+
+def dump_unalloc_fat32(img_info, part_start_sector, out_dir, label="fs_unalloc_fat32"):
+    # 일단 512바이트만 읽어서 BPB 확인
+    part_off = part_start_sector * 512
+    bpb = img_info.read(part_off, 512)
+    if not _fat32_looks_like_bpb(bpb):
+        return {"ok": False, "reason": "not_fat32"}
+
+    # BPB에서 실제 bytes per sector 읽기
+    bps = struct.unpack_from("<H", bpb, 11)[0]
+    if bps not in (512, 1024, 2048, 4096):
+        return {"ok": False, "reason": f"weird_sector_size_{bps}"}
+
+    # 파티션 오프셋 재계산
+    part_off = part_start_sector * bps
+
+    # FAT32 레이아웃 파싱
+    fat_off_rel, fat_bytes, data_off_rel, cluster_bytes = _fat32_parse_layout(bpb)
+    fat = img_info.read(part_off + fat_off_rel, fat_bytes)
+    if not fat:
+        return {"ok": False, "reason": "fat_read_fail"}
+
+    total_entries = len(fat) // 4
+    out_path = os.path.join(out_dir, label)
+    os.makedirs(out_path, exist_ok=True)
+
+    idx, total_bytes, items = 1, 0, []
+    cl = 2
+    while cl < total_entries:
+        val = _b_u32(fat, cl * 4) & 0x0FFFFFFF
+        if val == 0:
+            start = cl
+            while cl < total_entries and (_b_u32(fat, cl * 4) & 0x0FFFFFFF) == 0:
+                cl += 1
+            length = cl - start
+
+            run_off_abs = part_off + data_off_rel + (start - 2) * cluster_bytes
+            run_size    = length * cluster_bytes
+
+            fn = os.path.join(out_path, f"{idx:03d}.bin")
+            with open(fn, "wb") as wf:
+                remain, cur = run_size, run_off_abs
+                CHUNK = 8 * 1024 * 1024
+                while remain > 0:
+                    to_read = min(remain, CHUNK)
+                    buf = img_info.read(cur, to_read)
+                    if not buf:
+                        break
+                    wf.write(buf)
+                    cur += len(buf)
+                    remain -= len(buf)
+
+            wrote = run_size - remain
+            total_bytes += wrote
+            items.append({
+                "index": idx,
+                "file": fn,
+                "clusters": [int(start), int(start + length - 1)],
+                "byte_len": wrote
+            })
+            print(json.dumps({
+                "event": "fat32_run",
+                "file": fn,
+                "clusters": [int(start), int(start + length - 1)],
+                "bytes": wrote
+            }), flush=True)
+            idx += 1
+        else:
+            cl += 1
+
+    return {"ok": idx > 1, "chunks": len(items), "bytes": total_bytes, "items": items}
+
+
+def _detect_bps_for_partition(img_info, part_start_sector):
+    try:
+        # 일단 512로 가정해서 BPB를 읽는다 (BPB 자체 길이 512)
+        part_off_guess = part_start_sector * 512
+        bpb = img_info.read(part_off_guess, 512)
+        if not bpb or len(bpb) < 64:
+            return 512
+
+        bps = struct.unpack_from("<H", bpb, 11)[0]  # BPB_BytsPerSec
+        if bps in (512, 1024, 2048, 4096):
+            return bps
+        return 512
+    except Exception:
+        return 512
