@@ -1,5 +1,97 @@
 const { app, BrowserWindow, Menu, ipcMain, dialog, protocol } = require('electron');
 // 개발 환경에서 핫리로드 적용
+const fs = require('fs').promises; 
+
+const fssync = require('fs');     
+const path = require('path');
+const { spawn } = require('child_process');
+const readline = require('readline');
+const drivelist = require('drivelist');
+const checkDiskSpace = require('check-disk-space').default;
+const os = require('os');
+const winattr = require('winattr');
+
+const VOL_CARVER = path.join(__dirname, 'python_engine', 'core', 'recovery', 'vol_recover', 'vol_carver.py');
+const FFMPEG_DIR = path.join(__dirname, 'bin');
+
+
+process.env.SystemRoot = process.env.SystemRoot || 'C:\\Windows';
+process.env.ComSpec    = process.env.ComSpec    || path.join(process.env.SystemRoot, 'System32', 'cmd.exe');
+process.env.PATH       = [process.env.PATH, path.join(process.env.SystemRoot, 'System32')].filter(Boolean).join(';');
+
+function hasBinFiles(dir) {
+  try {
+    const list = fssync.readdirSync(dir);
+    return list.some(n => n.toLowerCase().endsWith('.bin'));
+  } catch { return false; }
+}
+
+function waitForUnallocReady(baseDir, { timeoutMs = 120000, intervalMs = 800 } = {}) {
+  const unalloc = path.join(baseDir, 'p2_fs_unalloc');
+  const start = Date.now();
+  return new Promise((resolve, reject) => {
+    const tick = () => {
+      if (Date.now() - start > timeoutMs) {
+        return reject(new Error('waitForUnallocReady: timeout'));
+      }
+      if (fssync.existsSync(unalloc) && hasBinFiles(unalloc)) {
+        return resolve({ baseDir, unalloc });
+      }
+      setTimeout(tick, intervalMs);
+    };
+    tick();
+  });
+}
+
+function runVolCarver(baseDir, sender) {
+
+  volCarverStarted = true;           
+  volCarverDone = false;
+
+  return new Promise((resolve) => {
+    const args = [VOL_CARVER, baseDir, '--ffmpeg-dir', FFMPEG_DIR];
+    const child = spawn('python', args, {
+      cwd: path.dirname(VOL_CARVER),
+      shell: false,
+      env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' },
+    });
+    child.on('error', (err) => {
+      console.error('[spawn error:runVolCarver]', err);
+      BrowserWindow.fromWebContents(sender)
+        ?.webContents.send('recovery-error', String(err?.message || err));
+    });
+
+    child.stderr.on('data', b => console.warn('[vol_carver]', b.toString()));
+    child.on('close', async (code) => {
+      const win = BrowserWindow.fromWebContents(sender);
+      // 프론트: baseDir 알려주고 → carved_index.json 읽게 함
+      win?.webContents.send('analysis-path', baseDir);
+
+      // (선택) 바로 결과도 푸시하고 싶으면 carved_index.json 읽어서 전송
+      try {
+        const idxPath = path.join(baseDir, 'carved_index.json');
+        const raw = await fs.readFile(idxPath, 'utf-8');
+        const j = JSON.parse(raw);
+        const items = (j?.items || []).flatMap(it => {
+          const rebuilt = (it.rebuilt || [])
+            .filter(x => (x?.rebuilt && x?.ok) || x?.raw)
+            .map(x => ({ name: path.basename(x.rebuilt || x.raw), path: (x.rebuilt || x.raw), size: Number(x?.probe?.format?.size || 0), _remuxFailed: !x?.rebuilt || !x?.ok }));
+          const jdr = (it.jdr || [])
+            .filter(x => x?.ok && x?.rebuilt)
+            .map(x => ({ name: path.basename(x.rebuilt), path: x.rebuilt, size: Number(x?.probe?.format?.size || 0) }));
+          return [...rebuilt, ...jdr];
+        });
+        win?.webContents.send('recovery-results', items);
+      } catch (e) {
+        console.warn('[vol_carver] no carved_index yet:', e?.message || e);
+      }
+
+      volCarverDone = true; 
+      resolve(code);
+    });
+  });
+}
+
 
 if (process.env.NODE_ENV === 'development') {
   try {
@@ -18,15 +110,7 @@ if (process.env.NODE_ENV === 'development') {
     console.warn('[Debug] electron-reload not installed or failed:', e);
   }
 }
-const path = require('path');
-const { spawn } = require('child_process');
-const readline = require('readline');
-const drivelist = require('drivelist');
-const checkDiskSpace = require('check-disk-space').default;
-const fs = require('fs').promises;
-const fssync = require('fs');
-const os = require('os');
-const winattr = require('winattr');
+
 
 const isSafeTempDir = (dir) => {
   if (!dir) return false;
@@ -52,6 +136,9 @@ let mainWindow = null;
 let currentRecoveryProc = null;
 let currentTempDir = null;
 let isCancellingRecovery = false;
+let volCarverStarted = false;
+let volCarverPromise = null; 
+let volCarverDone = false;   
 
 function openFileDialog(extensions) {
   return dialog.showOpenDialog({
@@ -185,6 +272,7 @@ app.whenReady().then(() => {
   });
 
   createWindow();
+  startDrivePolling();
 });
 
 app.on('window-all-closed', () => {
@@ -288,6 +376,7 @@ ipcMain.handle('start-recovery', async (event, e01FilePath) => {
   // 2) (통과 시) 기존 파이썬 spawn 로직 실행
   return await new Promise((resolve, reject) => {
     let abortedByDiskFull = false;
+    let sentResults = false;
     const scriptPath = path.join(__dirname, 'python_engine', 'main.py');
     const env = {...process.env, PYTHONPATH: __dirname, PYTHONIOENCODING: 'utf-8',PYTHONUTF8: '1',  };
 
@@ -296,17 +385,41 @@ ipcMain.handle('start-recovery', async (event, e01FilePath) => {
       shell: true,
       env,
     });
+    python.on('error', (err) => {
+    console.error('[spawn error:run-download]', err);
+    mainWindow?.webContents.send('download-error', String(err?.message || err));
+  });
     currentRecoveryProc = python;
     isCancellingRecovery = false;
 
     const rl = readline.createInterface({ input: python.stdout });
     rl.on('line', async line => {
+
       try {
         const data = JSON.parse(line);
 
         if (data.tempDir) {
           currentTempDir = data.tempDir;
-          console.log("[Debug] tempDir from python:", currentTempDir);
+          const win = BrowserWindow.fromWebContents(event.sender);
+
+          // UI가 tempDir 알 수 있게 즉시 알려주기
+          win?.webContents.send('analysis-path', data.tempDir);
+
+          // 비할당 .bin 준비 감시 후 vol_carver 실행
+          waitForUnallocReady(currentTempDir)
+            .then(() => runVolCarver(currentTempDir, event.sender))
+            .catch(err => console.warn('[waitForUnallocReady]', err.message));
+
+          return;
+        }
+
+
+        if (data.event === 'extract_done') {
+          currentTempDir = data.output_dir || currentTempDir;
+          const win = BrowserWindow.fromWebContents(event.sender);
+          if (currentTempDir) win?.webContents.send('analysis-path', currentTempDir);
+          win?.webContents.send('recovery-results', Array.isArray(data.results) ? data.results : []);
+          sentResults = true; 
           return;
         }
 
@@ -354,10 +467,12 @@ ipcMain.handle('start-recovery', async (event, e01FilePath) => {
               console.log(`[Debug] result ${index} : name=${result.name}, slack_info = `, result.slack_info);
             });
             win?.webContents.send('recovery-results', results);
+            sentResults = true; 
           } catch (err) {
             console.error("[Debug] failed to read analysis.json : ", err);
             const win = BrowserWindow.fromWebContents(event.sender);
             win?.webContents.send('recovery-results', { error: err.message });
+            sentResults = true;
           }
           return;
         }
@@ -378,7 +493,14 @@ ipcMain.handle('start-recovery', async (event, e01FilePath) => {
       console.log("[Debug] python exited with code : ", code);
       rl.close();
 
+      volCarverStarted = false;
+
       const win = BrowserWindow.fromWebContents(event.sender);
+
+      if (!sentResults) {
+        console.log('[Debug] no results were sent; sending empty array');
+        try { win?.webContents.send('recovery-results', []); } catch {}
+      }
       const wasCancelling = isCancellingRecovery;
       const wasDiskFull = abortedByDiskFull;
 
@@ -419,7 +541,6 @@ ipcMain.handle('cancel-recovery', async () => {
   const proc = currentRecoveryProc;
   try {
     if (process.platform === 'win32') {
-      const { spawn } = require('child_process');
       spawn('taskkill', ['/PID', String(proc.pid), '/T', '/F']);
     } else {
       process.kill(proc.pid, 'SIGTERM');
@@ -432,11 +553,13 @@ ipcMain.handle('cancel-recovery', async () => {
   }
 });
 
-ipcMain.handle('run-download', async (_event, { e01Path, choice, downloadDir, files }) => {
-  // 1) 호출된 인자 찍기
-  console.log("[Debug] run-download called with : ", { e01Path, choice, downloadDir, files });
+ipcMain.handle('run-download', async (_event, {
+  e01Path, choice, downloadDir, files,
+  subdirName
+}) => {
+  console.log("[Debug] run-download called with : ", { e01Path, choice, downloadDir, files, subdirName });
 
-  // 2) 인자 유효성 검사
+  // 1) 인자 검증
   if (
     typeof e01Path !== 'string' ||
     typeof choice !== 'string' ||
@@ -445,31 +568,34 @@ ipcMain.handle('run-download', async (_event, { e01Path, choice, downloadDir, fi
     !choice.trim() ||
     !downloadDir.trim()
   ) {
-
     console.error("[Debug] run-download invalid args : ", { e01Path, choice, downloadDir });
-
-    mainWindow.webContents.send(
-      'download-error',
-      `Invalid args for run-download: ${JSON.stringify({ e01Path, choice, downloadDir })}`
-    );
+    mainWindow?.webContents.send('download-error', `Invalid args for run-download`);
     throw new Error('run-download: invalid args');
   }
-
   if (!Array.isArray(files) || files.length === 0) {
     const msg = 'No files selected';
     console.error('[Debug] run-download:', msg);
-    mainWindow.webContents.send('download-error', msg);
-  throw new Error(msg);
+    mainWindow?.webContents.send('download-error', msg);
+    throw new Error(msg);
   }
 
+  // 2) 선택 파일 이름 리스트 저장 (Python이 읽음)
   const baseNames = files.map(p => path.basename(p));
   const selectedJsonPath = path.join(e01Path, 'selected_files.json');
   await fs.writeFile(selectedJsonPath, JSON.stringify(baseNames, null, 2), 'utf-8');
 
+  // 3) 출력 루트 결정
+  const effectiveOutRoot = subdirName
+    ? path.join(downloadDir, subdirName)
+    : downloadDir;
+
+  try { await fs.mkdir(effectiveOutRoot, { recursive: true }); } catch {}
+
+  // 4) 실행
   return new Promise((resolve, reject) => {
     const scriptPath = path.join(__dirname, 'python_engine', 'main.py');
     const env = { ...process.env, PYTHONPATH: __dirname };
-    const args = [scriptPath, e01Path, choice, downloadDir, selectedJsonPath];
+    const args = [scriptPath, e01Path, choice, effectiveOutRoot, selectedJsonPath];
 
     console.log("[Debug] spawning python with args : ", args);
 
@@ -479,42 +605,146 @@ ipcMain.handle('run-download', async (_event, { e01Path, choice, downloadDir, fi
       env,
     });
 
+    python.on('error', (err) => {
+      console.error('[spawn error:run-download]', err);
+      mainWindow?.webContents.send('download-error', String(err?.message || err));
+    });
+
     const rl = readline.createInterface({ input: python.stdout });
     rl.on('line', line => {
       console.log("[Debug] download line : ", line);
-      mainWindow.webContents.send('download-log', line);
+      mainWindow?.webContents.send('download-log', line);
     });
 
     python.stderr.on('data', buf => {
-    const msg = buf.toString();
-    console.error("[Debug] python stderr (download) : ", msg);
-    mainWindow.webContents.send('download-error', msg);
-  });
+      const msg = buf.toString();
+      console.error("[Debug] python stderr (download) : ", msg);
+      mainWindow?.webContents.send('download-error', msg);
+    });
 
-    python.on('close', code => {
+    // ---- close 처리 ----
+    python.on('close', async (code) => {
       console.log("[Debug] download python exited with code : ", code);
       rl.close();
-      if (code === 0) {
-        mainWindow.webContents.send('download-complete');
-        resolve();
-      } else {
 
-        const err = new Error(`run-download exit ${code} with args ${JSON.stringify(args)}`);
-        reject(err);
+      if (code === 0) {
+        try {
+          const recoveryDir = path.join(effectiveOutRoot, 'recovery');
+          const slackRoot   = path.join(effectiveOutRoot, 'recovery_slack');
+
+          // 폴더 보장
+          try { await fs.mkdir(recoveryDir, { recursive: true }); } catch {}
+          try { await fs.mkdir(slackRoot,   { recursive: true }); } catch {}
+
+          // 슬랙 파일 판단: *_slack.* 또는 *_slack_image.*
+          const isSlackName = (name) => /_slack(?:_image)?\.[^.]+$/i.test(name);
+          const isSlackDirname = (dir) => /(^|[\\/])slack([\\/]|$)/i.test(dir);
+
+          // 재귀 순회
+          const walkAndMove = async (dir) => {
+            let entries = [];
+            try {
+              entries = await fs.readdir(dir, { withFileTypes: true });
+            } catch (e) {
+              console.warn('[post-move] read fail:', dir, e?.message || e);
+              return;
+            }
+
+            for (const ent of entries) {
+              const abs = path.join(dir, ent.name);
+              if (ent.isDirectory()) {
+                await walkAndMove(abs);
+                continue;
+              }
+              if (!ent.isFile()) continue;
+
+              const relFromRecovery = path.relative(recoveryDir, abs);
+              const parentRelDir = path.dirname(relFromRecovery);
+              const shouldMove = isSlackName(ent.name) || isSlackDirname(parentRelDir);
+
+              if (shouldMove) {
+                const destDir  = path.join(slackRoot, parentRelDir === '.' ? '' : parentRelDir);
+                const destPath = path.join(destDir, ent.name);
+                try { await fs.mkdir(destDir, { recursive: true }); } catch {}
+                try {
+                  await fs.rename(abs, destPath);
+                  console.log('[post-move] moved slack file ->', destPath);
+                } catch (err) {
+                  console.warn('[post-move] move fail:', ent.name, err?.message || err);
+                }
+              }
+            }
+          };
+
+          await walkAndMove(recoveryDir);
+        } catch (postErr) {
+          console.warn('[post-move] error:', postErr?.message || postErr);
+        }
+
+        mainWindow?.webContents.send('download-complete');
+        return resolve();
       }
+
+      const err = new Error(`run-download exit ${code} with args ${JSON.stringify(args)}`);
+      return reject(err);
     });
   });
 });
 
-ipcMain.handle('dialog:openDirectory', async (_event, options = {}) => {
-  const { canceled, filePaths } = await dialog.showOpenDialog({
-    properties: ['openDirectory'],
-    ...options
-  });
-  if (canceled) return null;
-  return filePaths[0];
-});
 
+
+// carved_index.json 탐색 함수
+const tryRead = async (p) => {
+  try {
+    const raw = await fs.readFile(p, 'utf-8');
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+};
+
+ipcMain.handle('readCarvedIndex', async (_event, outDir) => {
+  if (!outDir) return { items: [] };
+
+  const candidates = [
+    path.join(outDir, 'carved_index.json'),
+    path.join(outDir, 'carved', 'carved_index.json'),
+    path.join(outDir, 'carving', 'carved_index.json'),
+    path.join(outDir, 'results', 'carved_index.json'),
+  ];
+  for (const p of candidates) {
+    const j = await tryRead(p);
+    if (j) return j;
+  }
+
+  // BFS 탐색
+  const maxDepth = 3;
+  const queue = [{ dir: outDir, depth: 0 }];
+  while (queue.length) {
+    const { dir, depth } = queue.shift();
+    if (depth > maxDepth) continue;
+
+    let entries = [];
+    try {
+      entries = await fs.readdir(dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+
+    for (const e of entries) {
+      const full = path.join(dir, e.name);
+      if (e.isDirectory()) {
+        queue.push({ dir: full, depth: depth + 1 });
+      } else if (e.isFile() && e.name.toLowerCase() === 'carved_index.json') {
+        const j = await tryRead(full);
+        if (j) return j;
+      }
+    }
+  }
+
+  // 못 찾으면 빈 구조 반환
+  return { items: [] };
+});
 
 ipcMain.handle('clear-cache', async () => {
   const tempDir = os.tmpdir();
@@ -539,7 +769,51 @@ ipcMain.handle('dialog:openSupportedFile', async () => {
   return canceled || !filePaths?.[0] ? null : filePaths[0];
 });
 
+// 볼륨 슬랙 리스트
+ipcMain.handle('listCarvedDir', async (_event, baseDir) => {
+  if (!baseDir) return [];
+  const carvedDir = path.join(baseDir, 'carved');
+
+  try {
+    const entries = await fs.readdir(carvedDir, { withFileTypes: true });
+
+    const out = [];
+    for (const ent of entries) {
+      if (!ent.isFile()) continue;                    
+      const abs = path.join(carvedDir, ent.name);
+      const st = await fs.stat(abs).catch(() => null);  
+      if (!st || st.size <= 0) continue;               
+      out.push({ name: ent.name, path: abs, size: st.size });
+    }
+
+    out.sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+    return out;
+  } catch (e) {
+    console.warn('[listCarvedDir] failed:', e?.message || e);
+    return [];
+  }
+});
+
 ipcMain.handle('dialog:openE01File', async () => {
   const { canceled, filePaths } = await openFileDialog(['e01']);
   return canceled || !filePaths?.[0] ? null : filePaths[0];
+});
+
+ipcMain.handle('dialog:openDirectory', async (_event, options = {}) => {
+  const { canceled, filePaths } = await dialog.showOpenDialog({
+    title: '폴더 선택',
+    properties: ['openDirectory', 'createDirectory'],
+    ...options,
+  });
+  return { canceled, filePaths: filePaths || [] };
+});
+
+// 편의용: 문자열 경로 하나만 반환 (handlePathSelect / selectFolder에서 기대)
+ipcMain.handle('select-folder', async (_event, options = {}) => {
+  const { canceled, filePaths } = await dialog.showOpenDialog({
+    title: '저장 경로 선택',
+    properties: ['openDirectory', 'createDirectory'],
+    ...options,
+  });
+  return canceled ? null : (filePaths?.[0] ?? null);
 });
