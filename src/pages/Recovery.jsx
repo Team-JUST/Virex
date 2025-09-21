@@ -1669,9 +1669,6 @@ const handleDownloadConfirm = async () => {
                                             {isAVI && file?.analysis?.integrity?.damaged && Object.values(file.channels || {}).some(ch => ch?.full_video_path) && (
                                               <Badge label="복원 완료" variant="yellow" />
                                             )}
-                                            {isMP4 && file?.slack_info?.recovered && (
-                                              <Badge label="복원 완료" variant="yellow" />
-                                            )}
                                             {hasSlackBadge && !file?.analysis?.integrity?.damaged && (
                                               <Badge
                                                 label="슬랙"
@@ -1691,6 +1688,9 @@ const handleDownloadConfirm = async () => {
                                                 }}
                                                 variant="blue"
                                               />
+                                            )}
+                                            {isMP4 && file?.analysis?.integrity?.damaged && file?.slack_info?.recovered && (
+                                              <Badge label="복원 완료" variant="yellow" />
                                             )}
                                           </>
                                         )}
