@@ -87,6 +87,9 @@ def handle_single_video_file(filepath, output_dir):
             'channels': channels_only,
             'analysis': build_analysis(origin_video_path, origin_video_path, meta)
         }
+        if 'video_metadata' in channels_only and 'analysis' in result and 'basic' in result['analysis']:
+            result['analysis']['basic']['video_metadata'] = channels_only['video_metadata']
+            del channels_only['video_metadata']
     elif ext == '.jdr':
         # JDR 파일은 extract_jdr을 사용하여 복원
         jdr_info = recover_jdr(

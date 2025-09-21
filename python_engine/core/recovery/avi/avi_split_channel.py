@@ -32,24 +32,53 @@ PATTERNS = {
     }
 }
 
+def _guess_codec_by_signature(data):
+    hevc_hits = data.count(b"\x00\x00\x01\x40") + data.count(b"\x00\x00\x00\x01\x40")
+    sps_h264  = data.count(b"\x00\x00\x01\x67") + data.count(b"\x00\x00\x00\x01\x67")
+    return 'HEVC' if hevc_hits > sps_h264 else 'H264'
+
 def detect_codec(data):
     hdr = data[112:116]
     if hdr in (b'h264', b'H264', b'\x68\x32\x36\x34'):
         return 'H264'
     if hdr in (b'hev1', b'HEV1', b'\x68\x65\x76\x31'):
         return 'HEVC'
-    raise RuntimeError(f"Unknown codec header: {hdr!r}")
+    return _guess_codec_by_signature(data)
+
+def _guess_main_area_end(data):
+    max_end = 0
+    for sig in CHUNK_SIG.values():
+        offset = 0
+        while True:
+            idx = data.find(sig, offset)
+            if idx < 0 or idx + 8 > len(data):
+                break
+            size = struct.unpack('<I', data[idx + 4:idx + 8])[0]
+            start = idx + 8
+            end   = start + size
+
+            if size > MAX_REASONABLE_CHUNK_SIZE or size <= MIN_REASONABLE_CHUNK_SIZE or end > len(data):
+                offset = idx + 4
+                continue
+
+            if end > max_end:
+                max_end = end
+            offset = end
+
+    return max_end if max_end > 0 else 0
 
 def split_channel_bytes(data, label):
     sig = CHUNK_SIG[label]
     codec = detect_codec(data)
     pats = PATTERNS[codec]
 
-    # RIFF 헤더 건너뛰기
-    offset = 0
     if data.startswith(b'RIFF'):
         total = struct.unpack('<I', data[4:8])[0]
-        offset = 8 + total
+        riff_end = min(8 + total, len(data))
+    else:
+        riff_end = _guess_main_area_end(data)
+
+    offset = max(riff_end, 0)
 
     out = bytearray()
     count = 0
@@ -62,15 +91,13 @@ def split_channel_bytes(data, label):
 
         size = struct.unpack('<I', data[idx + 4:idx + 8])[0]
         start = idx + 8
-        end = start + size
+        end   = start + size
         offset = end
 
         if size > MAX_REASONABLE_CHUNK_SIZE or end > len(data):
             continue
 
         chunk = data[start:end]
-
-        # 첫 start NAL 발견 후, 유효한 NAL만 추가
         if (not found and pats['start'].match(chunk)) or (found and any(p.match(chunk) for p in pats['types'])):
             out += chunk
             found = True
@@ -81,14 +108,14 @@ def split_channel_bytes(data, label):
 def extract_full_channel_bytes(data, label):
     sig = CHUNK_SIG[label]
 
-    riff_end = len(data)
     if data.startswith(b'RIFF'):
         total = struct.unpack('<I', data[4:8])[0]
-        riff_end = 8 + total
+        riff_end = min(8 + total, len(data))
+    else:
+        riff_end = _guess_main_area_end(data)
 
     offset = 0
     file_end = riff_end
-
     out = bytearray()
 
     while True:
@@ -98,16 +125,10 @@ def extract_full_channel_bytes(data, label):
 
         size = struct.unpack('<I', data[idx + 4:idx + 8])[0]
         start = idx + 8
-        end = start + size
+        end   = start + size
 
-        # 손상된 청크 건너뛰기
-        if size > MAX_REASONABLE_CHUNK_SIZE:
-            offset = idx + 4
-            continue
-        elif size <= MIN_REASONABLE_CHUNK_SIZE:
-            offset = idx + 4
-            continue
-        if end > file_end:
+        # 손상된 청크는 건너뜀
+        if size > MAX_REASONABLE_CHUNK_SIZE or size <= MIN_REASONABLE_CHUNK_SIZE or end > file_end:
             offset = idx + 4
             continue
 

@@ -58,37 +58,48 @@ def video_metadata(file_path):
         )
         info = json.loads(result.stdout)
         streams = info.get('streams', [])
+        format_info = info.get('format', {})
 
-        # 기본값
+        video_stream = next((s for s in streams if s.get('codec_type') == 'video'), None)
+        audio_stream = next((s for s in streams if s.get('codec_type') == 'audio'), None)
+
+        # duration robust: video stream > format > 0.0
+        duration = 0.0
+        if video_stream and video_stream.get('duration'):
+            try:
+                duration = float(video_stream.get('duration'))
+            except Exception:
+                duration = 0.0
+        elif format_info.get('duration'):
+            try:
+                duration = float(format_info.get('duration'))
+            except Exception:
+                duration = 0.0
+
+        # frame_rate robust 파싱
+        frame_rate = 0.0
+        if video_stream and video_stream.get('r_frame_rate'):
+            try:
+                fr_str = video_stream.get('r_frame_rate')
+                if '/' in fr_str:
+                    frame_rate = round(float(Fraction(fr_str)), 2)
+                else:
+                    frame_rate = round(float(fr_str), 2)
+            except Exception:
+                frame_rate = 0.0
+
         video_meta = {
-            'duration': 0.0,
-            'codec': 'unknown',
-            'width': 0,
-            'height': 0,
-            'frame_rate': 0.0
+            'duration': duration,
+            'codec': video_stream.get('codec_name', 'unknown') if video_stream else 'unknown',
+            'width': int(video_stream.get('width', 0)) if video_stream else 0,
+            'height': int(video_stream.get('height', 0)) if video_stream else 0,
+            'frame_rate': frame_rate
         }
         audio_meta = {
-            'audio_codec': 'unknown',
-            'audio_rate': 0,
-            'channels': 0
+            'audio_codec': audio_stream.get('codec_name', 'unknown') if audio_stream else 'unknown',
+            'audio_rate': int(audio_stream.get('sample_rate', 0)) if audio_stream else 0,
+            'channels': int(audio_stream.get('channels', 0)) if audio_stream else 0
         }
-
-        for stream in streams:
-            if stream.get('codec_type') == 'video':
-                video_meta.update({
-                    'duration': float(stream.get('duration', 0.0)),
-                    'codec': stream.get('codec_name', 'unknown'),
-                    'width': int(stream.get('width', 0)),
-                    'height': int(stream.get('height', 0)),
-                    'frame_rate': round(float(Fraction(stream.get('r_frame_rate', '0/1'))), 2)
-                })
-            elif stream.get('codec_type') == 'audio':
-                audio_meta.update({
-                    'audio_codec': stream.get('codec_name', 'unknown'),
-                    'audio_rate': int(stream.get('sample_rate', 0)),
-                    'channels': int(stream.get('channels', 0))
-                })
-            
         return {**video_meta, **audio_meta}
 
     except Exception:
@@ -106,11 +117,12 @@ def video_metadata(file_path):
 
 # 종합 정보 반환
 def get_basic_info(file_path):
-    return {
+    result = {
         "format": file_format(file_path),
         "timestamps": file_timestamps(file_path),
         "video_metadata": video_metadata(file_path)
     }
+    return result
 
 # E01 메타데이터 기반 버전
 def get_basic_info_with_meta(file_path, meta):
@@ -129,8 +141,9 @@ def get_basic_info_with_meta(file_path, meta):
             "accessed": accessed
         }
 
-    return {
+    result = {
         "format": file_format(file_path),
         "timestamps": timestamps,
         "video_metadata": video_metadata(file_path)
     }
+    return result

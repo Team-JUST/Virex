@@ -95,7 +95,8 @@ def handle_mp4_file(name, filepath, data, file_obj, output_dir, category):
         filepath=original_path,
         output_h264_dir=slack_dir,
         output_video_dir=slack_dir,
-        target_format="mp4"
+        target_format="mp4",
+        use_gpu=True
     )
     if not slack_info:
         slack_info = {
@@ -145,7 +146,8 @@ def handle_avi_file(name, filepath, data, file_obj, output_dir, category):
     avi_info = recover_avi_slack(
         input_avi=original_path,
         base_dir=orig_dir,
-        target_format="mp4"
+        target_format="mp4",
+        use_gpu=True
     )
     if avi_info is None:
         return None
@@ -153,7 +155,7 @@ def handle_avi_file(name, filepath, data, file_obj, output_dir, category):
     origin_video_path = avi_info.get('source_path', avi_info.get('origin_path', original_path))
     channels_only = {k: v for k, v in avi_info.items() if isinstance(v, dict)}
     
-    return {
+    result = {
         'name': name,
         'path': filepath,
         'size': bytes_to_unit(len(data)),
@@ -161,6 +163,11 @@ def handle_avi_file(name, filepath, data, file_obj, output_dir, category):
         'channels': channels_only,
         'analysis': build_analysis(origin_video_path, origin_video_path, file_obj.info.meta)
     }
+    
+    if 'video_metadata' in channels_only and 'analysis' in result and 'basic' in result['analysis']:
+        result['analysis']['basic']['video_metadata'] = channels_only['video_metadata']
+        del channels_only['video_metadata']
+    return result
 
 def handle_jdr_file(name, filepath, data, file_obj, output_dir, category):
     video_stem = os.path.splitext(name)[0]
