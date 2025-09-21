@@ -4,15 +4,20 @@ contextBridge.exposeInMainWorld('api', {
   getDrives: () => ipcRenderer.invoke('get-drives'),
   readFolder: (path) => ipcRenderer.invoke('read-folder', path),
   sendFilePath: (path) => ipcRenderer.send('file-selected', path),
-  selectFolder: () => ipcRenderer.invoke('dialog:openDirectory'),
-  openDirectory: () => ipcRenderer.invoke('dialog:openDirectory'),
+  selectFolder: (opts) => ipcRenderer.invoke('select-folder', opts),        
+  openDirectory: (opts) => ipcRenderer.invoke('dialog:openDirectory', opts),
   openE01File: () => ipcRenderer.invoke('dialog:openE01File'),
   openSupportedFile: () => ipcRenderer.invoke('dialog:openSupportedFile'),
   startRecovery: (e01Path) => ipcRenderer.invoke('start-recovery', e01Path),
+
+
   cancelRecovery: () => ipcRenderer.invoke('cancel-recovery'),
-  onCancelled: (cb) => { const h = () => cb(); ipcRenderer.on('recovery-cancelled', h); return () => ipcRenderer.removeListener('recovery-cancelled', h); },
   clearCache: () => ipcRenderer.invoke('clear-cache'),
   
+  readCarvedIndex: (dir) => ipcRenderer.invoke('readCarvedIndex', dir),
+  listCarvedDir: (baseDir) => ipcRenderer.invoke('listCarvedDir', baseDir),
+
+
   onDiskFull: (cb) => {
     const channel = 'recovery-disk-full';
     const handler = (_e, payload) => cb(payload);
@@ -78,6 +83,8 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.on('download-complete', l);
     return () => ipcRenderer.removeListener('download-complete', l);
   },
+
+  
 
   
   onRecoveryError: (cb) => {

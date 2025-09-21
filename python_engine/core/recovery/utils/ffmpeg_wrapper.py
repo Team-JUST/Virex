@@ -5,7 +5,8 @@ from python_engine.core.analyzer.basic_info_parser import video_metadata
 # FFmpeg 실행 파일 경로 
 FFMPEG_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../../bin/ffmpeg.exe'))
 
-def convert_video(input_path, output_path, fps=None, extra_args=None, use_gpu=True, wait=True):
+
+def convert_video(input_path, output_path, extra_args=None, use_gpu=True, wait=True, fps=None):
     cmd = [FFMPEG_PATH, '-hide_banner', '-loglevel', 'info']
 
     try:
@@ -34,15 +35,27 @@ def convert_video(input_path, output_path, fps=None, extra_args=None, use_gpu=Tr
 
     # fps가 있으면 -r 옵션에 적용
     if wrapping_mode:
-        if fps:
-            cmd += ['-r', str(fps)]
+        if use_gpu:
+            if fps:
+                cmd += ['-r', str(fps)]
+            else:
+                cmd += ['-r', '30']
+            # GPU 인코더 적용
+            if vcodec == 'libx265':
+                gpu_codec = 'hevc_nvenc'
+            else:
+                gpu_codec = 'h264_nvenc'
+            cmd += [
+                '-hwaccel', 'cuda',
+                '-i', input_path,
+                '-c:v', gpu_codec, '-preset', 'p3', '-cq', '23',
+                '-movflags', '+faststart'
+            ]
         else:
-            cmd += ['-r', '30']
-        
-        # want_copy가 True이면 copy 옵션 사용, 아니면 인코딩
-        if want_copy:
-            cmd += ['-i', input_path, '-c:v', 'copy', '-movflags', '+faststart']
-        else:
+            if fps:
+                cmd += ['-r', str(fps)]
+            else:
+                cmd += ['-r', '30']
             cmd += ['-i', input_path, '-c:v', vcodec, '-preset', 'medium', '-crf', '23', '-movflags', '+faststart']
         cmd += [output_path]
     else:
@@ -54,6 +67,7 @@ def convert_video(input_path, output_path, fps=None, extra_args=None, use_gpu=Tr
                 gpu_codec = 'hevc_nvenc'
             else:
                 gpu_codec = 'h264_nvenc'
+            print(f"[INFO] ffmpeg | GPU codec: {gpu_codec}")
             cmd += [
                 '-hwaccel', 'cuda',
                 '-i', input_path,
@@ -70,13 +84,32 @@ def convert_video(input_path, output_path, fps=None, extra_args=None, use_gpu=Tr
                 '-c:a', 'aac', '-b:a', '192k',
                 '-movflags', '+faststart'
             ]
-        
         if extra_args:
             cmd += list(extra_args)
         cmd += [output_path]
 
     if wait:
-        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        print(f"[INFO] ffmpeg | GPU={use_gpu} | wrapping_mode={wrapping_mode}")
+        try:
+            subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        except subprocess.CalledProcessError as e:
+            print(f"[ERROR] ffmpeg 변환 실패!\n[stderr]\n{e.stderr.decode(errors='ignore')}")
+            # GPU 인코딩 실패 시 CPU 인코딩 fallback
+            if use_gpu:
+                print("[WARN] GPU 인코딩 실패, CPU(libx264)로 재시도합니다.")
+                cpu_cmd = [FFMPEG_PATH, '-hide_banner', '-loglevel', 'info']
+                if fps:
+                    cpu_cmd += ['-r', str(fps)]
+                else:
+                    cpu_cmd += ['-r', '30']
+                cpu_cmd += ['-i', input_path, '-c:v', 'libx264', '-preset', 'medium', '-crf', '23', '-movflags', '+faststart', output_path]
+                try:
+                    subprocess.run(cpu_cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+                except subprocess.CalledProcessError as e2:
+                    print(f"[ERROR] CPU 인코딩도 실패!\n[stderr]\n{e2.stderr.decode(errors='ignore')}")
+                    raise
+            else:
+                raise
         return None
     else:
         p = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

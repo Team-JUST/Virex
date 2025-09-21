@@ -3,7 +3,6 @@ import logging
 import shutil
 import subprocess
 import json
-import struct
 from python_engine.core.recovery.avi.avi_split_channel import (
     split_channel_bytes,
     extract_full_channel_bytes)
@@ -12,12 +11,14 @@ from python_engine.core.recovery.avi.recover_audio import (
     extract_slack_audio)
 from python_engine.core.recovery.utils.ffmpeg_wrapper import convert_video, convert_audio, merge_video_audio
 from python_engine.core.recovery.utils.unit import bytes_to_unit
+from python_engine.core.analyzer.integrity import get_integrity_info
+from python_engine.core.analyzer.basic_info_parser import video_metadata
 
 logger = logging.getLogger(__name__)
 
 FFMPEG = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../../bin/ffmpeg.exe'))
 FFPROBE = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../../bin/ffprobe.exe'))
-SLACK_IMAGE_THRESHOLD_SEC = 0.6
+SLACK_IMAGE_THRESHOLD_SEC = 1.0
 
 def find_nal_start(buf, start):
     idx3 = buf.find(b'\x00\x00\x01', start)
@@ -162,6 +163,8 @@ def extract_first_frame(video_path, out_jpeg, force_input_format):
         return False
 
 def recover_avi_slack(input_avi, base_dir, target_format='mp4', use_gpu=False):
+    avi_integrity_result = get_integrity_info(input_avi)
+    avi_is_damaged = avi_integrity_result.get("damaged")
     os.makedirs(base_dir, exist_ok=True)
     with open(input_avi, "rb") as f:
         data = f.read()
@@ -172,9 +175,7 @@ def recover_avi_slack(input_avi, base_dir, target_format='mp4', use_gpu=False):
         return None
 
     if not (data[:4] == b"RIFF" and b"AVI" in data[:12]):
-        logger.error(f"{input_avi} AVI 헤더가 올바르지 않습니다. 건너뜁니다. 헤더: {data[:16]!r}")
-        shutil.rmtree(base_dir, ignore_errors=True)
-        return None
+        logger.warning(f"{input_avi} AVI 헤더가 올바르지 않습니다. 강제 스캔 모드로 진행합니다.")
         
     audio_dir = os.path.join(base_dir, "audio")
     os.makedirs(audio_dir, exist_ok=True)
@@ -252,18 +253,15 @@ def recover_avi_slack(input_avi, base_dir, target_format='mp4', use_gpu=False):
 
                         try:
                             os.remove(slack_h264)
-                        finally:
-                            try:
-                                os.remove(slack_h264)
-                            except OSError:
-                                pass
+                        except OSError:
+                            pass
                         
                         if os.path.exists(slack_mp4):
                             fcount = get_video_frame_count(slack_mp4)
                             duration = get_video_duration_sec(slack_mp4)
                             need_jpeg = (
                                 (fcount is not None and fcount <= 1) or
-                                (fcount is None and duration is not None and duration >= 0 and duration < SLACK_IMAGE_THRESHOLD_SEC)
+                                (fcount is None and duration is not None and 0 <= duration < SLACK_IMAGE_THRESHOLD_SEC)
                             )
 
                             if need_jpeg:
@@ -327,7 +325,18 @@ def recover_avi_slack(input_avi, base_dir, target_format='mp4', use_gpu=False):
                 }
 
             if os.path.exists(full_mp4):
-                results[label]['full_video_path'] = full_mp4
+                try:
+                    if avi_is_damaged:
+                        damaged_mp4 = os.path.join(ch_dir, f"{basename}_{label}_damaged.{target_format}")
+                        os.rename(full_mp4, damaged_mp4)
+                        results[label]['full_video_path'] = damaged_mp4
+                        results[label]['full_video_size'] = bytes_to_unit(os.path.getsize(damaged_mp4))
+                    else:
+                        results[label]['full_video_path'] = full_mp4
+                        results[label]['full_video_size'] = bytes_to_unit(os.path.getsize(full_mp4))
+                except Exception as e:
+                    results[label]['full_video_path'] = full_mp4
+                    results[label]['full_video_size'] = bytes_to_unit(os.path.getsize(full_mp4))
                 has_output = True
             
         if not has_output:
@@ -448,5 +457,13 @@ def recover_avi_slack(input_avi, base_dir, target_format='mp4', use_gpu=False):
             os.rmdir(merged_dir)
     except OSError:
         pass
-    
+
+    video_meta = None
+    for label in ("front", "rear", "side"):
+        if label in results and results[label].get('full_video_path'):
+            mp4_path = results[label]['full_video_path']
+            if mp4_path and os.path.exists(mp4_path):
+                video_meta = video_metadata(mp4_path)
+                break
+    results['video_metadata'] = video_meta
     return results
