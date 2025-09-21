@@ -1,17 +1,31 @@
 import os
 import struct
 
-# MP4 파일 내 특정 box(atom)의 위치와 크기 탐색
+MAX_REASONABLE_CHUNK_SIZE = 10 * 1024 * 1024
+MIN_REASONABLE_CHUNK_SIZE = 16
+UNKNOWN_GAP_MIN = 1024
+
+TAIL_ABS = 4 * 1024 * 1024
+TAIL_RATIO = 0.005
+
+VIDEO_SIGS = (b'00dc', b'00db', b'01dc', b'01db', b'02dc', b'02db')
+AUDIO_SIGS = (b'00wb', b'01wb', b'02wb')
+
+# MP4 helpers
 def find_all_boxes(data, box_type):
     offset = 0
     found = []
-    while offset < len(data) - 8:
+    end = len(data)
+    btype = box_type.encode()
+
+    while offset + 8 <= end:
         try:
             size = struct.unpack('>I', data[offset:offset + 4])[0]
             typ = data[offset + 4:offset + 8]
-            if typ == box_type.encode():
+            if typ == btype:
                 found.append((offset, size))
-            offset += size if size > 0 else 8
+            step = size if size >= 8 else 8
+            offset += step
         except Exception:
             break
     return found
@@ -22,7 +36,132 @@ def find_box(data, box_type):
         return None, None
     return boxes[0]
 
-# 비디오 파일 무결성 검사
+# AVI Helpers
+def _read_le32(b, off):
+    return struct.unpack('<I', b[off:off+4])[0]
+
+def _find_list(data, fourcc, start=0):
+    off = start
+    end = len(data)
+    while off + 12 <= end:
+        if data[off:off+4] == b'LIST':
+            try:
+                sz = _read_le32(data, off+4)
+            except struct.error:
+                return None
+            typ = data[off+8:off+12]
+            if typ == fourcc:
+                return (off, sz, off + 12)
+            off += sz if sz > 0 else 12
+        else:
+            off += 1
+    return None
+
+def _align2(x):
+    return x if (x % 2) == 0 else x + 1
+
+def _find_next_video_sig(data, start, limit):
+    best = -1
+    for sig in VIDEO_SIGS:
+        idx = data.find(sig, start, limit)
+        if idx != -1 and (best == -1 or idx < best):
+            best = idx
+    return best
+
+def _consume_chunk_if_present(data, fourcc, start, limit):
+    idx = data.find(fourcc, start, limit)
+    if idx == -1 or idx + 8 > limit:
+        return start
+    try:
+        size = _read_le32(data, idx + 4)
+    except struct.error:
+        return start
+    payload_start = idx + 8
+    payload_end = payload_start + size
+    end_aligned = _align2(payload_end)
+    if payload_end > limit or end_aligned > limit:
+        return start
+    return end_aligned
+
+def _scan_mid_damage_compact(data, movi_start, scan_end):
+    off = movi_start
+    end = scan_end
+    last_good_end = movi_start
+    view = memoryview(data)
+
+    while off + 8 <= end:
+        head = view[off:off+4].tobytes()
+
+        # LIST 블록
+        if head == b'LIST':
+            try:
+                sz = _read_le32(view, off+4)
+            except struct.error:
+                return True, last_good_end
+            list_end = off + sz
+            if sz < 12 or list_end > end:
+                return True, last_good_end
+            off = list_end
+            last_good_end = off
+            continue
+
+        # 일반 청크
+        fourcc = head
+        try:
+            sz = _read_le32(view, off+4)
+        except struct.error:
+            return True, last_good_end
+
+        payload_start = off + 8
+        payload_end = payload_start + sz
+        next_off = _align2(payload_end)
+
+        # 경계 검사
+        if sz < 0 or payload_end > end or next_off > end:
+            return True, last_good_end
+
+        # 비디오 청크 추가 검증
+        if fourcc in VIDEO_SIGS:
+            if sz > MAX_REASONABLE_CHUNK_SIZE or sz <= MIN_REASONABLE_CHUNK_SIZE:
+                return True, last_good_end
+
+        # 정상 청크 처리 완료
+        last_good_end = next_off
+        off = next_off
+
+    if off < end:
+        next_sig = _find_next_video_sig(data, off, end)
+        if next_sig == -1:
+            gap_len = end - off
+            if gap_len >= UNKNOWN_GAP_MIN:
+                return True, last_good_end
+
+    return False, last_good_end
+
+def _scan_chunk_overflow_like_structure(data, start, end):
+    offset = start
+    while offset + 8 <= end:
+        try:
+            chunk_id = data[offset:offset+4]
+            size = int.from_bytes(data[offset+4:offset+8], 'little', signed=False)
+        except Exception:
+            return True, f"[경고] 청크 크기 파싱 실패 at offset 0x{offset:X}"
+
+        chunk_end = offset + 8 + size
+        if chunk_end > end:
+            try:
+                name = chunk_id.decode(errors='replace')
+            except Exception:
+                name = '????'
+            return True, f"[WARNING] 청크 크기 초과: {name} at offset 0x{offset:X} size={size}"
+
+        offset = chunk_end + (1 if (size % 2) == 1 else 0)
+
+    return False, None
+
+def _big_gap(gap, total):
+    return gap >= TAIL_ABS and gap >= int(total * TAIL_RATIO)
+
 def get_integrity_info(file_path):
     ext = os.path.splitext(file_path)[1].lower()
     result = {
@@ -37,44 +176,120 @@ def get_integrity_info(file_path):
         result["damaged"] = True
         result["reasons"].append(f"파일 열기 실패: {e}")
         return result
-    
-    # AVI 무결성 검사
+
     if ext == ".avi":
-        # 헤더
+        # 헤더 검사
         if not (data.startswith(b'RIFF') or data.startswith(b'RF64')):
             result["damaged"] = True
             result["reasons"].append("[헤더 손상] 'RIFF/RF64' 시그니처 누락")
             return result
 
-        # 파일 잘림 여부
         try:
-            riff_size = struct.unpack('<I', data[4:8])[0] + 8
+            riff_size = _read_le32(data, 4) + 8
         except struct.error:
             result["damaged"] = True
             result["reasons"].append("[헤더 손상] 크기 필드 파싱 실패")
             return result
 
         actual_size = len(data)
+
+        # 파일 절단(푸터) 판정
         if actual_size < riff_size:
             result["damaged"] = True
-            result["reasons"].append(f"[파일 잘림] 선언={riff_size}, 실제={actual_size}")
+            result["reasons"].append(f"[푸터 손상] 파일 잘림(선언 크기 > 실제 크기) 선언={riff_size}, 실제={actual_size}")
             return result
 
-        # movi 청크 존재 확인
-        if b'movi' not in data:
+        # movi 존재 확인
+        movi_info = _find_list(data, b'movi')
+        if not movi_info:
             result["damaged"] = True
             result["reasons"].append("[필수 청크 누락] 'movi' 청크 없음")
             return result
 
-        # 비디오 데이터 최소 존재 (00dc/00db/01dc/01db 중 하나라도 있어야 함)
-        if not (b'00dc' in data or b'00db' in data or b'01dc' in data or b'01db' in data):
+        _, movi_list_size, movi_payload = movi_info
+        if movi_list_size == 0:
+            result["damaged"] = True
+            result["reasons"].append("[헤더 손상] LIST('movi') size=0")
+            return result
+
+        # 최소 비디오 시그니처 존재
+        if not any(sig in data for sig in VIDEO_SIGS):
             result["damaged"] = True
             result["reasons"].append("[비디오 데이터 없음] 'NNdc/NNdb' 미검출")
             return result
-    
-    # MP4 무결성 검사
+
+        # 중간 손상 판정
+        scan_end = min(riff_size, actual_size)
+        mid_bad, last_good_end = _scan_mid_damage_compact(data, movi_payload, scan_end)
+        if mid_bad:
+            result["damaged"] = True
+            result["reasons"].append("[중간 손상] 비디오 데이터 이상")
+
+        # idx1, JUNK 청크 스킵
+        scan_pos = last_good_end if last_good_end else 0
+        limit = riff_size
+        for _ in range(6):
+            advanced = False
+            new_pos = _consume_chunk_if_present(data, b'idx1', scan_pos, limit)
+            if new_pos > scan_pos:
+                scan_pos = new_pos
+                advanced = True
+            new_pos = _consume_chunk_if_present(data, b'JUNK', scan_pos, limit)
+            if new_pos > scan_pos:
+                scan_pos = new_pos
+                advanced = True
+            if not advanced:
+                break
+        if scan_pos > (last_good_end or 0):
+            last_good_end = scan_pos
+
+        # 푸터 잔여/갭: 남은 구간이 모두 정상 청크(JUNK, idx1, LIST)면 손상 아님
+        if last_good_end:
+            gap_within_riff = riff_size - last_good_end
+            if _big_gap(gap_within_riff, riff_size):
+                # 남은 구간 스캔
+                footer_ok = True
+                off = last_good_end
+                while off + 8 <= riff_size:
+                    chunk_id = data[off:off+4]
+                    try:
+                        chunk_size = _read_le32(data, off+4)
+                    except struct.error:
+                        footer_ok = False
+                        break
+                    chunk_end = off + 8 + chunk_size
+                    if chunk_end > riff_size:
+                        footer_ok = False
+                        break
+                    if chunk_id not in [b'JUNK', b'idx1', b'LIST']:
+                        footer_ok = False
+                        break
+                    off = chunk_end
+                    if chunk_size % 2 == 1:
+                        off += 1
+                if not footer_ok:
+                    result["damaged"] = True
+                    result["reasons"].append("[푸터 손상] 파일 끝단 이상(잔여/갭 발생)")
+
+        # 상위 레벨 청크 크기 초과 검사
+        overflow, msg = _scan_chunk_overflow_like_structure(data, 12, riff_size)
+        if overflow and msg:
+            result["damaged"] = True
+            result["reasons"].append("[중간 손상] 본문 청크 크기 초과")
+            return result
+
+        # RIFF 외부(슬랙)에서의 초과 → 푸터 손상
+        if len(data) > riff_size:
+            overflow2, msg2 = _scan_chunk_overflow_like_structure(data, riff_size, len(data))
+            if overflow2 and msg2:
+                result["damaged"] = True
+                result["reasons"].append("[푸터 손상] RIFF 외부 슬랙 청크 크기 초과")
+                return result
+
+        return result
+
     elif ext == ".mp4":
-        # ftyp 박스 검증
+        # ftyp 박스
         ftyp_offset, ftyp_size = find_box(data, 'ftyp')
         if ftyp_size is None:
             result["damaged"] = True
@@ -87,19 +302,19 @@ def get_integrity_info(file_path):
             result["damaged"] = True
             result["reasons"].append("[박스 크기 이상] 'ftyp' size=0")
 
-        # moov 박스 검증
-            moov_boxes = find_all_boxes(data, 'moov')
-            if not moov_boxes:
-                result["damaged"] = True
-                result["reasons"].append("[필수 박스 누락] 'moov' 없음")
-            else:
-                # 크기 0인 moov 박스가 하나라도 있으면 경고
-                for moov_size in moov_boxes:
-                    if moov_size == 0:
-                        result["damaged"] = True
-                        result["reasons"].append("[박스 크기 이상] 'moov' size=0")
-        
-        # mdat 박스 검증
+        # moov 박스
+        moov_boxes = find_all_boxes(data, 'moov')
+        if not moov_boxes:
+            result["damaged"] = True
+            result["reasons"].append("[필수 박스 누락] 'moov' 없음")
+        else:
+            for _, moov_size in moov_boxes:
+                if moov_size == 0:
+                    result["damaged"] = True
+                    result["reasons"].append("[박스 크기 이상] 'moov' size=0")
+                    break
+
+        # mdat 박스
         mdat_boxes = find_all_boxes(data, 'mdat')
         if not mdat_boxes:
             result["damaged"] = True
@@ -109,5 +324,8 @@ def get_integrity_info(file_path):
                 if mdat_size == 0:
                     result["damaged"] = True
                     result["reasons"].append(f"[박스 크기 이상] 'mdat' offset={mdat_offset} size=0")
+                    break
+
+        return result
 
     return result
