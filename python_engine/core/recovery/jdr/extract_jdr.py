@@ -60,6 +60,8 @@ def find_next(data, start, sigs):
     return sig, idx
 
 def parse_timestamp(data):
+    if len(data) < 20:
+        return None  # 또는 적절한 기본값/예외 처리
     YYYY = struct.unpack('<H', data[4:6])[0]
     MM = struct.unpack('<H', data[6:8])[0]
     DD = struct.unpack('<H', data[10:12])[0]
@@ -90,6 +92,78 @@ class AudioChunk:
         self.timestamp = timestamp
         self.signature = signature  # 00AD, 01AD, 02AD
 
+def find_total_blocks_from_1vej(data):
+    """파일 맨 앞에서 제일 처음 나오는 1VEJ 시그니처를 찾고 4바이트 뒤에서 빅 엔디안으로 총 블록 개수를 읽는 함수"""
+    signature = b'1VEJ'
+    offset = data.find(signature)
+    if offset == -1:
+        logger.warning("1VEJ signature not found in data")
+        return None
+    
+    count_offset = offset + len(signature)
+    if count_offset + 4 > len(data):
+        logger.warning("Not enough data after 1VEJ signature to read block count")
+        return None
+    
+    total_blocks_raw = struct.unpack('<I', data[count_offset:count_offset + 4])[0]
+    # 16진수로 끝에 0이 하나 더 붙는 경우(0x6000 등) 0x10으로 나눠서 실제 값으로 변환
+    if total_blocks_raw % 0x10 == 0:
+        total_blocks = total_blocks_raw // 0x10
+    else:
+        total_blocks = total_blocks_raw
+    logger.info(f"Found total blocks from first 1VEJ at offset {offset}: {total_blocks} (raw: {total_blocks_raw})")
+    return total_blocks
+
+def find_1bej_blocks(data):
+    """1BEJ 블록들을 찾아서 위치 목록 반환"""
+    signature = b'1BEJ'
+    blocks = []
+    offset = 0
+    
+    while True:
+        pos = data.find(signature, offset)
+        if pos == -1:
+            break
+        blocks.append(pos)
+        offset = pos + len(signature)
+    
+    return blocks
+
+def classify_normal_slack_regions(data):
+    total_blocks = find_total_blocks_from_1vej(data)
+    if total_blocks is None:
+        print("[슬랙 offset] 블록 개수 정보를 찾을 수 없습니다.")
+        return data, b''
+
+    # 2. 블록 count 정보 이후로부터 0x14 * (n-1)만큼 오프셋 이동
+    signature = b'1VEJ'
+    offset = data.find(signature)
+    if offset == -1:
+        print("[슬랙 offset] 1VEJ 시그니처를 찾을 수 없습니다.")
+        return data, b''
+    count_offset = offset + len(signature)
+    block_table_offset = count_offset + 4 + 0x14 * (total_blocks - 1)
+    if block_table_offset + 4 > len(data):
+        print("[슬랙 offset] 마지막 블록 오프셋 위치가 데이터 범위를 벗어납니다.")
+        return data, b''
+    # block_table_offset에서 4바이트 리틀엔디안으로 읽고, 0x10으로 나눔
+    last_block_offset_raw = struct.unpack('<I', data[block_table_offset:block_table_offset+4])[0]
+    last_block_offset = last_block_offset_raw // 0x10
+
+    # 마지막 블록 오프셋에서 0xC8만큼 이동
+    slack_offset_ptr = last_block_offset + 0xC8
+    if slack_offset_ptr + 4 > len(data):
+        print("[슬랙 offset] 슬랙 offset 위치가 데이터 범위를 벗어납니다.")
+        return data, b''
+    # 슬랙 offse
+    slack_offset = struct.unpack('<I', data[slack_offset_ptr:slack_offset_ptr+4])[0]
+    if slack_offset > len(data):
+        print("[슬랙 offset] 슬랙 시작 offset이 데이터 범위를 벗어납니다.")
+        return data, b''
+    normal_data = data[:slack_offset]
+    slack_data = data[slack_offset:]
+    return normal_data, slack_data
+
 def calculate_fps(chunks):
     """I-frame부터 다음 I-frame까지의 프레임 수를 세서 fps 계산"""
     frame_counts = []
@@ -115,7 +189,6 @@ def _recover_channel_data(data, label, output_dir, save_audio=True):
     audio_sigs = CHUNK_SIG['audio']
     codec = detect_codec(data)
     pats = PATTERNS[codec]
-    offset = 0
 
     channel_prefix = {
         'front': 'F_',
@@ -126,108 +199,136 @@ def _recover_channel_data(data, label, output_dir, save_audio=True):
     def format_datetime(dt):
         return dt.strftime("%Y_%m_%d_%H_%M_%S") if dt else "unknown_time"
 
-    video_paths = []
-    audio_paths = []
-    video_chunks = []
-    audio_chunks = []
-    found_start = False
-    prev_video_ts = None
-    prev_audio_ts = None
-    cur_video_data = bytearray()
-    cur_audio_data = bytearray()
-    cur_video_first_ts = None
-    cur_audio_first_ts = None
+    # 정상/슬랙 영역 구분
+    normal_data, slack_data = classify_normal_slack_regions(data)
+    
+    results = {
+        'normal': {'video_paths': [], 'audio_paths': [], 'video_chunks': [], 'audio_chunks': []},
+        'slack': {'video_paths': [], 'audio_paths': [], 'video_chunks': [], 'audio_chunks': []}
+    }
 
-    def save_video_file(ts, data_bytes):
-        if not data_bytes:
-            return None
-        video_filename = f"{channel_prefix}{format_datetime(ts)}.vrx" if ts else f"{channel_prefix}unknown_time_video.vrx"
-        video_path = os.path.join(output_dir, video_filename)
-        with open(video_path, "wb") as f:
-            f.write(data_bytes)
-        video_paths.append(video_path)
-        return video_path
+    def process_region_data(region_data, region_type):
+        """특정 영역(normal/slack) 데이터 처리"""
+        if not region_data:
+            return
+            
+        offset = 0
+        video_chunks = []
+        audio_chunks = []
+        found_start = False
+        prev_video_ts = None
+        prev_audio_ts = None
+        cur_video_data = bytearray()
+        cur_audio_data = bytearray()
+        cur_video_first_ts = None
+        cur_audio_first_ts = None
 
-    def save_audio_file(ts, data_bytes):
-        if not data_bytes:
-            return None
-        audio_filename = f"A_{format_datetime(ts)}.bin" if ts else f"{channel_prefix}unknown_time_audio.bin"
-        audio_path = os.path.join(output_dir, audio_filename)
-        with open(audio_path, "wb") as f:
-            f.write(data_bytes)
-        audio_paths.append(audio_path)
-        return audio_path
+        def save_video_file(ts, data_bytes, region_suffix):
+            if not data_bytes:
+                return None
+            base_name = f"{channel_prefix}{format_datetime(ts)}" if ts else f"{channel_prefix}unknown_time_video"
+            video_filename = f"{base_name}_{region_suffix}.vrx"
+            video_path = os.path.join(output_dir, video_filename)
+            with open(video_path, "wb") as f:
+                f.write(data_bytes)
+            results[region_type]['video_paths'].append(video_path)
+            return video_path
 
-    # 모든 청크 찾기
-    while True:
-        sig, idx = find_next(data, offset, video_sigs + (audio_sigs if save_audio else []))
-        if idx == -1 or idx + 8 > len(data):
-            break
+        def save_audio_file(ts, data_bytes, region_suffix):
+            if not data_bytes:
+                return None
+            base_name = f"A_{format_datetime(ts)}" if ts else f"{channel_prefix}unknown_time_audio"
+            audio_filename = f"{base_name}_{region_suffix}.bin"
+            audio_path = os.path.join(output_dir, audio_filename)
+            with open(audio_path, "wb") as f:
+                f.write(data_bytes)
+            results[region_type]['audio_paths'].append(audio_path)
+            return audio_path
 
-        size = struct.unpack('<I', data[idx + 4:idx + 8])[0]
-        timestamp = parse_timestamp(data[idx + 8:idx + 8 + HEADER_SKIP])
+        # 모든 청크 찾기
+        while True:
+            sig, idx = find_next(region_data, offset, video_sigs + (audio_sigs if save_audio else []))
+            if idx == -1 or idx + 8 > len(region_data):
+                break
 
-        start = idx + 8 + HEADER_SKIP
-        end = start + size
+            size = struct.unpack('<I', region_data[idx + 4:idx + 8])[0]
+            timestamp = parse_timestamp(region_data[idx + 8:idx + 8 + HEADER_SKIP])
 
-        if size > MAX_REASONABLE_CHUNK_SIZE or size <= MIN_REASONABLE_CHUNK_SIZE or end > len(data):
-            offset = idx + 4
-            continue
+            start = idx + 8 + HEADER_SKIP
+            end = start + size
 
-        chunk = data[start:end]
-        offset = end
+            if size > MAX_REASONABLE_CHUNK_SIZE or size <= MIN_REASONABLE_CHUNK_SIZE or end > len(region_data):
+                offset = idx + 4
+                continue
 
-        if sig in video_sigs:
-            # 비디오 청크 처리
-            if (not found_start and pats['start'].match(chunk)) or found_start:
-                if not found_start and pats['start'].match(chunk):
-                    found_start = True
-                if found_start:
-                    # 비디오 분리 조건: 이전 프레임과 1초 이상 차이
-                    if prev_video_ts and timestamp and (timestamp - prev_video_ts).total_seconds() > 1:
-                        save_video_file(cur_video_first_ts, cur_video_data)
-                        cur_video_data = bytearray()
-                        cur_video_first_ts = None
-                        found_start = False
-                        if pats['start'].match(chunk):
-                            found_start = True
-                            cur_video_first_ts = timestamp
-                    if cur_video_first_ts is None and timestamp:
-                        cur_video_first_ts = timestamp
+            chunk = region_data[start:end]
+            offset = end
+
+            if sig in video_sigs:
+                # 비디오 청크 처리
+                if (not found_start and pats['start'].match(chunk)) or found_start:
+                    if not found_start and pats['start'].match(chunk):
+                        found_start = True
                     if found_start:
-                        cur_video_data.extend(chunk)
-                        video_chunks.append(VideoChunk(chunk, timestamp))
-                    if timestamp:
-                        prev_video_ts = timestamp
+                        # 비디오 분리 조건: 이전 프레임과 1초 이상 차이
+                        if prev_video_ts and timestamp and (timestamp - prev_video_ts).total_seconds() > 1:
+                            save_video_file(cur_video_first_ts, cur_video_data, region_type)
+                            cur_video_data = bytearray()
+                            cur_video_first_ts = None
+                            found_start = False
+                            if pats['start'].match(chunk):
+                                found_start = True
+                                cur_video_first_ts = timestamp
+                        if cur_video_first_ts is None and timestamp:
+                            cur_video_first_ts = timestamp
+                        if found_start:
+                            cur_video_data.extend(chunk)
+                            video_chunks.append(VideoChunk(chunk, timestamp))
+                        if timestamp:
+                            prev_video_ts = timestamp
 
-        elif save_audio and sig in audio_sigs:
-            # 오디오는 save_audio=True일 때만 처리/저장
-            if found_start:
-                if prev_audio_ts and timestamp and (timestamp - prev_audio_ts).total_seconds() > 1:
-                    save_audio_file(cur_audio_first_ts, cur_audio_data)
-                    cur_audio_data = bytearray()
-                    cur_audio_first_ts = timestamp
-                if cur_audio_first_ts is None:
-                    cur_audio_first_ts = timestamp
-                cur_audio_data.extend(chunk)
-                audio_chunks.append(AudioChunk(chunk, timestamp, sig))
-                prev_audio_ts = timestamp
+            elif save_audio and sig in audio_sigs:
+                # 오디오는 save_audio=True일 때만 처리/저장
+                if found_start:
+                    if prev_audio_ts and timestamp and (timestamp - prev_audio_ts).total_seconds() > 1:
+                        save_audio_file(cur_audio_first_ts, cur_audio_data, region_type)
+                        cur_audio_data = bytearray()
+                        cur_audio_first_ts = timestamp
+                    if cur_audio_first_ts is None:
+                        cur_audio_first_ts = timestamp
+                    cur_audio_data.extend(chunk)
+                    audio_chunks.append(AudioChunk(chunk, timestamp, sig))
+                    prev_audio_ts = timestamp
 
-    # 마지막 남은 데이터 저장
-    if cur_video_data:
-        save_video_file(cur_video_first_ts, cur_video_data)
-    if save_audio and cur_audio_data:
-        save_audio_file(cur_audio_first_ts, cur_audio_data)
+        # 마지막 남은 데이터 저장
+        if cur_video_data:
+            save_video_file(cur_video_first_ts, cur_video_data, region_type)
+        if save_audio and cur_audio_data:
+            save_audio_file(cur_audio_first_ts, cur_audio_data, region_type)
+
+        results[region_type]['video_chunks'] = video_chunks
+        results[region_type]['audio_chunks'] = audio_chunks
+
+    # 정상 영역과 슬랙 영역 각각 처리
+    process_region_data(normal_data, 'normal')
+    process_region_data(slack_data, 'slack')
+
+    # 전체 결과 취합
+    all_video_chunks = results['normal']['video_chunks'] + results['slack']['video_chunks']
+    all_audio_chunks = results['normal']['audio_chunks'] + results['slack']['audio_chunks']
+    all_video_paths = results['normal']['video_paths'] + results['slack']['video_paths']
+    all_audio_paths = results['normal']['audio_paths'] + results['slack']['audio_paths']
 
     # fps 계산
-    fps = calculate_fps(video_chunks) if video_chunks else 30
+    fps = calculate_fps(all_video_chunks) if all_video_chunks else 30
 
     return {
-        "recovered": len(video_chunks) > 0 or (save_audio and len(audio_chunks) > 0),
-        "video_size": bytes_to_unit(sum(len(chunk.data) for chunk in video_chunks)),
-        "video_paths": video_paths if output_dir else [],
-        "audio_paths": (audio_paths if (output_dir and save_audio) else []),
-        "fps": fps
+        "recovered": len(all_video_chunks) > 0 or (save_audio and len(all_audio_chunks) > 0),
+        "video_size": bytes_to_unit(sum(len(chunk.data) for chunk in all_video_chunks)),
+        "video_paths": all_video_paths if output_dir else [],
+        "audio_paths": (all_audio_paths if (output_dir and save_audio) else []),
+        "fps": fps,
+        "regions": results  # 영역별 상세 정보
     }
 
 def recover_jdr(input_jdr, base_dir, target_format='mp4'):
@@ -235,13 +336,12 @@ def recover_jdr(input_jdr, base_dir, target_format='mp4'):
         with open(input_jdr, 'rb') as f:
             data = f.read()
     except FileNotFoundError:
-        logger.error(f"Input file not found: {input_jdr}")
         return {}
     except Exception as e:
-        logger.error(f"Error reading input file: {e}")
         return {}
 
     output_root = base_dir
+
 
     results = {}
     labels = ['front', 'rear', 'side']
@@ -271,32 +371,86 @@ def recover_jdr(input_jdr, base_dir, target_format='mp4'):
             results[label] = {
                 "recovered": False,
                 "video_path": None,
-                "video_size": "0 B"
+                "slack_rate": 0,
+                "slack_size": "0 B",
+                "full_video_path": None,
+                "merged_video_path": None,
+                "merged_video_size": "0 B"
             }
             continue
 
-        final_video_paths = []
-        for i, video_path in enumerate(channel_result.get("video_paths", [])):
+        # normal/slack별로 비디오 파일 변환 처리
+        normal_video_paths = []
+        slack_video_paths = []
+        normal_video_size = 0
+        slack_video_size = 0
+        merged_video_path = None
+        merged_video_size = "0 B"
+        full_video_path = None
+        slack_rate = 0
+        slack_size = "0 B"
+
+        regions = channel_result.get("regions", {})
+
+        # Normal 영역 처리
+        for i, video_path in enumerate(regions.get('normal', {}).get('video_paths', [])):
             try:
                 output_filename = os.path.basename(video_path).replace('.vrx', f'.{target_format}')
                 output_path = os.path.join(output_root, output_filename)
 
                 ffmpeg_wrapper.convert_video(video_path, output_path, fps=channel_result.get("fps", 30))
-                final_video_paths.append(output_path)
-                logger.info(f"Successfully created {output_path}")
+                normal_video_paths.append(output_path)
+                normal_video_size += os.path.getsize(output_path) if os.path.exists(output_path) else 0
+                logger.info(f"Successfully created normal video {output_path}")
 
                 # 첫 비디오의 타임스탬프 문자열 확보
                 if i == 0 and not first_timestamp_str:
                     match = re.search(r'\d{4}_\d{2}_\d{2}_\d{2}_\d{2}_\d{2}', os.path.basename(video_path))
                     if match:
                         first_timestamp_str = match.group(0)
+                if i == 0:
+                    full_video_path = output_path
             except Exception as e:
-                logger.error(f"Failed to process video for {video_path}: {e}")
+                logger.error(f"Failed to process normal video for {video_path}: {e}")
 
+        # Slack 영역 처리
+        for video_path in regions.get('slack', {}).get('video_paths', []):
+            try:
+                output_filename = os.path.basename(video_path).replace('.vrx', f'.{target_format}')
+                output_path = os.path.join(output_root, output_filename)
+
+                ffmpeg_wrapper.convert_video(video_path, output_path, fps=channel_result.get("fps", 30))
+                slack_video_paths.append(output_path)
+                slack_video_size += os.path.getsize(output_path) if os.path.exists(output_path) else 0
+                logger.info(f"Successfully created slack video {output_path}")
+            except Exception as e:
+                logger.error(f"Failed to process slack video for {video_path}: {e}")
+
+        # slack_rate/slack_size 계산
+        if slack_video_paths:
+            # 슬랙 비디오 용량 및 비율 계산
+            slack_size = bytes_to_unit(slack_video_size)
+            total_size = normal_video_size + slack_video_size
+            slack_rate = round((slack_video_size / total_size) * 100, 2) if total_size > 0 else 0
+
+        if normal_video_paths:
+            video_name = os.path.basename(normal_video_paths[0])
+            vdate = re.search(r'(\d{4}_\d{2}_\d{2}_\d{2}_\d{2}_\d{2})', video_name)
+            if vdate:
+                date_str = vdate.group(1)
+                # 오디오 mp3는 아래에서 생성됨, audio_by_date에서 찾음
+                # merged_video_path는 아래에서 실제로 생성됨
+                pass
+
+        # 결과 구조체에 AVI와 동일한 필드로 저장
         results[label] = {
             "recovered": True,
-            "video_path": final_video_paths,
-            "video_size": channel_result.get("video_size", "0 B")
+            "video_path": slack_video_paths[0] if slack_video_paths else None,
+            "slack_rate": slack_rate,
+            "slack_size": slack_size,
+            "full_video_path": full_video_path,
+            "merged_video_path": None,  # 아래에서 실제 경로 할당
+            "merged_video_size": "0 B"
         }
 
     audio_mp3_paths = []
@@ -319,53 +473,64 @@ def recover_jdr(input_jdr, base_dir, target_format='mp4'):
             logger.error(f"Failed to process audio files: {e}")
 
     audio_by_date = {}
+    slack_audio_by_date = {}
     for mp3_path in audio_mp3_paths:
         m = re.search(r'(\d{4}_\d{2}_\d{2}_\d{2}_\d{2}_\d{2})', os.path.basename(mp3_path))
         if m:
             date_key = m.group(1)
-            audio_by_date.setdefault(date_key, mp3_path)
+            if 'slack' in os.path.basename(mp3_path):
+                slack_audio_by_date[date_key] = mp3_path
+            else:
+                audio_by_date[date_key] = mp3_path
 
     # 채널별 비디오에 대해 같은 날짜의 오디오가 있으면 머지
-    merged_any = False
     for channel in ['front', 'rear', 'side']:
-        if channel in results and results[channel].get('video_path'):
-            merged_files = []
-            for video_path in results[channel]['video_path']:
-                try:
-                    video_name = os.path.basename(video_path)
-                    vdate = re.search(r'(\d{4}_\d{2}_\d{2}_\d{2}_\d{2}_\d{2})', video_name)
-                    if not vdate:
-                        continue
+        if channel in results and results[channel].get('recovered'):
+            normal_video_path = results[channel]['full_video_path']
+            merged_path = None
+            merged_size = "0 B"
+            if normal_video_path:
+                video_name = os.path.basename(normal_video_path)
+                vdate = re.search(r'(\d{4}_\d{2}_\d{2}_\d{2}_\d{2}_\d{2})', video_name)
+                if vdate:
                     date_str = vdate.group(1)
                     matching_audio = audio_by_date.get(date_str)
-                    if not matching_audio:
-                        # 동일 타임스탬프를 못 찾으면 머지 생략
-                        continue
+                    if matching_audio:
+                        channel_prefix = {'front': 'F', 'rear': 'R', 'side': 'S'}[channel]
+                        merged_filename = f"{channel_prefix}_{date_str}_with_audio.mp4"
+                        merged_path = os.path.join(output_root, merged_filename)
+                        try:
+                            ffmpeg_wrapper.merge_video_audio(normal_video_path, matching_audio, merged_path)
+                            merged_size = bytes_to_unit(os.path.getsize(merged_path)) if os.path.exists(merged_path) else "0 B"
+                            logger.info(f"Created merged file: {merged_path}")
+                        except Exception as e:
+                            logger.error(f"Failed to merge video and audio: {e}")
+            results[channel]["merged_video_path"] = merged_path
+            results[channel]["merged_video_size"] = merged_size
 
-                    channel_prefix = {'front': 'F', 'rear': 'R', 'side': 'S'}[channel]
-                    merged_filename = f"{channel_prefix}_{date_str}_merged.mp4"
-                    merged_path = os.path.join(output_root, merged_filename)
+    audio_result = {
+        "slack": {
+            "path": None,
+            "size": "0 B"
+        }
+    }
+    # original/slack 오디오 파일 경로 및 크기 할당
+    for date_key, path in audio_by_date.items():
+        if os.path.exists(path):
+            audio_result["original"] = {
+                "path": path,
+                "size": bytes_to_unit(os.path.getsize(path))
+            }
+            break
+    for date_key, path in slack_audio_by_date.items():
+        if os.path.exists(path):
+            audio_result["slack"] = {
+                "path": path,
+                "size": bytes_to_unit(os.path.getsize(path))
+            }
+            break
 
-                    ffmpeg_wrapper.merge_video_audio(video_path, matching_audio, merged_path)
-                    merged_files.append(merged_path)
-                    logger.info(f"Created merged file: {merged_path}")
-                except Exception as e:
-                    logger.error(f"Failed to merge video and audio: {e}")
-
-            if merged_files:
-                merged_any = True
-                if 'merge' not in results:
-                    results['merge'] = {'merged_files': [], 'file_sizes': {}}
-                results['merge']['merged_files'].extend(merged_files)
-                # 파일 크기 기록
-                for merged_file in merged_files:
-                    try:
-                        if os.path.exists(merged_file):
-                            file_size = os.path.getsize(merged_file)
-                            filename = os.path.basename(merged_file)
-                            results['merge']['file_sizes'][filename] = bytes_to_unit(file_size)
-                    except Exception as e:
-                        logger.warning(f"Could not get size of merged file {merged_file}: {e}")
+    results["audio"] = audio_result
 
     try:
         import shutil
