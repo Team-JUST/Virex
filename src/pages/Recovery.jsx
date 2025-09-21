@@ -1238,24 +1238,25 @@ const handleDownloadConfirm = async () => {
                                 />
                               );
                             })}
-                            <Badge
-                              key="audio"
-                              label="Audio"
-                              onClick={() => {
-                                if (audioInfo && audioInfo.path) {
+                            {selectedResultFile?.analysis?.integrity?.damaged && audioInfo && audioInfo.path &&
+                              !Object.values(selectedResultFile.channels || {}).some(ch => ch?.merged_video_path) && (
+                              <Badge
+                                key="audio"
+                                label="Audio"
+                                onClick={() => {
                                   const audio = new Audio(audioInfo.path);
                                   audio.play();
-                                }
-                              }}
-                              style={{
-                                cursor: 'pointer',
-                                opacity: 1,
-                                border: '1px solid #333',
-                                background: '#333',
-                                color: '#fff',
-                                marginLeft: 8
-                              }}
-                            />
+                                }}
+                                style={{
+                                  cursor: 'pointer',
+                                  opacity: 1,
+                                  border: '1px solid #333',
+                                  background: '#333',
+                                  color: '#fff',
+                                  marginLeft: 8
+                                }}
+                              />
+                            )}
                           </>
                         );
                       }
@@ -1940,7 +1941,7 @@ const handleDownloadConfirm = async () => {
 
                 // AVI/JDR 모두 Audio 배지 추가
                 const isAVIorJDR = isAVI || lowerCaseName.endsWith('.jdr');
-                const audioBadge = isAVIorJDR && selectedSlackFile?.channels?.audio ? (
+                const audioBadge = isAVIorJDR && selectedSlackFile?.channels?.audio && selectedSlackFile?.analysis?.integrity?.damaged ? (
                   <Badge 
                     key="audio"
                     label={
@@ -1949,7 +1950,6 @@ const handleDownloadConfirm = async () => {
                       </div>
                     }
                     onClick={() => {
-                      // 슬랙 팝업에서는 항상 슬랙 오디오를 재생
                       handleAudioPlay('slack', selectedSlackFile);
                     }}
                     size="big"
