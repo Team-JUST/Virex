@@ -1923,7 +1923,7 @@ const handleDownloadConfirm = async () => {
 
                 // AVI/JDR 모두 Audio 배지 추가
                 const isAVIorJDR = isAVI || lowerCaseName.endsWith('.jdr');
-                const audioBadge = isAVIorJDR && selectedSlackFile?.channels?.audio && selectedSlackFile?.analysis?.integrity?.damaged ? (
+                const audioBadge = isAVIorJDR && selectedSlackFile?.channels?.audio ? (
                   <Badge 
                     key="audio"
                     label={
