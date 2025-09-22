@@ -1126,31 +1126,33 @@ const handleDownloadConfirm = async () => {
               <Loading />
             </div>
 
-            <div className="progress-bar-wrapper">
-              <div
-                className="progress-bar-track"
-                role="progressbar"
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-valuenow={progress}
-              >
-                <div className="progress-bar-fill" style={{ width: `${progress}%` }} />
+            {Array.isArray(results) && results.length > 1 && (
+              <div className="progress-bar-wrapper">
                 <div
-                  className="progress-bubble dynamic"
-                  style={{
-                    left: `${progress}%`,
-                    transform:
-                      progress === 0
-                        ? 'translateX(0) rotate(10deg)'
-                        : progress === 100
-                        ? 'translateX(-100%) rotate(10deg)'
-                        : 'translateX(-50%) rotate(10deg)',
-                  }}
+                  className="progress-bar-track"
+                  role="progressbar"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={progress}
                 >
-                  {progress}%
+                  <div className="progress-bar-fill" style={{ width: `${progress}%` }} />
+                  <div
+                    className="progress-bubble dynamic"
+                    style={{
+                      left: `${progress}%`,
+                      transform:
+                        progress === 0
+                          ? 'translateX(0) rotate(10deg)'
+                          : progress === 100
+                          ? 'translateX(-100%) rotate(10deg)'
+                          : 'translateX(-50%) rotate(10deg)',
+                    }}
+                  >
+                    {progress}%
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
           </>
         ) : !isRecovering && !recoveryDone ? (
           <>
