@@ -119,7 +119,6 @@ const [isDiskImage, setIsDiskImage] = useState(false);
     rollbackRef.current();
   }
 
-
 // 2) 복원 진행률 관련 이펙트
   useEffect(() => {
     window.__recoverGuard = { isRecovering, progress };
@@ -1122,37 +1121,56 @@ const handleDownloadConfirm = async () => {
               </button>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'center' }}>
-              <Loading />
-            </div>
-
-            {Array.isArray(results) && results.length > 1 && (
-              <div className="progress-bar-wrapper">
-                <div
-                  className="progress-bar-track"
-                  role="progressbar"
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                  aria-valuenow={progress}
-                >
-                  <div className="progress-bar-fill" style={{ width: `${progress}%` }} />
-                  <div
-                    className="progress-bubble dynamic"
-                    style={{
-                      left: `${progress}%`,
-                      transform:
-                        progress === 0
-                          ? 'translateX(0) rotate(10deg)'
-                          : progress === 100
-                          ? 'translateX(-100%) rotate(10deg)'
-                          : 'translateX(-50%) rotate(10deg)',
-                    }}
-                  >
-                    {progress}%
-                  </div>
+            {(() => {
+              const fileName = selectedFile?.name?.toLowerCase() || "";
+              const isAVI = fileName.endsWith('.avi');
+              const isMP4 = fileName.endsWith('.mp4');
+              const isJDR = fileName.endsWith('.jdr');
+              const isSingleMedia = (isAVI || isMP4 || isJDR);
+              return (
+                <div style={{ display: 'flex', justifyContent: 'center' }}>
+                  <Loading hasProgressBar={!isSingleMedia} isSingleMedia={isSingleMedia} />
                 </div>
-              </div>
-            )}
+              );
+            })()}
+
+            {(() => {
+              const fileName = selectedFile?.name?.toLowerCase() || "";
+              const isAVI = fileName.endsWith('.avi');
+              const isMP4 = fileName.endsWith('.mp4');
+              const isJDR = fileName.endsWith('.jdr');
+              const isSingleMedia = (isAVI || isMP4 || isJDR);
+              if (!isSingleMedia) {
+                return (
+                  <div className="progress-bar-wrapper">
+                    <div
+                      className="progress-bar-track"
+                      role="progressbar"
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-valuenow={progress}
+                    >
+                      <div className="progress-bar-fill" style={{ width: `${progress}%` }} />
+                      <div
+                        className="progress-bubble dynamic"
+                        style={{
+                          left: `${progress}%`,
+                          transform:
+                            progress === 0
+                              ? 'translateX(0) rotate(10deg)'
+                              : progress === 100
+                              ? 'translateX(-100%) rotate(10deg)'
+                              : 'translateX(-50%) rotate(10deg)',
+                        }}
+                      >
+                        {progress}%
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
+              return null;
+            })()}
           </>
         ) : !isRecovering && !recoveryDone ? (
           <>
