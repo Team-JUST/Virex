@@ -512,7 +512,6 @@ useEffect(() => {
 
         // carved 있으면 결과 화면 열고 그룹 오픈
         if (list.length > 0) {
-          setRecoveryDone(true);
           if (viewRef.current !== 'parser') {
             setView('result');
             setHistory(prev => prev[prev.length - 1] === 'result' ? prev : [...prev, 'result']);
