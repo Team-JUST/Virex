@@ -174,9 +174,9 @@ const [isDiskImage, setIsDiskImage] = useState(false);
 
 // 4) 결과 목록 → 카테고리 그룹핑 유틸/파생값
   function groupByCategory(list) {
-   return list.reduce((acc, file) => {
+    return list.reduce((acc, file) => {
      // file.category가 있으면 우선 사용
-     const cat = file.category || file.path.split(/[/\\]/)[1] || 'unknown';
+      const cat = file.category || file.path.split(/[/\\]/)[1] || 'unknown';
       if (!acc[cat]) acc[cat] = []
       acc[cat].push(file)
       return acc
@@ -196,10 +196,10 @@ const [isDiskImage, setIsDiskImage] = useState(false);
 
   useEffect(() => {
     if (!volumeSlack?.length) return;
-    if (openGroups?.[CARVED_TITLE]) return;
-    setOpenGroups({ ...openGroups, [CARVED_TITLE]: true });
-  }, [volumeSlack?.length, openGroups, CARVED_TITLE]);
-
+    setOpenGroups(prev =>
+      prev?.[CARVED_TITLE] ? prev : { ...prev, [CARVED_TITLE]: true }
+    );
+  }, [volumeSlack?.length]);
 
 // 5) 분석 선택/탭/다운로드 완료 등 결과 뷰 상태
   const [showComplete, setShowComplete] = useState(false);
@@ -213,7 +213,6 @@ const [isDiskImage, setIsDiskImage] = useState(false);
     }
   }, [recoveryDone, selectedAnalysisFile, results.length]);
 
-
 // 6) 라우팅/초기파일 자동시작 상태
   const location = useLocation();
   const initialFile = location.state?.file || null;
@@ -224,7 +223,6 @@ const [isDiskImage, setIsDiskImage] = useState(false);
   const [selectedSlackFile, setSelectedSlackFile] = useState(null);
   const [slackChannel, setSlackChannel] = useState(null);
   const [slackMedia, setSlackMedia] = useState({ type: null, src: '', fallback: null });
-
 
 // 8) 공통 유틸 (단위/코덱 포맷)
   const bytesToUnit = (bytes) => {
@@ -262,17 +260,16 @@ const [isDiskImage, setIsDiskImage] = useState(false);
 
   const toFileUrl = (p) => (p ? `file:///${encodeURI(String(p).replace(/\\/g, '/'))}` : '');
 
-
-async function listCarvedFromFS(baseDir) {
-  try {
-    if (!baseDir) return [];
-    const list = await window.api.listCarvedDir(baseDir);
-    return Array.isArray(list) ? list : [];
-  } catch (e) {
-    console.warn('[Debug] listCarvedFromFS failed:', e);
-    return [];
+  async function listCarvedFromFS(baseDir) {
+    try {
+      if (!baseDir) return [];
+      const list = await window.api.listCarvedDir(baseDir);
+      return Array.isArray(list) ? list : [];
+    } catch (e) {
+      console.warn('[Debug] listCarvedFromFS failed:', e);
+      return [];
+    }
   }
-}
 
   const getSlackForChannel = (file, ch) => {
     const info = file?.channels?.[ch];
@@ -320,10 +317,13 @@ async function listCarvedFromFS(baseDir) {
     if (!f) return '';
     const isAVIorJDR = f.name?.toLowerCase().endsWith('.avi') || f.name?.toLowerCase().endsWith('.jdr');
     if (isAVIorJDR) {
-      // selectedChannel이 없으면 front를 기본값으로 사용
       const ch = selectedChannel || (f.channels?.front ? 'front' : null);
       if (ch && f.channels?.[ch]) {
-        return toFileUrl(f.channels[ch].merged_video_path || '');
+        const channelInfo = f.channels[ch];
+        if (f.analysis?.integrity?.damaged && channelInfo?.full_video_path) {
+          return toFileUrl(channelInfo.full_video_path);
+        }
+        return toFileUrl(channelInfo.merged_video_path || '');
       }
     }
 
@@ -341,7 +341,7 @@ async function listCarvedFromFS(baseDir) {
   const isAVI = lowerCaseName.endsWith('.avi')
   const isJDR = lowerCaseName.endsWith('.jdr');
   const isMP4 = lowerCaseName.endsWith('.mp4');
-  const isMultiChannel = lowerCaseName.endsWith('.avi') || lowerCaseName.endsWith('.jdr');
+  const isMultiChannel = isAVI || isJDR;
   const isDamagedAndRecovered = Boolean(analysis?.integrity?.damaged && slack_info?.recovered && isMP4);
 
   const multiChannelSlackBytes = isMultiChannel && selectedResultFile?.channels
@@ -385,15 +385,10 @@ async function listCarvedFromFS(baseDir) {
     return pct > 0 && pct < 1 ? 1 : Math.round(pct);
   })();
 
-
 // 11) 카테고리 아이콘 매핑 및 아이콘 선택 헬퍼
   const categoryIcons = {
     driving: DrivingIcon,
     slack: SlackIcon,
-  };
-
-  const specialCategoryMap = {
-    shock: 'event',
   };
 
   const getCategoryIcon = (category) => {
@@ -405,7 +400,6 @@ async function listCarvedFromFS(baseDir) {
 
     return DrivingIcon;
   };
-
 
   // 12) 메인 IPC: 진행률/완료 리스너 등록
   useEffect(() => {
@@ -467,8 +461,8 @@ useEffect(() => {
       setTempOutputDir(dir);
 
       if (!isDiskImage) {
-       setVolumeSlack([]);
-       return;
+        setVolumeSlack([]);
+        return;
     }
 
       try {
@@ -519,7 +513,6 @@ useEffect(() => {
 
         // carved 있으면 결과 화면 열고 그룹 오픈
         if (list.length > 0) {
-          setRecoveryDone(true);
           if (viewRef.current !== 'parser') {
             setView('result');
             setHistory(prev => prev[prev.length - 1] === 'result' ? prev : [...prev, 'result']);
@@ -537,8 +530,6 @@ useEffect(() => {
 
     return () => offPath();
   }, [isDiskImage]);
-
-
 
   useEffect(() => {
     const offLog = window.api.onDownloadLog(line => {
@@ -808,10 +799,10 @@ const handleDownloadConfirm = async () => {
 
     await window.api.runDownload({
       e01Path: tempOutputDir,
-      choice,                // 'video' | 'both'
+      choice,
       downloadDir: selectedPath,
-      files: selectedFilesForDownload, // 선택된 파일만
-      subdirName            // ★ 이거 추가
+      files: selectedFilesForDownload,
+      subdirName
     });
 
     // 완료 처리는 onDownloadComplete에서
@@ -820,7 +811,6 @@ const handleDownloadConfirm = async () => {
     setIsDownloading(false);
   }
 };
-
 
   const handleDownloadCancel = () => {
     setShowDownloadPopup(false);
@@ -964,22 +954,21 @@ const handleDownloadConfirm = async () => {
   const [showRestartPopup, setShowRestartPopup] = useState(false);
   const [showClosePopup, setShowClosePopup] = useState(false);
 
- const openMediaViewer = (file) => {
-   const lower = String(file?.name || '').toLowerCase();
-   const href = toFileUrl(file?.path || '');
-   let media = { type: null, src: '' };
-   if (/\.(png|jpe?g|bmp|gif|webp)$/i.test(lower)) {
-     media = { type: 'image', src: href };
-       } else if (/\.(mp4|avi|mov|mkv|webm)$/i.test(lower)) {
-     media = { type: 'video', src: href };
-   } else if (/\.(h264|264|es)$/i.test(lower)) {
-     // 브라우저가 못 돌릴 수 있음 → 필요하면 안내만
-     media = { type: 'video', src: href };
-   }
-   setSlackChannel(null);
-   setSlackMedia(media);
-   setShowSlackPopup(true);  // 슬랙 팝업 재사용
- };
+  const openMediaViewer = (file) => {
+    const lower = String(file?.name || '').toLowerCase();
+    const href = toFileUrl(file?.path || '');
+    let media = { type: null, src: '' };
+    if (/\.(png|jpe?g|bmp|gif|webp)$/i.test(lower)) {
+      media = { type: 'image', src: href };
+        } else if (/\.(mp4|avi|mov|mkv|webm)$/i.test(lower)) {
+      media = { type: 'video', src: href };
+    } else if (/\.(h264|264|es)$/i.test(lower)) {
+      media = { type: 'video', src: href };
+    }
+    setSlackChannel(null);
+    setSlackMedia(media);
+    setShowSlackPopup(true);  // 슬랙 팝업 재사용
+  };
   const resultNameSet = useMemo(() => new Set(results.map(r => r.name)), [results]);
   useEffect(() => {
     const total = results.length + volumeSlack.length; 
@@ -992,21 +981,21 @@ const handleDownloadConfirm = async () => {
   const normalGroups = groupedResults; // 기존 결과
   const carvedGroup = useMemo(() => volumeSlack || [], [volumeSlack]);
   const mergedGroups = useMemo(() => {
-   return {
-     ...normalGroups,
-     ...(carvedGroup.length ? { [CARVED_TITLE]: carvedGroup } : {}),
-   };
- }, [normalGroups, carvedGroup]);
+    return {
+      ...normalGroups,
+      ...(carvedGroup.length ? { [CARVED_TITLE]: carvedGroup } : {}),
+    };
+  }, [normalGroups, carvedGroup]);
 
 
- const showFloatingDownload =
-  recoveryDone &&
-  !selectedAnalysisFile && 
-  view === 'result' &&
-  !showSlackPopup &&
-  !isDownloading &&
-  !showComplete &&
-  !isRecovering;
+  const showFloatingDownload =
+    recoveryDone &&
+    !selectedAnalysisFile && 
+    view === 'result' &&
+    !showSlackPopup &&
+    !isDownloading &&
+    !showComplete &&
+    !isRecovering;
 
   // 재진입/새로고침 시에도 JSON→FS 순으로 로드
   useEffect(() => {
@@ -1054,7 +1043,6 @@ const handleDownloadConfirm = async () => {
       }
     })();
   }, [recoveryDone, tempOutputDir, isDiskImage]);
-
 
   return (
     <div className={`recovery-page ${isDarkMode ? 'dark-mode' : ''}`}>
@@ -1215,34 +1203,55 @@ const handleDownloadConfirm = async () => {
                     const lowerCaseName = selectedResultFile?.name?.toLowerCase() || '';
                     const isAVI = lowerCaseName.endsWith('.avi');
                     const isJDR = lowerCaseName.endsWith('.jdr');
-                    if ((isAVI || isJDR) && availableChannels.length > 0) {
-                      return (
-                        <>
-                          {availableChannels.map((ch) => {
-                            const label = ch === 'front' ? 'Front' :
-                                         ch === 'rear' ? 'Rear' :
-                                         ch === 'side' ? 'Side' :
-                                         ch === 'merge' ? 'Merge' : ch;
-                            const active = selectedChannel === ch;
-                            return (
+                      let channelList = availableChannels;
+                      let audioInfo = null;
+                      if ((isAVI || isJDR) && selectedResultFile?.channels) {
+                        channelList = Object.entries(selectedResultFile.channels)
+                          .filter(([ch, info]) => ch !== 'audio' && info && (info.full_video_path || info.merged_video_path))
+                          .map(([ch]) => ch);
+                        if (selectedResultFile.channels.audio && selectedResultFile.channels.audio.slack && selectedResultFile.channels.audio.slack.path) {
+                          audioInfo = selectedResultFile.channels.audio.slack;
+                        }
+                      }
+                      if ((isAVI || isJDR) && (channelList.length > 0 || audioInfo)) {
+                        return (
+                          <>
+                            {channelList.map((ch) => {
+                              const label = ch === 'front' ? 'Front' :
+                                          ch === 'rear' ? 'Rear' :
+                                          ch === 'side' ? 'Side' :
+                                          ch === 'merge' ? 'Merge' : ch;
+                              const active = selectedChannel === ch;
+                              return (
+                                <Badge
+                                  key={ch}
+                                  label={label}
+                                  onClick={() => setSelectedChannel(ch)}
+                                />
+                              );
+                            })}
+                            {selectedResultFile?.analysis?.integrity?.damaged && audioInfo && audioInfo.path &&
+                              !Object.values(selectedResultFile.channels || {}).some(ch => ch?.merged_video_path) && (
                               <Badge
-                                key={ch}
-                                label={label}
-                                onClick={() => setSelectedChannel(ch)}
-                                style={{
-                                  cursor: 'pointer',
-                                  opacity: active ? 1 : 0.6,
-                                  border: active ? '1px solid #333' : '1px solid transparent',
+                                key="audio"
+                                label="Audio"
+                                onClick={() => {
+                                  const audio = new Audio(audioInfo.path);
+                                  audio.play();
                                 }}
                               />
-                            );
-                          })}
-                        </>
-                      );
-                    }
-                    return null;
-                  })()}
-                  <button className="close-btn" onClick={handleBack}>✕</button>
+                            )}
+                          </>
+                        );
+                      }
+                      return null;
+                    })()}
+                  <button className="close-btn" onClick={() => {
+                    if (typeof stopAudio === 'function') stopAudio();
+                    setSelectedAnalysisFile(null);
+                    setRecoveryDone(true);
+                    setView && setView('result');
+                  }}>✕</button>
                 </div>
               </div>
 
@@ -1276,9 +1285,23 @@ const handleDownloadConfirm = async () => {
                       >
                         <SlackIcon className="tab-icon" />
                         <span>
-                          {selectedResultFile?.analysis?.integrity?.damaged && selectedResultFile?.slack_info?.recovered
-                            ? '복원 정보'
-                            : '슬랙 정보'}
+                          {(() => {
+                            const lower = selectedResultFile?.name?.toLowerCase() || '';
+                            const isAVI = lower.endsWith('.avi');
+                            if (isAVI && selectedResultFile?.analysis?.integrity?.damaged) {
+                              const channels = Object.values(selectedResultFile.channels || {});
+                              const hasRecovered = channels.some(ch => ch?.full_video_path);
+                              const hasSlack = channels.some(ch => ch?.recovered);
+                              if (hasRecovered && hasSlack) return '복원/슬랙 정보';
+                              if (hasRecovered) return '복원 정보';
+                              return '슬랙 정보';
+                            }
+                            // MP4 등 기존 로직
+                            if (selectedResultFile?.analysis?.integrity?.damaged && selectedResultFile?.slack_info?.recovered) {
+                              return '복원 정보';
+                            }
+                            return '슬랙 정보';
+                          })()}
                         </span>
                       </button>
                       <button
@@ -1367,49 +1390,130 @@ const handleDownloadConfirm = async () => {
                           <span className="parser-info-value">{totalLabel}</span>
                         </div>
 
-                        {isDamagedAndRecovered ? (
-                          <>
-                            <div className="parser-info-row">
-                              <span className="parser-info-label">복원된 영상 크기</span>
-                              <span className="parser-info-value">{slackLabel}</span>
-                            </div>
-                            <div className="parser-info-row parser-info-row--withbar">
-                              <div className="data-bar-flex-row-between">
-                                <span className="parser-info-label">전체 영상 대비 복원 영상 비율</span>
-                                {slackPercent > 0 && (
-                                  <div className="data-bar-wrapper is-single is-narrow">
-                                    <div className="data-bar-used" style={{ width: `${slackPercent}%`, minWidth: '44px' }}>
-                                      <span className="data-bar-text">{slackPercent} %</span>
+                        {(() => {
+                          const lower = selectedResultFile?.name?.toLowerCase() || '';
+                          const isAVI = lower.endsWith('.avi');
+                          const isJDR = lower.endsWith('.jdr');
+                          if ((isAVI || isJDR) && selectedResultFile?.analysis?.integrity?.damaged) {
+                            const channels = Object.values(selectedResultFile.channels || {});
+                            const hasRecovered = channels.some(ch => ch?.full_video_path);
+                            const hasSlack = channels.some(ch => ch?.recovered);
+                            if (hasRecovered && hasSlack) {
+                              const recoveredSize = channels.filter(ch => ch?.full_video_size).reduce((sum, ch) => sum + unitToBytes(ch.full_video_size), 0);
+                              const totalSize = unitToBytes(selectedResultFile.size);
+                              const recoveredPercent = totalSize > 0 ? Math.round((recoveredSize / totalSize) * 100) : 0;
+                              const slackRateSum = channels.filter(ch => ch?.slack_rate).reduce((sum, ch) => sum + Number(ch.slack_rate), 0);
+                              const slackSize = channels.filter(ch => ch?.slack_size).reduce((sum, ch) => sum + unitToBytes(ch.slack_size), 0);
+                              return (
+                                <>
+                                  <div className="parser-info-row">
+                                    <span className="parser-info-label">복원된 영상 크기</span>
+                                    <span className="parser-info-value">{bytesToUnit(recoveredSize)}</span>
+                                  </div>
+                                  <div className="parser-info-row parser-info-row--withbar">
+                                    <div className="data-bar-flex-row-between">
+                                      <span className="parser-info-label">전체 영상 대비 복원 영상 비율</span>
+                                      {recoveredPercent > 0 && (
+                                        <div className="data-bar-wrapper is-single is-narrow">
+                                          <div className="data-bar-used" style={{ width: `${recoveredPercent}%`, minWidth: '44px' }}>
+                                            <span className="data-bar-text">{recoveredPercent} %</span>
+                                          </div>
+                                        </div>
+                                      )}
                                     </div>
                                   </div>
-                                )}
-                              </div>
-                            </div>
-                          </>
-                        ) : (
-                          <>
-                            <div className="parser-info-row">
-                              <span className="parser-info-label">원본 영상 크기</span>
-                              <span className="parser-info-value">{usedLabel}</span>
-                            </div>
-                            <div className="parser-info-row">
-                              <span className="parser-info-label">슬랙 영상 크기</span>
-                              <span className="parser-info-value">{slackLabel}</span>
-                            </div>
-                            <div className="parser-info-row parser-info-row--withbar">
-                              <div className="data-bar-flex-row-between">
-                                <span className="parser-info-label">전체 영상 대비 슬랙 영상 비율</span>
-                                {slackPercent > 0 && (
-                                  <div className="data-bar-wrapper is-single is-narrow">
-                                    <div className="data-bar-used" style={{ width: `${slackPercent}%`, minWidth: '44px' }}>
-                                      <span className="data-bar-text">{slackPercent} %</span>
+                                  <div className="parser-info-row">
+                                    <span className="parser-info-label">슬랙 영상 크기</span>
+                                    <span className="parser-info-value">{bytesToUnit(slackSize)}</span>
+                                  </div>
+                                  <div className="parser-info-row parser-info-row--withbar">
+                                    <div className="data-bar-flex-row-between">
+                                      <span className="parser-info-label">전체 영상 대비 슬랙 영상 비율</span>
+                                      {slackRateSum > 0 && (
+                                        <div className="data-bar-wrapper is-single is-narrow">
+                                          <div className="data-bar-used" style={{ width: `${Math.round(slackRateSum)}%`, minWidth: '44px' }}>
+                                            <span className="data-bar-text">{Math.round(slackRateSum)} %</span>
+                                          </div>
+                                        </div>
+                                      )}
                                     </div>
                                   </div>
-                                )}
+                                </>
+                              );
+                            }
+                            if (hasRecovered) {
+                              const recoveredSize = channels.filter(ch => ch?.full_video_size).reduce((sum, ch) => sum + unitToBytes(ch.full_video_size), 0);
+                              const totalSize = unitToBytes(selectedResultFile.size);
+                              const recoveredPercent = totalSize > 0 ? Math.round((recoveredSize / totalSize) * 100) : 0;
+                              return (
+                                <>
+                                  <div className="parser-info-row">
+                                    <span className="parser-info-label">복원된 영상 크기</span>
+                                    <span className="parser-info-value">{bytesToUnit(recoveredSize)}</span>
+                                  </div>
+                                  <div className="parser-info-row parser-info-row--withbar">
+                                    <div className="data-bar-flex-row-between">
+                                      <span className="parser-info-label">전체 영상 대비 복원 영상 비율</span>
+                                      {recoveredPercent > 0 && (
+                                        <div className="data-bar-wrapper is-single is-narrow">
+                                          <div className="data-bar-used" style={{ width: `${recoveredPercent}%`, minWidth: '44px' }}>
+                                            <span className="data-bar-text">{recoveredPercent} %</span>
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                </>
+                              );
+                            }
+                          }
+                          if (isDamagedAndRecovered) {
+                            return (
+                              <>
+                                <div className="parser-info-row">
+                                  <span className="parser-info-label">복원된 영상 크기</span>
+                                  <span className="parser-info-value">{slackLabel}</span>
+                                </div>
+                                <div className="parser-info-row parser-info-row--withbar">
+                                  <div className="data-bar-flex-row-between">
+                                    <span className="parser-info-label">전체 영상 대비 복원 영상 비율</span>
+                                    {slackPercent > 0 && (
+                                      <div className="data-bar-wrapper is-single is-narrow">
+                                        <div className="data-bar-used" style={{ width: `${slackPercent}%`, minWidth: '44px' }}>
+                                          <span className="data-bar-text">{slackPercent} %</span>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </>
+                            );
+                          }
+                          return (
+                            <>
+                              <div className="parser-info-row">
+                                <span className="parser-info-label">원본 영상 크기</span>
+                                <span className="parser-info-value">{usedLabel}</span>
                               </div>
-                            </div>
-                          </>
-                        )}
+                              <div className="parser-info-row">
+                                <span className="parser-info-label">슬랙 영상 크기</span>
+                                <span className="parser-info-value">{slackLabel}</span>
+                              </div>
+                              <div className="parser-info-row parser-info-row--withbar">
+                                <div className="data-bar-flex-row-between">
+                                  <span className="parser-info-label">전체 영상 대비 슬랙 영상 비율</span>
+                                  {slackPercent > 0 && (
+                                    <div className="data-bar-wrapper is-single is-narrow">
+                                      <div className="data-bar-used" style={{ width: `${slackPercent}%`, minWidth: '44px' }}>
+                                        <span className="data-bar-text">{slackPercent} %</span>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </>
+                          );
+                        })()}
                       </div>
                     </div>
 
@@ -1446,7 +1550,6 @@ const handleDownloadConfirm = async () => {
 
               <div className="result-wrapper">
                   <div className="result-scroll-area scrollbar-area" style={{ position: 'relative' }}>
-                    {/* 1) 상단 요약 / 결과 수 합계 — develop 유지 + (HEAD에서) 슬랙 용량만 추가 */}
                     {resultsLoading ? (
                       <div className="result-summary" style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
                         <span className="skeleton-bar result-skel-summary" />
@@ -1482,7 +1585,7 @@ const handleDownloadConfirm = async () => {
 
                           {openGroups[category] && (
                             <div className="result-file-list">
-                              {(files || []).filter(Boolean).map((file, index) => {
+                              {(files || []).filter(Boolean).map((file) => {
                                 if (!file) return null;
 
                                 // 일반 파일 처리
@@ -1507,7 +1610,7 @@ const handleDownloadConfirm = async () => {
                                   mp4SlackBytes = s.slack_size
                                     ? unitToBytes(s.slack_size)
                                     : Number(s.slack_rate) > 0 && totalBytes
-                                    ? Math.round(totalBytes * (Number(s.slack_rate) / 100)) // <- 필요 시 r<=1 정규화 고려
+                                    ? Math.round(totalBytes * (Number(s.slack_rate) / 100))
                                     : 0;
                                 }
 
@@ -1551,83 +1654,133 @@ const handleDownloadConfirm = async () => {
                                     <div className="result-file-info">
                                       <div className="result-file-title-row">
                                         {unsupported ? (
-                                            <>
-                                              <span className="text-button disabled" title="브라우저에서 재생 불가">
-                                                {file.name}
-                                              </span>
-                                              <VolBadge label="복원 불가" variant="gray" />
-                                            </>
+                                          <>
+                                            <span className="text-button disabled" title="브라우저에서 재생 불가">
+                                              {file.name}
+                                            </span>
+                                            <VolBadge label="복원 불가" variant="gray" />
+                                          </>
+                                        ) : (
+                                          isCarvedGroup ? (
+                                            <button className="text-button" onClick={() => openMediaViewer(file)}>
+                                              {file.name}
+                                            </button>
                                           ) : (
-                                            isCarvedGroup ? (
-                                                <button className="text-button" onClick={() => openMediaViewer(file)}>
-                                                  {file.name}
-                                                </button>
-                                              ) : (
-                                                <button className="text-button" onClick={() => handleFileClick(file.name)}>
-                                                  {file.name}
-                                                </button>
-                                              )
-                                          )}
-                                        {!isCarvedGroup && hasSlackBadge && (
-                                          file?.analysis?.integrity?.damaged ? (
-                                            file?.slack_info?.recovered ? (
-                                              <Badge label="복원 완료" variant="yellow" />
-                                            ) : (
-                                              <Badge label="손상" variant="red" />
-                                            )
-                                          ) : (
-                                            <Badge
-                                              label="슬랙"
-                                              style={{ cursor: 'pointer' }}
-                                              onClick={() => {
-                                                setSelectedSlackFile(file);
-                                                const isAVIorJDR = file.name.toLowerCase().endsWith('.avi') || file.name.toLowerCase().endsWith('.jdr');
-                                                if (isAVIorJDR) {
+                                            <button className="text-button" onClick={() => handleFileClick(file.name)}>
+                                              {file.name}
+                                            </button>
+                                          )
+                                        )}
+                                        {!isCarvedGroup && (
+                                          <>
+                                            {isAVI && file?.analysis?.integrity?.damaged && hasSlackBadge && (
+                                              <Badge
+                                                label="슬랙"
+                                                onClick={() => {
+                                                  setSelectedSlackFile(file);
                                                   setSlackChannel('front');
                                                   const media = getSlackForChannel(file, 'front');
                                                   setSlackMedia(media || { type: null, src: '' });
-                                                } else {
-                                                  setSlackChannel(null);
-                                                  setSlackMedia(mp4Media || { type: null, src: '' });
-                                                }
-                                                setShowSlackPopup(true);
-                                              }}
-                                              variant="blue"
-                                            />
-                                          )
+                                                  setShowSlackPopup(true);
+                                                }}
+                                                variant="blue"
+                                              />
+                                            )}
+                                            {file?.analysis?.integrity?.damaged && (
+                                              <Badge label="손상" variant="red" />
+                                            )}
+                                            {isAVI && file?.analysis?.integrity?.damaged && Object.values(file.channels || {}).some(ch => ch?.full_video_path) && (
+                                              <Badge label="복원 완료" variant="yellow" />
+                                            )}
+                                            {hasSlackBadge && !file?.analysis?.integrity?.damaged && (
+                                              <Badge
+                                                label="슬랙"
+                                                onClick={() => {
+                                                  setSelectedSlackFile(file);
+                                                  const isAVIorJDR = file.name.toLowerCase().endsWith('.avi') || file.name.toLowerCase().endsWith('.jdr');
+                                                  if (isAVIorJDR) {
+                                                    setSlackChannel('front');
+                                                    const media = getSlackForChannel(file, 'front');
+                                                    setSlackMedia(media || { type: null, src: '' });
+                                                  } else {
+                                                    setSlackChannel(null);
+                                                    setSlackMedia(mp4Media || { type: null, src: '' });
+                                                  }
+                                                  setShowSlackPopup(true);
+                                                }}
+                                                variant="blue"
+                                              />
+                                            )}
+                                            {isMP4 && file?.analysis?.integrity?.damaged && file?.slack_info?.recovered && (
+                                              <Badge label="복원 완료" variant="yellow" />
+                                            )}
+                                          </>
                                         )}
-                                      </div>
-
-                                     {isCarvedGroup
-                                      ? sizeLabel
-                                      : `${sizeLabel} ・ ${
-                                          file?.analysis?.integrity?.damaged && file?.slack_info?.recovered
-                                            ? '복원 비율'
-                                            : '슬랙 비율'
-                                        }: ${slackRatePercent} %`}
-
                                     </div>
+                                    {isCarvedGroup
+                                      ? sizeLabel
+                                      : (() => {
+                                          const isAviDamagedAndRecovered =
+                                            isAVI && file?.analysis?.integrity?.damaged &&
+                                            Object.values(file.channels || {}).some(ch => ch?.full_video_path);
+                                          const hasRecoveredSlack = isAVI && file?.analysis?.integrity?.damaged &&
+                                            Object.values(file.channels || {}).some(ch => ch?.recovered);
+                                          if (isAviDamagedAndRecovered && hasRecoveredSlack) {
+                                            // 복원 비율 계산
+                                            const recoveredSize = Object.values(file.channels || {})
+                                              .filter(ch => ch?.full_video_size)
+                                              .reduce((sum, ch) => sum + unitToBytes(ch.full_video_size), 0);
+                                            const totalSize = unitToBytes(file.size);
+                                            const recoveredPercent = totalSize > 0 ? Math.round((recoveredSize / totalSize) * 100) : 0;
+                                            // 슬랙 비율 계산 (채널별 slack_rate 합산)
+                                            const slackRateSum = Object.values(file.channels || {})
+                                              .filter(ch => ch?.slack_rate)
+                                              .reduce((sum, ch) => sum + Number(ch.slack_rate), 0);
+                                            return `${sizeLabel} ・ 복원 비율: ${recoveredPercent} % ・ 슬랙 비율: ${Math.round(slackRateSum)} %`;
+                                          }
+                                          if (isAviDamagedAndRecovered) {
+                                            const recoveredSize = Object.values(file.channels || {})
+                                              .filter(ch => ch?.full_video_size)
+                                              .reduce((sum, ch) => sum + unitToBytes(ch.full_video_size), 0);
+                                            const totalSize = unitToBytes(file.size);
+                                            const recoveredPercent = totalSize > 0 ? Math.round((recoveredSize / totalSize) * 100) : 0;
+                                            return `${sizeLabel} ・ 복원 비율: ${recoveredPercent} %`;
+                                          }
+                                          if (hasRecoveredSlack) {
+                                            const slackRateSum = Object.values(file.channels || {})
+                                              .filter(ch => ch?.slack_rate)
+                                              .reduce((sum, ch) => sum + Number(ch.slack_rate), 0);
+                                            return `${sizeLabel} ・ 슬랙 비율: ${Math.round(slackRateSum)} %`;
+                                          }
+                                          // 기존 MP4 복원/슬랙 비율
+                                          return `${sizeLabel} ・ ${
+                                            file?.analysis?.integrity?.damaged && file?.slack_info?.recovered
+                                              ? '복원 비율'
+                                              : '슬랙 비율'
+                                          }: ${slackRatePercent} %`;
+                                        })()
+                                    }
                                   </div>
-                                );
-                              })}
-                            </div>
-                          )}
-                        </div>
-                        );
-                      })
-                    )}
-
-                    {showFloatingDownload && (
-                      <div style={{ position: 'fixed', right: 70, bottom: 80, zIndex: 2000 }}>
-                        <Button variant="dark" onClick={handleDownload}>다운로드</Button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
                       </div>
-                    )}
-                  </div>
-                </div>
-            </>
-          )
-        ) : null}
+                      );
+                    })
+                  )}
 
+                  {showFloatingDownload && (
+                    <div style={{ position: 'fixed', right: 70, bottom: 80, zIndex: 2000 }}>
+                      <Button variant="dark" onClick={handleDownload}>다운로드</Button>
+                    </div>
+                  )}
+                </div>
+              </div>
+          </>
+        )
+      ) : null}
       </Box>
 
     {/* Alert 조건문 */}
@@ -1749,13 +1902,14 @@ const handleDownloadConfirm = async () => {
                   const label = ch === 'front' ? 'Front' : ch === 'rear' ? 'Rear' : 'Side';
                   const active = slackChannel === ch;
                   return (
-                    <Badge 
+                    <Badge
                       key={ch}
                       label={label}
                       onClick={() => {
                         setSlackChannel(ch);
                         setSlackMedia(media);
                       }}
+                      size="big"
                       style={{
                         cursor: 'pointer',
                         opacity: active ? 1 : 0.6,
@@ -1778,9 +1932,9 @@ const handleDownloadConfirm = async () => {
                       </div>
                     }
                     onClick={() => {
-                      // 슬랙 팝업에서는 항상 슬랙 오디오를 재생
                       handleAudioPlay('slack', selectedSlackFile);
                     }}
+                    size="big"
                     style={{
                       cursor: 'pointer',
                       opacity: currentAudio?.file?.name === selectedSlackFile?.name ? 1 : 0.6,
@@ -1800,6 +1954,7 @@ const handleDownloadConfirm = async () => {
                     key="audio"
                     label={<div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><span>Audio</span></div>}
                     onClick={() => handleAudioPlay('slack', selectedSlackFile)}
+                    size="big"
                     style={{
                       cursor: 'pointer',
                       opacity: currentAudio?.file?.name === selectedSlackFile?.name ? 1 : 0.6,
