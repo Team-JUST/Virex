@@ -2,7 +2,7 @@
 import re
 import os
 import logging
-from python_engine.core.recovery.mp4.get_slack_after_moov import get_slack_after_moov
+from python_engine.core.recovery.mp4.get_slack import get_slack
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +20,7 @@ def extract_mp4_audio(filepath, output_audio_dir, also_try_0x1000=True):
     try:
         with open(filepath, "rb") as f:
             buf = f.read()
-        slack, slack_offset, moov_data = get_slack_after_moov(buf)
+        slack, slack_offset, moov_data = get_slack(buf)
         if slack_offset is None:
             logger.error(f"{filepath} → moov 박스 없음(slack 없음)")
             return _fail_result()
