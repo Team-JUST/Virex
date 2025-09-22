@@ -196,9 +196,10 @@ const [isDiskImage, setIsDiskImage] = useState(false);
 
   useEffect(() => {
     if (!volumeSlack?.length) return;
-    if (openGroups?.[CARVED_TITLE]) return;
-    setOpenGroups({ ...openGroups, [CARVED_TITLE]: true });
-  }, [volumeSlack?.length, openGroups, CARVED_TITLE]);
+    setOpenGroups(prev =>
+      prev?.[CARVED_TITLE] ? prev : { ...prev, [CARVED_TITLE]: true }
+    );
+  }, [volumeSlack?.length]);
 
 // 5) 분석 선택/탭/다운로드 완료 등 결과 뷰 상태
   const [showComplete, setShowComplete] = useState(false);
