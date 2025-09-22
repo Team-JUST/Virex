@@ -6,7 +6,7 @@ import subprocess
 import json
 import math
 from python_engine.core.recovery.utils.ffmpeg_wrapper import convert_video, convert_audio
-from python_engine.core.recovery.mp4.get_slack_after_moov import get_slack_after_moov
+from python_engine.core.recovery.mp4.get_slack import get_slack
 from python_engine.core.recovery.utils.unit import bytes_to_unit
 from python_engine.core.recovery.mp4.extract_audio import extract_mp4_audio
 
@@ -26,8 +26,8 @@ H264_IFRAME_PATTERN = re.compile(b'\x00.{3}[\x25\x45\x65]\x88\x80')
 H264_PFRAME_PATTERN = re.compile(b'\x00\x00.{2}[\x21\x41\x61]\x9A')
 
 # H265 패턴 
-H265_IFRAME_PATTERN = re.compile(b'\x00{2,3}\x01\x26')
-H265_PFRAME_PATTERN = re.compile(b'\x00{2,3}\x01\x02')
+H265_IFRAME_PATTERN = re.compile(b'\x00.{3}\x26\x01')
+H265_PFRAME_PATTERN = re.compile(b'\x00\x00.{2}\x02\x01')
 
 def _process_one_mp4(path: str, h264_root: str, out_root: str):
     base = os.path.splitext(os.path.basename(path))[0]
@@ -395,7 +395,7 @@ def recover_mp4_slack(filepath, output_h264_dir, output_video_dir, target_format
         jpeg_path = os.path.join(output_video_dir, f"{filename}_slack.jpeg")
         audio_dir = os.path.join(output_video_dir, "audio")
         
-        slack, slack_offset, moov_data = get_slack_after_moov(data)
+        slack, slack_offset, moov_data = get_slack(data)
         
         if slack_offset is None:
             logger.warning(f"{filename} → moov/슬랙 탐지 실패 → 전체 스캔 fallback")
