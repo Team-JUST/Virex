@@ -304,15 +304,32 @@ def get_integrity_info(file_path):
 
         # moov 박스
         moov_boxes = find_all_boxes(data, 'moov')
+        moov_present = False
+        moov_size_zero = False
+
         if not moov_boxes:
-            result["damaged"] = True
-            result["reasons"].append("[필수 박스 누락] 'moov' 없음")
-        else:
+            moov_present = True
             for _, moov_size in moov_boxes:
                 if moov_size == 0:
-                    result["damaged"] = True
-                    result["reasons"].append("[박스 크기 이상] 'moov' size=0")
+                    moov_size_zero = True
                     break
+        else:
+            raw_idx = data.find(b'moov')
+            if raw_idx != -1 and raw_idx >= 4:
+                try:
+                    sz = struct.unpack('>I', data[raw_idx - 4:raw_idx])[0]
+                    if sz >= 8 and (raw_idx - 4 + sz) <= len(data):
+                        moov_present = True
+                except Exception:
+                    pass
+        
+        if not moov_present:
+            result["damaged"] = True
+            result["reasons"].append("[필수 박스 누락] 'moov' 없음")
+        elif moov_size_zero:
+            result["damaged"] = True
+            result["reasons"].append("[박스 크기 이상] 'moov' size=0")
+
 
         # mdat 박스
         mdat_boxes = find_all_boxes(data, 'mdat')

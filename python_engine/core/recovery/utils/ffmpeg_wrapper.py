@@ -18,6 +18,9 @@ def convert_video(input_path, output_path, extra_args=None, use_gpu=True, wait=T
             fps = meta_fps
         if not (fps and 10 <= fps <= 120):
             fps = 30
+        else:
+            if abs(fps - 30) > 5:
+                fps = 30
         codec = meta.get('codec', 'unknown')
         if codec == 'h264':
             vcodec = 'libx264'
