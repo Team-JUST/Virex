@@ -90,6 +90,15 @@ def handle_single_video_file(filepath, output_dir):
         if 'video_metadata' in channels_only and 'analysis' in result and 'basic' in result['analysis']:
             result['analysis']['basic']['video_metadata'] = channels_only['video_metadata']
             del channels_only['video_metadata']
+            
+        has_split_video = any(
+            v.get('full_video_path') for v in channels_only.values() if isinstance(v, dict)
+        )
+        if has_split_video and os.path.exists(original_path):
+            try:
+                os.remove(original_path)
+            except Exception:
+                pass
     elif ext == '.jdr':
         # JDR 파일은 extract_jdr을 사용하여 복원
         jdr_info = recover_jdr(

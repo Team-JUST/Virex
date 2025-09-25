@@ -10,9 +10,7 @@ from typing import Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
-# =========================================================
 # 공통 유틸
-# =========================================================
 def _nonempty_file(p: Optional[str]) -> Optional[str]:
     try:
         if p and os.path.isfile(p) and os.path.getsize(p) > 0:
@@ -55,9 +53,7 @@ def _find_all_mm(mm: mmap.mmap, needle: bytes):
         yield i
         i += L
 
-# =========================================================
 # ffmpeg / ffprobe
-# =========================================================
 def _search_bin_upwards(start_dir: str) -> Optional[str]:
     cur = os.path.abspath(start_dir)
     for _ in range(6):
@@ -95,15 +91,13 @@ def _run(cmd: List[str]) -> Tuple[int, str, str]:
 
 def ffprobe_json(path: str) -> Optional[Dict]:
     cmd = [_ffprobe_path(), "-v", "error", "-print_format", "json",
-           "-show_format", "-show_streams", path]
+            "-show_format", "-show_streams", path]
     code, out, _ = _run(cmd)
     if code != 0: return None
     try: return json.loads(out)
     except: return None
 
-# =========================================================
 # AVI utils & carver (정확성 우선)
-# =========================================================
 def _read_u32_le(mm, off: int, N: int | None = None):
     if N is None: N = len(mm)
     if off < 0 or off + 4 > N: return None
@@ -142,10 +136,10 @@ def _find_list_chunk(mm, start: int, end: int, target: bytes):
         pos = max(hit + 1, logical_end)
 
 def carve_avi_from_bin(bin_path: str, out_dir: Optional[str] = None,
-                       max_files: int = 1000,
-                       max_total_len: int = 2_000_000_000,
-                       require_movi: bool = True,
-                       require_hdrl: bool = True) -> List[Dict]:
+                        max_files: int = 1000,
+                        max_total_len: int = 2_000_000_000,
+                        require_movi: bool = True,
+                        require_hdrl: bool = True) -> List[Dict]:
     out = []
     out_dir = _ensure_outdir(bin_path, out_dir)
     f, mm = _open_mmap(bin_path)
@@ -190,9 +184,7 @@ def carve_avi_from_bin(bin_path: str, out_dir: Optional[str] = None,
         mm.close(); f.close()
     return out
 
-# =========================================================
 # MP4 utils & carver (정확성 우선)
-# =========================================================
 def _read_u32_be(mm, off: int, N: int):
     if off < 0 or off + 4 > N: return None
     return struct.unpack(">I", mm[off:off+4])[0]
@@ -243,10 +235,10 @@ def _looks_playable(path: str) -> bool:
     return any(s.get("codec_type") == "video" for s in streams)
 
 def carve_mp4_from_bin(bin_path: str, out_dir: Optional[str] = None,
-                       max_files: int = 1000,
-                       max_total_len: int = 1_500_000_000,
-                       require_moov: bool = True,
-                       allow_fragmented: bool = True) -> List[Dict]:
+                        max_files: int = 1000,
+                        max_total_len: int = 1_500_000_000,
+                        require_moov: bool = True,
+                        allow_fragmented: bool = True) -> List[Dict]:
     out: List[Dict] = []
     out_dir = _ensure_outdir(bin_path, out_dir)
     f, mm = _open_mmap(bin_path)
@@ -274,7 +266,7 @@ def carve_mp4_from_bin(bin_path: str, out_dir: Optional[str] = None,
 
             frag_ok = (saw_moof and saw_mdat)
             ok = saw_moov and (saw_mdat or (allow_fragmented and frag_ok)) if require_moov \
-                 else (saw_mdat or frag_ok or saw_moov)
+                else (saw_mdat or frag_ok or saw_moov)
             if not ok or last_good_end is None: continue
 
             dump_end = min(last_good_end, box_start + max_total_len, N)
@@ -304,9 +296,7 @@ def carve_mp4_from_bin(bin_path: str, out_dir: Optional[str] = None,
         mm.close(); f.close()
     return out
 
-# =========================================================
 # JDR(Annex-B H.264/H.265) ES 카버 + remux
-# =========================================================
 START3, START4 = b"\x00\x00\x01", b"\x00\x00\x00\x01"
 
 def _iter_startcodes_mm(mm) -> int:
@@ -343,7 +333,7 @@ def _remux_es_to_mp4(es_path: str, codec: str, out_dir: str) -> Optional[str]:
     out_path = os.path.join(out_dir, f"{stem}.mp4")
     fmt = "h264" if codec == "h264" else "hevc"
     cmd = [_ffmpeg_path(), "-y", "-loglevel", "warning", "-f", fmt, "-i", es_path,
-           "-c", "copy", "-movflags", "+faststart", out_path]
+            "-c", "copy", "-movflags", "+faststart", out_path]
     code, _, _ = _run(cmd)
     return _nonempty_file(out_path) if code == 0 else None
 
@@ -438,14 +428,12 @@ def carve_jdr_from_bin(
 
     return out
 
-# =========================================================
 # Remux/Fix 파이프라인
-# =========================================================
 def remux_avi_to_mp4(input_path,out_dir):
     stem=os.path.splitext(os.path.basename(input_path))[0]
     out_path=os.path.join(out_dir,f"{stem}.mp4")
     cmd=[_ffmpeg_path(),"-y","-loglevel","warning","-i",input_path,
-         "-c:v","copy","-c:a","copy","-movflags","+faststart",out_path]
+        "-c:v","copy","-c:a","copy","-movflags","+faststart",out_path]
     code,_,_= _run(cmd)
     return _nonempty_file(out_path) if code==0 else None
 
@@ -453,8 +441,8 @@ def fix_or_remux_mp4(input_path,out_dir):
     stem=os.path.splitext(os.path.basename(input_path))[0]
     out_path=os.path.join(out_dir,f"{stem}_fixed.mp4")
     cmd=[_ffmpeg_path(),"-y","-loglevel","warning","-err_detect","ignore_err",
-         "-fflags","+genpts","-i",input_path,
-         "-c:v","copy","-c:a","copy","-movflags","+faststart",out_path]
+        "-fflags","+genpts","-i",input_path,
+        "-c:v","copy","-c:a","copy","-movflags","+faststart",out_path]
     code,_,_= _run(cmd)
     return _nonempty_file(out_path) if code==0 else None
 
@@ -504,9 +492,7 @@ def rebuild_carved_videos(bin_path, carved_list, force_fix: bool = False, fixed_
         })
     return results
 
-# =========================================================
-# Auto pipelines (이벤트 로그 포함)
-# =========================================================
+# Auto pipelines
 def _dir_is_carvable(d: str) -> bool:
     if not os.path.isdir(d): return False
     if os.path.isfile(os.path.join(d, "partition_slack.json")): return True
@@ -617,28 +603,35 @@ def auto_carve_from_dir(bin_dir: str, max_files_per_bin=1000) -> Dict:
             "jdr": jdr
         })
 
-    return {
-        "ok": True,
-        "inputs": len(bin_list),
-        "carved_total": carved_total,
-        "rebuilt_total": rebuilt_total,
-        "outputs": {
-            "carved_dir": carved_dir,
-            "fixed_dir": (fixed_dir if force_fix and fixed_dir != carved_dir else carved_dir)
-        },
-        "items": items
-    }
+        if carved_total == 0 and os.path.isdir(carved_dir):
+            import shutil
+            try:
+                shutil.rmtree(carved_dir)
+            except Exception as e:
+                logger.warning(f"carved 폴더 삭제 실패: {e}")
+
+        return {
+            "ok": True,
+            "inputs": len(bin_list),
+            "carved_total": carved_total,
+            "rebuilt_total": rebuilt_total,
+            "outputs": {
+                "carved_dir": carved_dir,
+                "fixed_dir": (fixed_dir if force_fix and fixed_dir != carved_dir else carved_dir)
+            },
+            "items": items
+        }
 
 def carve_everything(base_dir: str,
-                     max_files_per_bin: int = 1000,
-                     ffmpeg_dir_override: Optional[str] = None) -> Dict:
+                    max_files_per_bin: int = 1000,
+                    ffmpeg_dir_override: Optional[str] = None) -> Dict:
     if ffmpeg_dir_override:
         os.environ["VIREX_FFMPEG_DIR"] = ffmpeg_dir_override
 
     base_dir = os.path.abspath(base_dir)
     results = {"ok": True, "base_dir": base_dir,
-               "visited_dirs": 0, "targets": [],
-               "summary": {"inputs": 0,"carved_total": 0,"rebuilt_total": 0}}
+                "visited_dirs": 0, "targets": [],
+                "summary": {"inputs": 0,"carved_total": 0,"rebuilt_total": 0}}
 
     for cur, dirs, files in os.walk(base_dir):
         results["visited_dirs"] += 1
@@ -654,9 +647,7 @@ def carve_everything(base_dir: str,
                 results["targets"].append({"ok": False,"dir": cur,"error": str(e)})
     return results
 
-# =========================================================
 # 실행 진입점
-# =========================================================
 if __name__=="__main__":
     print(f"[VOL_CARVER] __file__={__file__}", file=sys.stderr, flush=True)
     print(f"[VOL_CARVER] argv: {sys.argv}", file=sys.stderr, flush=True)

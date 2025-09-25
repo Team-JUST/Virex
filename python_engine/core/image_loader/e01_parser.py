@@ -154,7 +154,6 @@ def handle_avi_file(name, filepath, data, file_obj, output_dir, category):
 
     origin_video_path = avi_info.get('source_path', avi_info.get('origin_path', original_path))
     channels_only = {k: v for k, v in avi_info.items() if isinstance(v, dict)}
-    
     result = {
         'name': name,
         'path': filepath,
@@ -167,6 +166,16 @@ def handle_avi_file(name, filepath, data, file_obj, output_dir, category):
     if 'video_metadata' in channels_only and 'analysis' in result and 'basic' in result['analysis']:
         result['analysis']['basic']['video_metadata'] = channels_only['video_metadata']
         del channels_only['video_metadata']
+
+    has_split_video = any(
+        v.get('full_video_path') for v in channels_only.values() if isinstance(v, dict)
+    )
+    if has_split_video and os.path.exists(original_path):
+        try:
+            os.remove(original_path)
+        except Exception:
+            pass
+
     return result
 
 def handle_jdr_file(name, filepath, data, file_obj, output_dir, category):
