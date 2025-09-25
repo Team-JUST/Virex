@@ -344,5 +344,59 @@ def get_integrity_info(file_path):
                     break
 
         return result
+    
+    elif ext == ".jdr":
+        # JDR 파일 무결성 간단 체크: 시그니처 및 구조
+        # 1. 최소 길이, 2. 1VEJ 시그니처, 3. 블록 테이블, 4. 슬랙 offset 등
+        if len(data) < 64:
+            result["damaged"] = True
+            result["reasons"].append("[헤더 손상] 파일 길이 부족")
+            return result
+        sig_offset = data.find(b'1VEJ')
+        if sig_offset == -1:
+            result["damaged"] = True
+            result["reasons"].append("[시그니처 손상] 1VEJ 시그니처 없음")
+            return result
+        count_offset = sig_offset + 4
+        if count_offset + 4 > len(data):
+            result["damaged"] = True
+            result["reasons"].append("[헤더 손상] 블록 개수 위치가 데이터 범위를 벗어남")
+            return result
+        import struct
+        try:
+            total_blocks = struct.unpack('<I', data[count_offset:count_offset+4])[0]
+        except Exception:
+            result["damaged"] = True
+            result["reasons"].append("[헤더 손상] 블록 개수 파싱 실패")
+            return result
+        block_table_offset = count_offset + 4 + 0x14 * (total_blocks - 1)
+        if block_table_offset + 4 > len(data):
+            result["damaged"] = True
+            result["reasons"].append("[헤더 손상] 마지막 블록 오프셋 위치가 데이터 범위를 벗어남")
+            return result
+        try:
+            last_block_offset_raw = struct.unpack('<I', data[block_table_offset:block_table_offset+4])[0]
+            last_block_offset = last_block_offset_raw >> 4
+        except Exception:
+            result["damaged"] = True
+            result["reasons"].append("[헤더 손상] 마지막 블록 오프셋 파싱 실패")
+            return result
+        slack_offset_ptr = last_block_offset + 0xC8
+        if slack_offset_ptr + 4 > len(data):
+            result["damaged"] = True
+            result["reasons"].append("[헤더 손상] 슬랙 offset 위치가 데이터 범위를 벗어남")
+            return result
+        try:
+            slack_offset = struct.unpack('<I', data[slack_offset_ptr:slack_offset_ptr+4])[0]
+        except Exception:
+            result["damaged"] = True
+            result["reasons"].append("[헤더 손상] 슬랙 offset 파싱 실패")
+            return result
+        if slack_offset > len(data):
+            result["damaged"] = True
+            result["reasons"].append("[헤더 손상] 슬랙 시작 offset이 데이터 범위를 벗어남")
+            return result
+        return result
 
     return result
+    
