@@ -7,6 +7,7 @@ import json
 import logging
 from python_engine.core.recovery.utils.unit import bytes_to_unit
 from python_engine.core.recovery.utils import ffmpeg_wrapper
+from python_engine.core.analyzer.integrity import get_integrity_info
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +62,7 @@ def find_next(data, start, sigs):
 
 def parse_timestamp(data):
     if len(data) < 20:
-        return None  # 또는 적절한 기본값/예외 처리
+        return None
     YYYY = struct.unpack('<H', data[4:6])[0]
     MM = struct.unpack('<H', data[6:8])[0]
     DD = struct.unpack('<H', data[10:12])[0]
@@ -92,70 +93,35 @@ class AudioChunk:
         self.timestamp = timestamp
         self.signature = signature  # 00AD, 01AD, 02AD
 
-def find_total_blocks_from_1vej(data):
-    """파일 맨 앞에서 제일 처음 나오는 1VEJ 시그니처를 찾고 4바이트 뒤에서 빅 엔디안으로 총 블록 개수를 읽는 함수"""
+def classify_normal_slack_regions(data):
+    # total block count 계산
     signature = b'1VEJ'
     offset = data.find(signature)
     if offset == -1:
-        logger.warning("1VEJ signature not found in data")
-        return None
-    
+        return data, b''
     count_offset = offset + len(signature)
     if count_offset + 4 > len(data):
-        logger.warning("Not enough data after 1VEJ signature to read block count")
-        return None
-    
-    total_blocks_raw = struct.unpack('<I', data[count_offset:count_offset + 4])[0]
-    # 16진수로 끝에 0이 하나 더 붙는 경우(0x6000 등) 0x10으로 나눠서 실제 값으로 변환
-    if total_blocks_raw % 0x10 == 0:
-        total_blocks = total_blocks_raw // 0x10
-    else:
-        total_blocks = total_blocks_raw
-    logger.info(f"Found total blocks from first 1VEJ at offset {offset}: {total_blocks} (raw: {total_blocks_raw})")
-    return total_blocks
-
-def find_1bej_blocks(data):
-    """1BEJ 블록들을 찾아서 위치 목록 반환"""
-    signature = b'1BEJ'
-    blocks = []
-    offset = 0
-    
-    while True:
-        pos = data.find(signature, offset)
-        if pos == -1:
-            break
-        blocks.append(pos)
-        offset = pos + len(signature)
-    
-    return blocks
-
-def classify_normal_slack_regions(data):
-    total_blocks = find_total_blocks_from_1vej(data)
-    if total_blocks is None:
-        print("[슬랙 offset] 블록 개수 정보를 찾을 수 없습니다.")
+        print("[슬랙 offset] 블록 개수 위치가 데이터 범위를 벗어납니다.")
         return data, b''
+    total_blocks = struct.unpack('<I', data[count_offset:count_offset + 4])[0]
 
-    # 2. 블록 count 정보 이후로부터 0x14 * (n-1)만큼 오프셋 이동
-    signature = b'1VEJ'
-    offset = data.find(signature)
-    if offset == -1:
-        print("[슬랙 offset] 1VEJ 시그니처를 찾을 수 없습니다.")
-        return data, b''
-    count_offset = offset + len(signature)
+    # 블록 count 정보 이후로부터 0x14 * (n-1)만큼 이동    
     block_table_offset = count_offset + 4 + 0x14 * (total_blocks - 1)
     if block_table_offset + 4 > len(data):
         print("[슬랙 offset] 마지막 블록 오프셋 위치가 데이터 범위를 벗어납니다.")
         return data, b''
-    # block_table_offset에서 4바이트 리틀엔디안으로 읽고, 0x10으로 나눔
+    
+    # block_table_offset에서 4바이트 리틀엔디안으로 읽고, 4비트 시프트하여 실제 오프셋 계산
     last_block_offset_raw = struct.unpack('<I', data[block_table_offset:block_table_offset+4])[0]
-    last_block_offset = last_block_offset_raw // 0x10
+    last_block_offset = last_block_offset_raw >> 4
 
     # 마지막 블록 오프셋에서 0xC8만큼 이동
     slack_offset_ptr = last_block_offset + 0xC8
     if slack_offset_ptr + 4 > len(data):
         print("[슬랙 offset] 슬랙 offset 위치가 데이터 범위를 벗어납니다.")
         return data, b''
-    # 슬랙 offse
+    
+    # 슬랙 offset
     slack_offset = struct.unpack('<I', data[slack_offset_ptr:slack_offset_ptr+4])[0]
     if slack_offset > len(data):
         print("[슬랙 offset] 슬랙 시작 offset이 데이터 범위를 벗어납니다.")
@@ -165,7 +131,6 @@ def classify_normal_slack_regions(data):
     return normal_data, slack_data
 
 def calculate_fps(chunks):
-    """I-frame부터 다음 I-frame까지의 프레임 수를 세서 fps 계산"""
     frame_counts = []
     count = 0
 
@@ -208,7 +173,6 @@ def _recover_channel_data(data, label, output_dir, save_audio=True):
     }
 
     def process_region_data(region_data, region_type):
-        """특정 영역(normal/slack) 데이터 처리"""
         if not region_data:
             return
             
@@ -332,16 +296,16 @@ def _recover_channel_data(data, label, output_dir, save_audio=True):
     }
 
 def recover_jdr(input_jdr, base_dir, target_format='mp4'):
+    integrity = get_integrity_info(input_jdr)
     try:
         with open(input_jdr, 'rb') as f:
             data = f.read()
     except FileNotFoundError:
-        return {}
+        return {"integrity": integrity}
     except Exception as e:
-        return {}
+        return {"integrity": integrity}
 
     output_root = base_dir
-
 
     results = {}
     labels = ['front', 'rear', 'side']
@@ -539,5 +503,7 @@ def recover_jdr(input_jdr, base_dir, target_format='mp4'):
             logger.info(f"Removed temporary directory: {temp_base_dir}")
     except Exception as e:
         logger.warning(f"Could not remove temp directory {temp_base_dir}: {e}")
+
+    results["integrity"] = integrity
 
     return results
