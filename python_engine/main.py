@@ -1,3 +1,4 @@
+
 import os
 import sys
 import json
@@ -6,8 +7,18 @@ from typing import Optional, List, Iterable, Set
 from python_engine.core.image_loader.e01_parser import extract_videos_from_e01
 from python_engine.core.output.download_frame import download_frames
 from python_engine.core.image_loader.single_video_parser import extract_from_single_video
+from python_engine.core.recovery.vol_recover.vol_carver import auto_carve_from_dir
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+def resource_path(relative_path):
+    if hasattr(sys, '_MEIPASS'):
+        return os.path.join(sys._MEIPASS, relative_path)
+    return os.path.join(os.path.abspath("."), relative_path)
+
+# ffmpeg, ffprobe 경로
+ffmpeg_path = resource_path("bin/ffmpeg.exe")
+ffprobe_path = resource_path("bin/ffprobe.exe")
 
 def _load_selected_names(json_path: str) -> Set[str]:
     with open(json_path, "r", encoding="utf-8") as f:
@@ -28,9 +39,9 @@ def _to_selected_set(selected: Optional[object]) -> Optional[Set[str]]:
     return None
 
 def main(e01_path: str,
-         choice: str = 'video',
-         download_dir: Optional[str] = None,
-         selected: Optional[List[str]] = None):
+        choice: str = 'video',
+        download_dir: Optional[str] = None,
+        selected: Optional[List[str]] = None):
 
     selected_set = _to_selected_set(selected)
 
@@ -75,11 +86,9 @@ def main(e01_path: str,
     if not choice or not download_dir:
         return
 
-    # ---------------------- VIDEO / BOTH ----------------------
     if choice in ("video", "both"):
         print("영상 저장 시작", file=sys.stderr)
 
-        # ✅ 분석 결과 로드
         with open(tmp_json_path, 'r', encoding='utf-8') as rf:
             infos = json.load(rf)
 
@@ -93,18 +102,13 @@ def main(e01_path: str,
                 return False
 
         def _get_orig_src(info: dict, base_dir: str) -> Optional[str]:
-            """
-            analysis.json 구조 차이를 흡수해 원본(복구본) 영상 경로를 찾아낸다.
-            """
             candidates: List[str] = []
 
-            # 1) 평범한 키들
             for k in ["recoveredPath", "recovered_path", "path", "video_path", "src", "source", "output_path"]:
                 v = info.get(k)
                 if isinstance(v, str) and v:
                     candidates.append(v)
 
-            # 2) nested 구조 (rebuilt/jdr 리스트)
             rb = info.get("rebuilt") or []
             if isinstance(rb, list):
                 for x in rb:
@@ -121,7 +125,6 @@ def main(e01_path: str,
                         if isinstance(p, str) and p:
                             candidates.append(p)
 
-            # 3) name + category로 추정 경로
             name = os.path.basename(info.get("name", "") or "")
             cat  = (info.get("category") or info.get("group") or "").strip()
             if name:
@@ -129,7 +132,6 @@ def main(e01_path: str,
                     candidates.append(os.path.join(base_dir, cat, name))
                 candidates.append(os.path.join(base_dir, name))
 
-            # 4) 절대/상대 모두 검사
             for c in candidates:
                 if _isfile(c):
                     return c
@@ -137,7 +139,6 @@ def main(e01_path: str,
                 if _isfile(abs2):
                     return abs2
 
-            # 5) 최후: 전체 walk 후 name 매칭
             if name:
                 for root, _, files in os.walk(base_dir):
                     if name in files:
@@ -146,7 +147,6 @@ def main(e01_path: str,
             return None
 
         def _get_slack_src(sinfo: dict) -> Optional[str]:
-            # 슬랙 경로 키를 관대하게 처리
             return (
                 sinfo.get("video_path")
                 or sinfo.get("video")
@@ -158,16 +158,13 @@ def main(e01_path: str,
         copied_slack = 0
 
         for info in infos:
-            # 선택 매칭은 "원본 이름" 기준
             name_orig = os.path.basename(info.get("name", ""))
             name_key  = _lower(name_orig)
             if selected_set is not None and name_key not in selected_set:
                 continue
 
-            # 하위 폴더(Driving/Event 등) 보존
             category = (info.get("category") or info.get("group") or "").strip()
 
-            # ---- 원본(복구본) 복사 ----
             src_video = _get_orig_src(info, output_dir)
             if src_video:
                 dst_video = (
@@ -178,10 +175,8 @@ def main(e01_path: str,
                 shutil.copy2(src_video, dst_video)
                 copied += 1
 
-            # ---- 슬랙 영상 복사 ----
             s_info = info.get("slack_info") or {}
             s_src = _get_slack_src(s_info)
-            # 플래그가 False여도 실제 파일이 존재하면 복사
             if s_src and os.path.isfile(s_src):
                 root, ext = os.path.splitext(name_orig)
                 slack_name = f"{root}_slack{ext}"
@@ -194,16 +189,13 @@ def main(e01_path: str,
                 shutil.copy2(s_src, dst_slack)
                 copied_slack += 1
 
-        # 통계 로그
         print(json.dumps(
             {"event": "download_stats", "copied": copied, "copied_slack": copied_slack},
             ensure_ascii=False
         ), flush=True)
 
         print("영상 저장 완료.", file=sys.stderr)
-    # ---------------------------------------------------------
 
-    # ---------------------- FRAMES / BOTH ---------------------
     if choice in ("frames", "both"):
         print("프레임 ZIP 저장 시작", file=sys.stderr)
 
@@ -225,9 +217,7 @@ def main(e01_path: str,
 
         download_frames(items, download_dir=download_dir)
         print("프레임 저장 완료.", file=sys.stderr)
-    # ---------------------------------------------------------
 
-    # 임시폴더 정리: 캐시가 아닐 때만 삭제
     if (choice and download_dir) and (not is_cached_analysis):
         shutil.rmtree(output_dir, ignore_errors=True)
         print(f"모든 파일이 '{download_dir}'에 저장되었고, 임시 폴더를 정리했습니다.", file=sys.stderr)
