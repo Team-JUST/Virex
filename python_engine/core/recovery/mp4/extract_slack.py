@@ -26,8 +26,8 @@ H264_IFRAME_PATTERN = re.compile(b'\x00.{3}[\x25\x45\x65]\x88\x80')
 H264_PFRAME_PATTERN = re.compile(b'\x00\x00.{2}[\x21\x41\x61]\x9A')
 
 # H265 패턴 
-H265_IFRAME_PATTERN = re.compile(b'\x00.{3}\x26\x01')
-H265_PFRAME_PATTERN = re.compile(b'\x00\x00.{2}\x02\x01')
+H265_IFRAME_PATTERN = re.compile(b'\x00.{3}\x26\x01[\x20\xAC]')
+H265_PFRAME_PATTERN = re.compile(b'\x00.{3}\x02\x01[\x40\xD0]')
 
 def _process_one_mp4(path: str, h264_root: str, out_root: str):
     base = os.path.splitext(os.path.basename(path))[0]
@@ -193,7 +193,7 @@ def extract_sps_pps_anywhere(data):
     else:
         return b''
 
-def extract_frames(slack, offset, sps_pps, output_path, codec='H264'):
+def extract_frames(slack, offset, sps_pps, output_path, codec):
     matches = []
     has_i_frame = False
 
