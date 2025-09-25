@@ -318,7 +318,11 @@ def extract_videos_from_e01(e01_path):
                     cmd += ["--ffmpeg-dir", ffmpeg_dir]
 
                 # vol_carver 실행 (한 번만)
-                subprocess.run(cmd, check=True)
+                subprocess.run(
+                    cmd,
+                    check=True,
+                    creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+                )
 
                 # carved_index.json 읽기
                 carved_index_path = os.path.join(

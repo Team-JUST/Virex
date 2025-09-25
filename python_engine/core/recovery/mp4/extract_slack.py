@@ -300,7 +300,8 @@ def get_video_frame_count(video_path):
             '-print_format', 'json',
             video_path
             ],
-            stderr=subprocess.DEVNULL
+            stderr=subprocess.DEVNULL,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
         )
         meta = json.loads(out.decode('utf-8', 'ignore'))
         s = (meta.get('streams') or [{}])[0]
@@ -316,7 +317,8 @@ def get_video_frame_count(video_path):
             '-print_format', 'json',
             video_path
             ],
-            stderr=subprocess.STDOUT
+            stderr=subprocess.STDOUT,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
         )
         meta2 = json.loads(out2.decode('utf-8', 'ignore'))
         s2 = (meta2.get('streams') or [{}])[0]
@@ -332,7 +334,8 @@ def get_video_duration_sec(video_path):
             '-print_format', 'json',
             '-show_format',
             video_path],
-            stderr=subprocess.STDOUT
+            stderr=subprocess.STDOUT,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
         )
         meta = json.loads(out.decode('utf-8', 'ignore'))
         dur = float(meta.get('format', {}).get('duration', 0))
@@ -489,7 +492,7 @@ def recover_mp4_slack(filepath, output_h264_dir, output_video_dir, target_format
                         "-print_format", "json",
                         "-show_streams",
                         filepath
-                    ], stderr=subprocess.DEVNULL)
+                    ], stderr=subprocess.DEVNULL, creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
                     probe_data = json.loads(probe_out.decode('utf-8', 'ignore'))
                     
                     audio_rate = 48000  # 기본값

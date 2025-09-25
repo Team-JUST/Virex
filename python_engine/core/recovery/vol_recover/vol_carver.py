@@ -1,4 +1,3 @@
-# vol_carver.py
 import os
 import json
 import struct
@@ -6,6 +5,7 @@ import subprocess
 import logging
 import mmap
 import sys
+import shutil
 from typing import Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
@@ -32,26 +32,10 @@ def _ensure_outdir(bin_path: str, out_dir: Optional[str]) -> str:
     os.makedirs(carved_dir, exist_ok=True)
     return carved_dir
 
-def _ensure_sibling_dir(bin_path: str, name: str) -> str:
-    base = os.path.dirname(bin_path)
-    root = os.path.dirname(base)
-    out_dir = os.path.join(root, name)
-    os.makedirs(out_dir, exist_ok=True)
-    return out_dir
-
 def _open_mmap(path: str):
     f = open(path, "rb")
     mm = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
     return f, mm
-
-def _find_all_mm(mm: mmap.mmap, needle: bytes):
-    i, L = 0, len(needle)
-    while True:
-        i = mm.find(needle, i)
-        if i == -1:
-            return
-        yield i
-        i += L
 
 # ffmpeg / ffprobe
 def _search_bin_upwards(start_dir: str) -> Optional[str]:
@@ -70,6 +54,26 @@ def _bin_dir() -> str:
     env = os.environ.get("VIREX_FFMPEG_DIR")
     if env and os.path.isfile(os.path.join(env, "ffmpeg.exe")):
         return env
+
+    try:
+        meipass = getattr(sys, "_MEIPASS", None)
+        if meipass:
+            cand = os.path.join(meipass, "bin")
+            if (os.path.isfile(os.path.join(cand, "ffmpeg.exe")) and
+                os.path.isfile(os.path.join(cand, "ffprobe.exe"))):
+                return cand
+    except Exception:
+        pass
+
+    try:
+        exe_dir = os.path.dirname(sys.executable)
+        cand = os.path.join(exe_dir, "bin")
+        if (os.path.isfile(os.path.join(cand, "ffmpeg.exe")) and
+            os.path.isfile(os.path.join(cand, "ffprobe.exe"))):
+            return cand
+    except Exception:
+        pass
+
     here = os.path.dirname(__file__)
     found = _search_bin_upwards(here)
     return found or ""
@@ -85,7 +89,13 @@ def _ffprobe_path() -> str:
     return p if os.path.isfile(p) else "ffprobe"
 
 def _run(cmd: List[str]) -> Tuple[int, str, str]:
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+    )
     out, err = proc.communicate()
     return proc.returncode, out, err
 
@@ -299,7 +309,7 @@ def carve_mp4_from_bin(bin_path: str, out_dir: Optional[str] = None,
 # JDR(Annex-B H.264/H.265) ES 카버 + remux
 START3, START4 = b"\x00\x00\x01", b"\x00\x00\x00\x01"
 
-def _iter_startcodes_mm(mm) -> int:
+def _iter_startcodes_mm(mm):
     N = len(mm); pos = 0
     while True:
         hit = mm.find(START3, pos)
@@ -352,7 +362,11 @@ def carve_jdr_from_bin(
     try:
         N = len(mm_raw)
         count = 0
-        have_sps = have_pps = False
+        have_sps = False
+        have_pps = False
+        last_sps_off: Optional[int] = None
+        last_pps_off: Optional[int] = None
+
         cur_start: Optional[int] = None
         cur_codec = "h264"
         idr_count = 0
@@ -367,23 +381,38 @@ def carve_jdr_from_bin(
             detected = codec if codec in ("h264", "hevc") else _classify_codec(mm_raw, nal_off)
             if detected == "h264":
                 ntype = mm_raw[nal_off] & 0x1F
-                is_sps = (ntype == 7); is_pps = (ntype == 8); is_idr = (ntype == 5)
+                is_sps = (ntype == 7)
+                is_pps = (ntype == 8)
+                is_idr = (ntype == 5)
             else:
-                if nal_off + 2 > N: continue
+                if nal_off + 2 > N:
+                    continue
                 ntype = ((mm_raw[nal_off] & 0x7E) >> 1)
-                is_sps = (ntype == 33); is_pps = (ntype == 34); is_idr = (ntype in (19, 20))
+                is_sps = (ntype == 33)
+                is_pps = (ntype == 34)
+                is_idr = (ntype in (19, 20))
 
-            if is_sps: have_sps = True
-            if is_pps: have_pps = True or require_pps
+            if is_sps:
+                have_sps = True
+                last_sps_off = nal_off
+            if is_pps:
+                have_pps = True
+
+            ready = have_sps and (have_pps or not require_pps)
 
             if cur_start is None and is_idr:
-                cur_start = nal_off
+                if ready:
+                    start_off = last_sps_off if last_sps_off is not None else nal_off
+                    if require_pps and last_pps_off is not None:
+                        start_off = min(start_off, last_pps_off)
+                    cur_start = start_off
+                else:
+                    cur_start = nal_off
                 cur_codec = "h264" if detected == "h264" else "hevc"
                 idr_count = 1
                 continue
 
             if is_idr and cur_start is not None:
-                # 세그먼트 마감 조건(너무 길지 않게)
                 if (next_off - cur_start) >= max_total_len:
                     es_ext = ".h264" if cur_codec == "h264" else ".h265"
                     es_path = os.path.join(carved_dir, f"carved_es_{count+1:04d}{es_ext}")
@@ -402,7 +431,6 @@ def carve_jdr_from_bin(
                     cur_start = None
                     idr_count = 0
 
-        # 끝부분 플러시
         if cur_start is not None:
             end = min(cur_start + max_total_len, N)
             es_ext = ".h264" if cur_codec == "h264" else ".h265"
@@ -604,23 +632,22 @@ def auto_carve_from_dir(bin_dir: str, max_files_per_bin=1000) -> Dict:
         })
 
         if carved_total == 0 and os.path.isdir(carved_dir):
-            import shutil
             try:
                 shutil.rmtree(carved_dir)
             except Exception as e:
                 logger.warning(f"carved 폴더 삭제 실패: {e}")
 
-        return {
-            "ok": True,
-            "inputs": len(bin_list),
-            "carved_total": carved_total,
-            "rebuilt_total": rebuilt_total,
-            "outputs": {
-                "carved_dir": carved_dir,
-                "fixed_dir": (fixed_dir if force_fix and fixed_dir != carved_dir else carved_dir)
-            },
-            "items": items
-        }
+    return {
+        "ok": True,
+        "inputs": len(bin_list),
+        "carved_total": carved_total,
+        "rebuilt_total": rebuilt_total,
+        "outputs": {
+            "carved_dir": carved_dir,
+            "fixed_dir": (fixed_dir if force_fix and fixed_dir != carved_dir else carved_dir)
+        },
+        "items": items
+    }
 
 def carve_everything(base_dir: str,
                     max_files_per_bin: int = 1000,
@@ -673,8 +700,7 @@ if __name__=="__main__":
     result = carve_everything(base_dir, ffmpeg_dir_override=ffmpeg_dir)
     final_line = json.dumps(result, ensure_ascii=False)
 
-    parent_dir = os.path.dirname(base_dir)
-    index_path = os.path.join(parent_dir, "carved_index.json")
+    index_path = os.path.join(base_dir, "carved_index.json")
     try:
         with open(index_path, "w", encoding="utf-8") as wf:
             json.dump(result, wf, ensure_ascii=False, indent=2)

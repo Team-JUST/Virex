@@ -1,7 +1,6 @@
 const { app, BrowserWindow, Menu, ipcMain, dialog, protocol } = require('electron');
 // 개발 환경에서 핫리로드 적용
 const fs = require('fs').promises; 
-
 const fssync = require('fs');     
 const path = require('path');
 const { spawn } = require('child_process');
@@ -10,14 +9,33 @@ const drivelist = require('drivelist');
 const checkDiskSpace = require('check-disk-space').default;
 const os = require('os');
 const winattr = require('winattr');
+const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
-const VOL_CARVER = path.join(__dirname, 'python_engine', 'core', 'recovery', 'vol_recover', 'vol_carver.py');
-const FFMPEG_DIR = path.join(__dirname, 'bin');
-
+app.setAppUserModelId('com.virex.app');
 
 process.env.SystemRoot = process.env.SystemRoot || 'C:\\Windows';
-process.env.ComSpec    = process.env.ComSpec    || path.join(process.env.SystemRoot, 'System32', 'cmd.exe');
-process.env.PATH       = [process.env.PATH, path.join(process.env.SystemRoot, 'System32')].filter(Boolean).join(';');
+process.env.ComSpec = process.env.ComSpec    || path.join(process.env.SystemRoot, 'System32', 'cmd.exe');
+process.env.PATH = [process.env.PATH, path.join(process.env.SystemRoot, 'System32')].filter(Boolean).join(';');
+
+function resolveBackend() {
+  if (isDev) {
+    return {
+      mode: 'py',
+      backendDir: path.join(__dirname, 'python_engine'),
+      exe: 'python',
+      engineMain: path.join(__dirname, 'python_engine', 'main.py'),
+      ffmpegDir: path.join(__dirname, 'bin'),
+    };
+  } else {
+    const backendDir = path.join(process.resourcesPath, 'backend');
+    return {
+      mode: 'exe',
+      backendDir,
+      exe: path.join(backendDir, 'Virex.exe'),
+      ffmpegDir: path.join(backendDir, 'bin'),
+    };
+  }
+}
 
 function hasBinFiles(dir) {
   try {
@@ -44,30 +62,43 @@ function waitForUnallocReady(baseDir, { timeoutMs = 120000, intervalMs = 800 } =
 }
 
 function runVolCarver(baseDir, sender) {
-
-  volCarverStarted = true;           
+  volCarverStarted = true;
   volCarverDone = false;
 
+  const be = resolveBackend();
+
   return new Promise((resolve) => {
-    const args = [VOL_CARVER, baseDir, '--ffmpeg-dir', FFMPEG_DIR];
-    const child = spawn('python', args, {
-      cwd: path.dirname(VOL_CARVER),
-      shell: false,
-      env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' },
-    });
+    let cmd, args, opts;
+    if (be.mode === 'py') {
+      cmd = be.exe;
+      args = [be.engineMain, 'carve-vol', baseDir, '--ffmpeg-dir', be.ffmpegDir];
+      opts = {
+        cwd: be.backendDir,
+        shell: true,
+        env: { ...process.env, PYTHONPATH: __dirname, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' },
+      };
+    } else {
+      cmd = be.exe;
+      args = ['carve-vol', baseDir, '--ffmpeg-dir', be.ffmpegDir];
+      opts = {
+        cwd: be.backendDir,
+        shell: false,
+        env: process.env,
+      };
+    }
+
+    const child = spawn(cmd, args, opts);
+
     child.on('error', (err) => {
       console.error('[spawn error:runVolCarver]', err);
-      BrowserWindow.fromWebContents(sender)
-        ?.webContents.send('recovery-error', String(err?.message || err));
+      BrowserWindow.fromWebContents(sender)?.webContents
+        .send('recovery-error', String(err?.message || err));
     });
 
-    child.stderr.on('data', b => console.warn('[vol_carver]', b.toString()));
+    child.stderr.on('data', (b) => console.warn('[vol_carver]', b.toString()));
+
     child.on('close', async (code) => {
       const win = BrowserWindow.fromWebContents(sender);
-      // 프론트: baseDir 알려주고 → carved_index.json 읽게 함
-      win?.webContents.send('analysis-path', baseDir);
-
-      // (선택) 바로 결과도 푸시하고 싶으면 carved_index.json 읽어서 전송
       try {
         const idxPath = path.join(baseDir, 'carved_index.json');
         const raw = await fs.readFile(idxPath, 'utf-8');
@@ -75,10 +106,19 @@ function runVolCarver(baseDir, sender) {
         const items = (j?.items || []).flatMap(it => {
           const rebuilt = (it.rebuilt || [])
             .filter(x => (x?.rebuilt && x?.ok) || x?.raw)
-            .map(x => ({ name: path.basename(x.rebuilt || x.raw), path: (x.rebuilt || x.raw), size: Number(x?.probe?.format?.size || 0), _remuxFailed: !x?.rebuilt || !x?.ok }));
+            .map(x => ({
+              name: path.basename(x.rebuilt || x.raw),
+              path: (x.rebuilt || x.raw),
+              size: Number(x?.probe?.format?.size || 0),
+              _remuxFailed: !x?.rebuilt || !x?.ok
+            }));
           const jdr = (it.jdr || [])
             .filter(x => x?.ok && x?.rebuilt)
-            .map(x => ({ name: path.basename(x.rebuilt), path: x.rebuilt, size: Number(x?.probe?.format?.size || 0) }));
+            .map(x => ({
+              name: path.basename(x.rebuilt),
+              path: x.rebuilt,
+              size: Number(x?.probe?.format?.size || 0)
+            }));
           return [...rebuilt, ...jdr];
         });
         win?.webContents.send('recovery-results', items);
@@ -86,12 +126,11 @@ function runVolCarver(baseDir, sender) {
         console.warn('[vol_carver] no carved_index yet:', e?.message || e);
       }
 
-      volCarverDone = true; 
+      volCarverDone = true;
       resolve(code);
     });
   });
 }
-
 
 if (process.env.NODE_ENV === 'development') {
   try {
@@ -110,7 +149,6 @@ if (process.env.NODE_ENV === 'development') {
     console.warn('[Debug] electron-reload not installed or failed:', e);
   }
 }
-
 
 const isSafeTempDir = (dir) => {
   if (!dir) return false;
@@ -136,8 +174,6 @@ let mainWindow = null;
 let currentRecoveryProc = null;
 let currentTempDir = null;
 let isCancellingRecovery = false;
-let volCarverStarted = false;
-let volCarverPromise = null; 
 let volCarverDone = false;   
 
 function openFileDialog(extensions) {
@@ -261,7 +297,6 @@ function createWindow() {
   }
 }
 
-
 // view
 app.whenReady().then(() => {
   protocol.interceptFileProtocol('stream', (request, callback) => {
@@ -377,18 +412,28 @@ ipcMain.handle('start-recovery', async (event, e01FilePath) => {
   return await new Promise((resolve, reject) => {
     let abortedByDiskFull = false;
     let sentResults = false;
-    const scriptPath = path.join(__dirname, 'python_engine', 'main.py');
-    const env = {...process.env, PYTHONPATH: __dirname, PYTHONIOENCODING: 'utf-8',PYTHONUTF8: '1',  };
+    const be = resolveBackend();
 
-    const python = spawn('python', [scriptPath, e01FilePath], {
-      cwd: path.join(__dirname, 'python_engine'),
-      shell: true,
-      env,
-    });
-    python.on('error', (err) => {
-    console.error('[spawn error:run-download]', err);
-    mainWindow?.webContents.send('download-error', String(err?.message || err));
-  });
+    let cmd, args, opts;
+    if (be.mode === 'py') {
+      cmd = be.exe;
+      args = [be.engineMain, e01FilePath];
+      opts = {
+        cwd: be.backendDir,
+        shell: true,
+        env: { ...process.env, PYTHONPATH: __dirname, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' },
+      };
+    } else {
+      cmd = be.exe;
+      args = [e01FilePath];
+      opts = {
+        cwd: be.backendDir,
+        shell: false,
+        env: process.env,
+      };
+    }
+
+    const python = spawn(cmd, args, opts);
     currentRecoveryProc = python;
     isCancellingRecovery = false;
 
@@ -401,11 +446,8 @@ ipcMain.handle('start-recovery', async (event, e01FilePath) => {
         if (data.tempDir) {
           currentTempDir = data.tempDir;
           const win = BrowserWindow.fromWebContents(event.sender);
-
-          // UI가 tempDir 알 수 있게 즉시 알려주기
           win?.webContents.send('analysis-path', data.tempDir);
 
-          // 비할당 .bin 준비 감시 후 vol_carver 실행
           waitForUnallocReady(currentTempDir)
             .then(() => runVolCarver(currentTempDir, event.sender))
             .catch(err => console.warn('[waitForUnallocReady]', err.message));
@@ -423,7 +465,7 @@ ipcMain.handle('start-recovery', async (event, e01FilePath) => {
           return;
         }
 
-        // (중간) 용량 부족 이벤트
+        // 용량 부족 이벤트
         if (data.event === 'disk_full') {
           abortedByDiskFull = true;
           console.warn('[Debug] disk_full:', data);
@@ -436,7 +478,7 @@ ipcMain.handle('start-recovery', async (event, e01FilePath) => {
           });
 
           try { python.kill(); } catch (_) {}
-          return; // 진행률/분석 처리 안 함
+          return;
         }
 
         // 진행률
@@ -593,17 +635,27 @@ ipcMain.handle('run-download', async (_event, {
 
   // 4) 실행
   return new Promise((resolve, reject) => {
-    const scriptPath = path.join(__dirname, 'python_engine', 'main.py');
-    const env = { ...process.env, PYTHONPATH: __dirname };
-    const args = [scriptPath, e01Path, choice, effectiveOutRoot, selectedJsonPath];
+    const be = resolveBackend();
 
-    console.log("[Debug] spawning python with args : ", args);
+    let cmd, args, opts;
+    if (be.mode === 'py') {
+      cmd = be.exe;
+      args = [be.engineMain, e01FilePath];
+      opts = {
+        cwd: be.backendDir,
+        shell: true,
+        env: { ...process.env, PYTHONPATH: __dirname, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' },
+      };
+    } else {
+      cmd = be.exe;
+      args = [e01FilePath];
+      opts = { cwd: be.backendDir, shell: false, env: process.env };
+    }
+    console.log('[spawn]', cmd, args, 'cwd=', opts.cwd);
 
-    const python = spawn('python', args, {
-      cwd: path.join(__dirname, 'python_engine'),
-      shell: true,
-      env,
-    });
+    const python = spawn(cmd, args, opts);
+    currentRecoveryProc = python;
+    isCancellingRecovery = false;
 
     python.on('error', (err) => {
       console.error('[spawn error:run-download]', err);
@@ -808,7 +860,6 @@ ipcMain.handle('dialog:openDirectory', async (_event, options = {}) => {
   return { canceled, filePaths: filePaths || [] };
 });
 
-// 편의용: 문자열 경로 하나만 반환 (handlePathSelect / selectFolder에서 기대)
 ipcMain.handle('select-folder', async (_event, options = {}) => {
   const { canceled, filePaths } = await dialog.showOpenDialog({
     title: '저장 경로 선택',

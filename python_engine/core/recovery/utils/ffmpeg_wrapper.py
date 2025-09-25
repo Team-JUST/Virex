@@ -94,7 +94,13 @@ def convert_video(input_path, output_path, extra_args=None, use_gpu=True, wait=T
     if wait:
         print(f"[INFO] ffmpeg | GPU={use_gpu} | wrapping_mode={wrapping_mode}")
         try:
-            subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+            subprocess.run(
+                cmd,
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+            )
         except subprocess.CalledProcessError as e:
             print(f"[ERROR] ffmpeg 변환 실패!\n[stderr]\n{e.stderr.decode(errors='ignore')}")
             # GPU 인코딩 실패 시 CPU 인코딩 fallback
@@ -107,7 +113,13 @@ def convert_video(input_path, output_path, extra_args=None, use_gpu=True, wait=T
                     cpu_cmd += ['-r', '30']
                 cpu_cmd += ['-i', input_path, '-c:v', 'libx264', '-preset', 'medium', '-crf', '23', '-movflags', '+faststart', output_path]
                 try:
-                    subprocess.run(cpu_cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+                    subprocess.run(
+                        cpu_cmd,
+                        check=True,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.PIPE,
+                        creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+                    )
                 except subprocess.CalledProcessError as e2:
                     print(f"[ERROR] CPU 인코딩도 실패!\n[stderr]\n{e2.stderr.decode(errors='ignore')}")
                     raise
@@ -115,7 +127,12 @@ def convert_video(input_path, output_path, extra_args=None, use_gpu=True, wait=T
                 raise
         return None
     else:
-        p = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        p = subprocess.Popen(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+        )
         print(f"[INFO] ffmpeg (PID={p.pid}) | GPU={use_gpu} | wrapping_mode={wrapping_mode}")
         return p
 
@@ -137,10 +154,21 @@ def convert_audio(input_path, output_path, sample_rate=8000, extra_args=None, wa
     cmd += [output_path]
 
     if wait:
-        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(
+            cmd,
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+        )
         return None
     else:
-        p = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        p = subprocess.Popen(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+        )
         print(f"[INFO] ffmpeg audio conversion (PID={p.pid})")
         return p
 
@@ -156,9 +184,20 @@ def merge_video_audio(video_path, audio_path, output_path, wait=True):
     ]
 
     if wait:
-        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(
+            cmd,
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+        )
         return None
     else:
-        p = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        p = subprocess.Popen(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+        )
         print(f"[INFO] ffmpeg merge (PID={p.pid})")
         return p

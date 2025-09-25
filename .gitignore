@@ -44,3 +44,5 @@ app/*.asar
 # External binaries
 bin/
 build/
+release/
+assets/
