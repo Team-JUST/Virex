@@ -56,23 +56,23 @@ def _bin_dir() -> str:
         return env
 
     try:
-      meipass = getattr(sys, "_MEIPASS", None)
-      if meipass:
-          cand = os.path.join(meipass, "bin")
-          if (os.path.isfile(os.path.join(cand, "ffmpeg.exe")) and
-              os.path.isfile(os.path.join(cand, "ffprobe.exe"))):
-              return cand
+        meipass = getattr(sys, "_MEIPASS", None)
+        if meipass:
+            cand = os.path.join(meipass, "bin")
+            if (os.path.isfile(os.path.join(cand, "ffmpeg.exe")) and
+                os.path.isfile(os.path.join(cand, "ffprobe.exe"))):
+                return cand
     except Exception:
-      pass
+        pass
 
     try:
-      exe_dir = os.path.dirname(sys.executable)
-      cand = os.path.join(exe_dir, "bin")
-      if (os.path.isfile(os.path.join(cand, "ffmpeg.exe")) and
-          os.path.isfile(os.path.join(cand, "ffprobe.exe"))):
-          return cand
+        exe_dir = os.path.dirname(sys.executable)
+        cand = os.path.join(exe_dir, "bin")
+        if (os.path.isfile(os.path.join(cand, "ffmpeg.exe")) and
+            os.path.isfile(os.path.join(cand, "ffprobe.exe"))):
+            return cand
     except Exception:
-      pass
+        pass
 
     here = os.path.dirname(__file__)
     found = _search_bin_upwards(here)
@@ -89,7 +89,13 @@ def _ffprobe_path() -> str:
     return p if os.path.isfile(p) else "ffprobe"
 
 def _run(cmd: List[str]) -> Tuple[int, str, str]:
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+    )
     out, err = proc.communicate()
     return proc.returncode, out, err
 
@@ -303,7 +309,7 @@ def carve_mp4_from_bin(bin_path: str, out_dir: Optional[str] = None,
 # JDR(Annex-B H.264/H.265) ES 카버 + remux
 START3, START4 = b"\x00\x00\x01", b"\x00\x00\x00\x01"
 
-def _iter_startcodes_mm(mm) -> int:
+def _iter_startcodes_mm(mm):
     N = len(mm); pos = 0
     while True:
         hit = mm.find(START3, pos)

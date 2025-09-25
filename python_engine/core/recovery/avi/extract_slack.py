@@ -112,7 +112,8 @@ def get_video_frame_count(video_path):
             '-show-entries', 'format=nb_frames',
             '-print_format', 'json',
             video_path],
-            stderr=subprocess.DEVNULL
+            stderr=subprocess.DEVNULL,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
         )
         meta = json.loads(out.decode('utf-8', 'ignore'))
         s = (meta.get("streams") or [{}])[0]
@@ -127,7 +128,8 @@ def get_video_frame_count(video_path):
             '-show_entries', 'stream=nb_read_frames',
             '-print_format', 'json',
             video_path],
-            stderr=subprocess.DEVNULL
+            stderr=subprocess.DEVNULL,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
         )
         meta2 = json.loads(out2.decode('utf-8', 'ignore'))
         s2 = (meta2.get("streams") or [{}])[0]
@@ -143,7 +145,8 @@ def get_video_duration_sec(video_path: str) -> float:
             "-print_format", "json",
             "-show_format",
             video_path],
-            stderr=subprocess.STDOUT
+            stderr=subprocess.STDOUT,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
         )
         meta = json.loads(out.decode("utf-8", "ignore"))
         dur = float(meta.get("format", {}).get("duration", "0"))
@@ -157,7 +160,13 @@ def extract_first_frame(video_path, out_jpeg, force_input_format):
         if force_input_format:
             cmd += ['-f', force_input_format]
         cmd += ['-i', video_path, '-frames:v', '1', out_jpeg]
-        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(
+            cmd,
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+        )
         return os.path.exists(out_jpeg)
     except Exception:
         return False
@@ -361,7 +370,7 @@ def recover_avi_slack(input_avi, base_dir, target_format='mp4', use_gpu=False):
             "-print_format", "json",
             "-show_streams",
             input_avi
-        ], stderr=subprocess.DEVNULL)
+        ], stderr=subprocess.DEVNULL, creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
         probe_data = json.loads(probe_out.decode('utf-8', 'ignore'))
         
         for stream in probe_data.get('streams', []):

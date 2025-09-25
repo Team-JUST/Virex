@@ -7,7 +7,6 @@ from typing import Optional, List, Iterable, Set
 from python_engine.core.image_loader.e01_parser import extract_videos_from_e01
 from python_engine.core.output.download_frame import download_frames
 from python_engine.core.image_loader.single_video_parser import extract_from_single_video
-from python_engine.core.recovery.vol_recover.vol_carver import auto_carve_from_dir
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 

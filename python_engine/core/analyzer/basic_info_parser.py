@@ -54,7 +54,8 @@ def video_metadata(file_path):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            check=True
+            check=True,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
         )
         info = json.loads(result.stdout)
         streams = info.get('streams', [])
