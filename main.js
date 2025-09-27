@@ -565,14 +565,15 @@ ipcMain.handle('start-recovery', async (event, e01FilePath) => {
           lower.includes('critical')  ||
           lower.includes('fatal');
 
-        if (isSystemError) {
-          new Notification({
-            title: '복원 실패',
-            body: msg.slice(0, 100),
-            icon: iconPath
-          }).show();
-          errorNotified = true;
-        }
+          if (isSystemError) {
+            const notif = new Notification({
+              title: '복원 실패',
+              body: msg.slice(0, 100)
+            });
+            notif.appUserModelId = 'com.virex.app';
+            notif.show();
+            errorNotified = true;
+          }
       }
     });
 
@@ -617,13 +618,16 @@ ipcMain.handle('start-recovery', async (event, e01FilePath) => {
 
       try { win?.webContents.send('recovery-done');
 
-        if (notificationsEnabled) {
-          new Notification({
-            title: '복원 완료',
-            body: '복원이 완료되었습니다.',
-            icon: iconPath
-          }).show();
-        }
+          if (notificationsEnabled) {
+            try {
+              new Notification({
+                title: '복원 완료',
+                body: '복원이 완료되었습니다.'
+              }).show();
+            } catch (err) {
+              console.error('[알림 생성 에러]', err);
+            }
+          }
       } catch {}
       return code === 0 ? resolve() : reject(new Error(`exit ${code}`));
     });
