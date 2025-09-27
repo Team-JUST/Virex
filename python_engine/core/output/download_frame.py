@@ -19,7 +19,13 @@ def extract_frames_with_ffmpeg(video_path, output_dir):
         os.path.join(output_dir, "frame_%03d.jpg")
     ]
     try:
-        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(
+            cmd,
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+        )
         return True
     except subprocess.CalledProcessError:
         return False

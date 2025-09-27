@@ -347,7 +347,10 @@ def extract_first_frame(video_path, out_jpeg):
     try:
         subprocess.run(
             [FFMPEG, '-y', '-i', video_path, '-frames:v', '1', out_jpeg],
-            check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
         )
         return os.path.exists(out_jpeg)
     except Exception:
