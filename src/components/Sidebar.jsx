@@ -15,10 +15,13 @@ const Sidebar = ({ isDarkMode }) => {
   const handleNav = (e, to) => {
   e.preventDefault();
   const g = window.__recoverGuard;
-  const isOnRecovery =
-  location.pathname === '/recovery' || location.pathname === '/fileUpload';
+  const isOnRecovery = location.pathname === '/recovery' || location.pathname === '/fileUpload';
+  const isRecoveryMenu = to === '/fileUpload';
 
-  if (isOnRecovery && g?.isRecovering && Number(g.progress) < 100) {
+  if (isOnRecovery && isRecoveryMenu && g?.isRecovering && Number(g.progress) < 100) {
+    return;
+  }
+  if (g?.isRecovering && Number(g.progress) < 100) {
     window.dispatchEvent(new CustomEvent('show-stop-recover', { detail: { to } }));
     return;
   }
