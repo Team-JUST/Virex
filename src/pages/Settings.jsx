@@ -20,6 +20,12 @@ const Settings = ({ isDarkMode, setIsDarkMode }) => {
     setTimeout(() => setShowCacheMessage(false), 4000);
   };
 
+  const handleNotificationToggle = () => {
+    const newValue = !notificationsOn;
+    setNotificationsOn(newValue);
+    window.api?.setNotifications(newValue);
+  };
+
   return (
     <div className={`settings_page ${isDarkMode ? 'dark-mode' : ''}`}>
       <h1 className="settings_title">Setting</h1>
@@ -70,7 +76,7 @@ const Settings = ({ isDarkMode, setIsDarkMode }) => {
             <input
               type="checkbox"
               checked={notificationsOn}
-              onChange={() => setNotificationsOn(!notificationsOn)}
+              onChange={handleNotificationToggle}
             />
             <span className="slider"></span>
           </label>
