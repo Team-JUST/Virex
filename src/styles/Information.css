@@ -62,7 +62,7 @@
   display: inline-block;
   background-color: #e8f0fe;
   color: #1f2937;
-  padding: 0.2rem 0.5rem;
+  padding: 0.35rem 0.8rem;
   border-radius: 0.4rem;
   font-size: 0.75rem;
   margin-right: 1rem;
@@ -133,4 +133,8 @@ a:hover {
   border-bottom: 1px solid #ddd;
   margin-top: 2rem;
   margin-bottom: 2rem;
+}
+
+.info_table tr.stack-divider th {
+  vertical-align: middle;
 }
