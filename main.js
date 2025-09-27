@@ -294,11 +294,31 @@ function createWindow() {
     mainWindow.loadURL('http://localhost:5173');
   } else {
     mainWindow.loadFile(path.join(__dirname, 'dist', 'index.html'));
+
+    mainWindow.webContents.on('devtools-opened', () => {
+      mainWindow.webContents.closeDevTools();
+    });
   }
 }
 
 // view
 app.whenReady().then(() => {
+  if (!isDev) {
+    Menu.setApplicationMenu(null);
+
+    app.on('browser-window-created', (_, window) => {
+      window.webContents.on('before-input-event', (event, input) => {
+        if (
+          (input.control || input.meta) &&
+          input.shift &&
+          input.key.toLowerCase() === 'i'
+        ) {
+          event.preventDefault();
+        }
+      });
+    });
+  }
+
   protocol.interceptFileProtocol('stream', (request, callback) => {
     const url = request.url.substr(9); // 'stream://' 제거
     const decodedPath = decodeURIComponent(url);
