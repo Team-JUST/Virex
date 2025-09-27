@@ -10,13 +10,13 @@ contextBridge.exposeInMainWorld('api', {
   openSupportedFile: () => ipcRenderer.invoke('dialog:openSupportedFile'),
   startRecovery: (e01Path) => ipcRenderer.invoke('start-recovery', e01Path),
 
-
   cancelRecovery: () => ipcRenderer.invoke('cancel-recovery'),
   clearCache: () => ipcRenderer.invoke('clear-cache'),
+
+  setNotifications: (enabled) => ipcRenderer.invoke('set-notifications', enabled),
   
   readCarvedIndex: (dir) => ipcRenderer.invoke('readCarvedIndex', dir),
   listCarvedDir: (baseDir) => ipcRenderer.invoke('listCarvedDir', baseDir),
-
 
   onDiskFull: (cb) => {
     const channel = 'recovery-disk-full';
