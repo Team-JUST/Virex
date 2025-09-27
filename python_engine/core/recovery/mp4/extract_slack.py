@@ -413,14 +413,13 @@ def recover_mp4_slack(filepath, output_h264_dir, output_video_dir, target_format
             )
 
         if not slack:
-            return {
-                "recovered": False,
-                "slack_size": "0 B",
-                "video_path": None,
-                "image_path": None,
-                "is_image_fallback": False,
-                "slack_rate": 0.0,
-            }
+            logger.warning(f"{filename} → 슬랙 없음 → 전체 스캔 fallback")
+            raw_path, mp4_path, jpeg_path = _paths_for(filename, output_h264_dir, output_video_dir, "damaged", codec)
+            return _fallback_wholefile(
+                data=data, filename=filename,
+                h264_path=raw_path, mp4_path=mp4_path, jpeg_path=jpeg_path,
+                use_gpu=use_gpu
+            )
         
         sps_pps = extract_sps_pps(moov_data)
         codec = detect_video_codec(moov_data)
