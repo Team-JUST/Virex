@@ -1200,7 +1200,7 @@ const handleDownloadConfirm = async () => {
                 onChange={handleFileChange}
                 hidden
               />
-              {!showAlert && (
+              {!showAlert && !showDiskFullAlert && (
                 <Button variant="gray">
                   ⭱ <span>업로드</span>
                 </Button>
@@ -2041,15 +2041,17 @@ const handleDownloadConfirm = async () => {
             </>
           }
         >
-          <Button
-            variant="dark"
-            onClick={() => {
-              setShowDiskFullAlert(false);      
-              diskFullHandledRef.current = false; 
-            }}
-          >
-            확인
-          </Button>
+          <div className="alert-buttons">
+            <Button
+              variant="dark"
+              onClick={() => {
+                setShowDiskFullAlert(false);      
+                diskFullHandledRef.current = false; 
+              }}
+            >
+              확인
+            </Button>
+          </div>
         </Alert>
       )}
 
