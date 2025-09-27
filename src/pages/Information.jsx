@@ -7,20 +7,16 @@ const Information = ({ isDarkMode }) => {
       <h1 className={`info_title${isDarkMode ? ' dark-mode' : ''}`}>Information</h1>
       {/* 소프트웨어 정보 */}
       <div className={`info_box${isDarkMode ? ' dark-mode' : ''}`}>
-        <h1 className={`info_section_title${isDarkMode ? ' dark-mode' : ''}`}>  소프트웨어 정보</h1>
+        <h1 className={`info_section_title${isDarkMode ? ' dark-mode' : ''}`}>소프트웨어 정보</h1>
         <table className={`info_table${isDarkMode ? ' dark-mode' : ''}`}>
           <tbody>
             <tr className="stack-divider">
-              <th>제품명</th>
+              <th>도구명</th>
               <td>Virex</td>
             </tr>
-            <tr className="stack-divider">
-              <th>버전</th>
-              <td>v1.0.0</td>
-            </tr>
             <tr>
-              <th>출시일</th>
-              <td>2025년 8월 20일</td>
+              <th>버전</th>
+              <td>v2.0.0</td>
             </tr>
           </tbody>
         </table>
@@ -36,8 +32,12 @@ const Information = ({ isDarkMode }) => {
               <td>JUST</td>
             </tr>
             <tr className="stack-divider">
-              <th>문의</th> 
-              <td>seyeon680895@gmail.com</td>
+              <th>개발자</th>
+              <td>김세연, 마유진, 최리안</td>
+            </tr>
+            <tr className="stack-divider">
+              <th>문의</th>
+              <td>justvx2025@gmail.com</td>
             </tr>
             <tr>
               <th>GitHub</th>
@@ -48,7 +48,6 @@ const Information = ({ isDarkMode }) => {
       </div>
 
       {/* 기술 스택 */}
-
       <div className={`info_box${isDarkMode ? ' dark-mode' : ''}`}>
         <h1 className={`info_section_title${isDarkMode ? ' dark-mode' : ''}`}>스택 정보</h1>
         <table className={`info_table${isDarkMode ? ' dark-mode' : ''}`}>
@@ -59,6 +58,8 @@ const Information = ({ isDarkMode }) => {
                 <span className="tag">Electron</span>
                 <span className="tag">React</span>
                 <span className="tag">JavaScript</span>
+                <span className="tag">Vite</span>
+                <span className="tag">CSS</span>
               </td>
             </tr>
             <tr className="stack-divider">
@@ -72,6 +73,7 @@ const Information = ({ isDarkMode }) => {
               <th>기타 도구</th>
               <td>
                 <span className="tag">FFmpeg</span>
+                <span className="tag">FFprobe</span>
               </td>
             </tr>
           </tbody>
