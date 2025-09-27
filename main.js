@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, ipcMain, dialog, protocol } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, dialog, protocol, Notification } = require('electron');
 // 개발 환경에서 핫리로드 적용
 const fs = require('fs').promises; 
 const fssync = require('fs');     
@@ -16,6 +16,9 @@ app.setAppUserModelId('com.virex.app');
 process.env.SystemRoot = process.env.SystemRoot || 'C:\\Windows';
 process.env.ComSpec = process.env.ComSpec    || path.join(process.env.SystemRoot, 'System32', 'cmd.exe');
 process.env.PATH = [process.env.PATH, path.join(process.env.SystemRoot, 'System32')].filter(Boolean).join(';');
+
+let notificationsEnabled = true;
+let errorNotified = false;
 
 function resolveBackend() {
   if (isDev) {
@@ -405,6 +408,7 @@ ipcMain.on('file-selected', (_event, filePath) => {
 
 ipcMain.handle('start-recovery', async (event, e01FilePath) => {
   console.log("[Debug] start-recovery called with : ", e01FilePath);
+  errorNotified = false;
 
   // 1) 시작 전 프리플라이트
   const REQUIRED_BYTES = 5 * 1024 * 1024 * 1024;
@@ -545,11 +549,32 @@ ipcMain.handle('start-recovery', async (event, e01FilePath) => {
     });
 
     python.stderr.on('data', buf => {
-    const msg = buf.toString(); 
-    console.error("[Debug] python stderr : ", msg);
-    const win = BrowserWindow.fromWebContents(event.sender);
-    win?.webContents.send('recovery-error', msg);
-  });
+      const msg = buf.toString();
+      console.error("[Debug] python stderr : ", msg);
+      const win = BrowserWindow.fromWebContents(event.sender);
+      win?.webContents.send('recovery-error', msg);
+
+      if (notificationsEnabled && !errorNotified) {
+        const lower = msg.toLowerCase();
+
+        const isSystemError =
+          lower.includes('disk_full') ||
+          lower.includes('no space')  ||
+          lower.includes('failed to spawn') ||
+          lower.includes('process exit') ||
+          lower.includes('critical')  ||
+          lower.includes('fatal');
+
+        if (isSystemError) {
+          new Notification({
+            title: '복원 실패',
+            body: msg.slice(0, 100),
+            icon: iconPath
+          }).show();
+          errorNotified = true;
+        }
+      }
+    });
 
     python.on('close', code => {
       console.log("[Debug] python exited with code : ", code);
@@ -590,7 +615,16 @@ ipcMain.handle('start-recovery', async (event, e01FilePath) => {
         return reject(new Error('aborted: disk_full'));
       }
 
-      try { win?.webContents.send('recovery-done'); } catch {}
+      try { win?.webContents.send('recovery-done');
+
+        if (notificationsEnabled) {
+          new Notification({
+            title: '복원 완료',
+            body: '복원이 완료되었습니다.',
+            icon: iconPath
+          }).show();
+        }
+      } catch {}
       return code === 0 ? resolve() : reject(new Error(`exit ${code}`));
     });
   });
@@ -887,4 +921,9 @@ ipcMain.handle('select-folder', async (_event, options = {}) => {
     ...options,
   });
   return canceled ? null : (filePaths?.[0] ?? null);
+});
+
+ipcMain.handle('set-notifications', (_event, enabled) => {
+  notificationsEnabled = !!enabled;
+  console.log('[Debug] notificationsEnabled =', notificationsEnabled);
 });
