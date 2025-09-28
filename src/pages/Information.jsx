@@ -35,13 +35,9 @@ const Information = ({ isDarkMode }) => {
               <th>개발자</th>
               <td>김세연, 마유진, 최리안</td>
             </tr>
-            <tr className="stack-divider">
+            <tr>
               <th>문의</th>
               <td>justvx2025@gmail.com</td>
-            </tr>
-            <tr>
-              <th>GitHub</th>
-              <td><a href="https://github.com/Team-JUST/Virex" target="_blank" rel="noreferrer" className={isDarkMode ? 'dark-mode' : ''}>https://github.com/Team-JUST/Virex</a></td>
             </tr>
           </tbody>
         </table>
