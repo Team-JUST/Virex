@@ -1,0 +1,124 @@
+.rcvpage .stepper-wrapper {
+    position: relative;
+    width: 970px;
+    max-width: 1000px;
+    margin: 2rem 1rem 1rem 0rem;
+    padding: 1rem 0.7rem 1.5rem;
+    height: 50px;
+    background: white;
+    border-radius: 0.6rem;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.rcvpage .step-line {
+    position: absolute;
+    top: 42%;
+    width: 70%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: calc(100% - 142px);
+    height: 4px;
+    background-color: #d7d7d7;
+    z-index: 0;
+}
+
+.rcvpage .steps {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    position: absolute;
+    top: 45%;
+    left: 30%;
+    transform: translate(-30%, -45%);
+    width: calc(100% - 80px);
+    padding: 0 30px;
+    z-index: 1;
+}
+
+.rcvpage .step {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+}
+
+.rcvpage .circle {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background-color: #d7d7d7;
+    z-index: 2;
+    margin-top: 1.2rem;
+}
+
+.rcvpage .step.active .circle {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    border: 4px solid #1f2937;
+    background-color: white;
+    color: #1f2937;
+    font-weight: 900;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.85rem;
+    margin-top: 0.8rem;
+}
+
+.rcvpage .label {
+    margin-top: 1rem;
+    font-size: 0.9rem;
+    color: #1f2937;
+    font-weight: 900;
+}
+
+.rcvpage .step.active .label, 
+.rcvpage .step.completed .label{
+    margin-top: 0.3rem;   
+}
+
+
+.rcvpage .step.completed .circle {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background-color: #1f2937;
+    color: white;
+    font-weight: 900;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.85rem;
+    margin-top: 0.8rem;
+    border: 4px solid #1f2937;
+}
+
+/* ++ 다크모드 ++ */
+.rcvpage.dark-mode .stepper-wrapper {
+    background-color: #1e293b;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+}
+
+.rcvpage.dark-mode .step-line {
+    background-color: #475569;
+}
+
+.rcvpage.dark-mode .circle {
+    background-color: #475569;
+}
+
+.rcvpage.dark-mode .step.active .circle {
+    border-color: #3b82f6;
+    background-color: #1e293b;
+    color: #3b82f6;
+}
+
+.rcvpage.dark-mode .step.completed .circle {
+    background-color: #3b82f6;
+    border-color: #3b82f6;
+}
+
+.rcvpage.dark-mode .label {
+    color: #f1f5f9;
+}

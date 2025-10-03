@@ -1,0 +1,33 @@
+/* ++ 스크롤바 공통 ++ */
+.scrollbar-area::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+.scrollbar-area::-webkit-scrollbar-track {
+    background: transparent;
+    margin-top: 50px;
+    margin-bottom: 50px;
+}
+
+.scrollbar-area::-webkit-scrollbar-thumb {
+    border-radius: 10px;
+}
+
+/* ++ 스크롤바 라이트 모드 ++ */
+.scrollbar-area::-webkit-scrollbar-thumb {
+    background-color: rgba(160, 160, 160, 0.4);
+}
+
+.scrollbar-area::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(120, 120, 120, 0.6);
+}
+
+/* ++ 스크롤바 다크 모드 ++ */
+.dark-mode .scrollbar-area::-webkit-scrollbar-thumb {
+    background-color: rgba(200, 200, 200, 0.3);
+}
+
+.dark-mode .scrollbar-area::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(220, 220, 220, 0.5);
+}

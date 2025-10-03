@@ -1,0 +1,326 @@
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
+import '../styles/Home.css';
+import '../styles/Button.css';
+import '../styles/Scrollbar.css';
+import Button from '../components/Button.jsx';
+import DriveIcon from '../images/drive.svg?react';
+import FolderIcon from '../images/folder.svg?react';
+import FileIcon from '../images/file.svg?react';
+
+function formatBytes(n) {
+  if (!n || n <= 0) return '0 KB';
+  const units = ['KB', 'MB', 'GB', 'TB'];
+  let size = n / 1024;
+  let i = 0;
+  while (size >= 1024 && i < units.length - 1) {
+    size /= 1024;
+    i++;
+  }
+  let str = size.toFixed(1);
+  if (str.endsWith('.0')) str = str.slice(0, -2);
+  return `${str} ${units[i]}`;
+}
+
+function normalizePath(p) {
+  if (!p) return '';
+  return p.replace(/\\+$/, '').toLowerCase();
+}
+
+function formatDrivePath(folderPath, mountPath) {
+  if (!folderPath) return '';
+  if (mountPath && folderPath.startsWith(mountPath)) {
+    const driveLetterMatch = mountPath.match(/^([A-Z]):/i);
+    const driveText = driveLetterMatch ? `${driveLetterMatch[1].toUpperCase()}: 드라이브` : mountPath;
+    const rest = folderPath.slice(mountPath.length).replace(/^\\+/, '');
+    return rest ? `${driveText}\\${rest}` : driveText;
+  }
+  return folderPath;
+}
+
+function DriveCard({ drive, onClick }) {
+  const { size, free } = drive;
+  const used = size > 0 ? size - free : 0;
+  const usedPercent = size > 0 ? Math.round((used / size) * 100) : 0;
+
+  const sizeText =
+    size > 0
+      ? `${formatBytes(used)} / ${formatBytes(size)}`
+      : '정보 없음';
+
+  return (
+    <div
+      className="drive_card"
+      onClick={() => onClick(drive.mount)}
+      title={drive.mount}
+    >
+      <div className="info">
+        <div className="drive_title" style = {{ marginBottom: '8px' }}>
+          <DriveIcon className="drive_icon" />
+          <strong>{drive.label || drive.mount}</strong>
+        </div>
+        <div>
+          <div style={{ marginBottom: '8px' }}>{sizeText}</div>
+          <div className="bar">
+            <div
+              className="bar_fill"
+              style={{ width: `${usedPercent}%` }}
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ExplorerView({
+  mountPath,
+  currentPath,
+  entries,
+  selectedFile,
+  onBack,
+  onSelectDrive,
+  onOpenDir,
+  onSelectFile,
+  isDarkMode,
+}) {
+  const displayPath = formatDrivePath(currentPath, mountPath);
+  const canBack = normalizePath(currentPath) !== normalizePath(mountPath);
+
+  const navigate = useNavigate();
+
+  const handleStart = () => {
+    navigate('/recovery', {
+      state: {
+        autoStart: true,
+        file: selectedFile
+      }
+    });
+  };
+
+  return (
+    <div id="explorer" className={isDarkMode ? 'dark-mode' : ''}>
+      <div className={`drive_category ${isDarkMode ? 'dark-mode' : ''} scrollbar-area`}>
+        <div className="drive_header">
+          <div className="drive_header_left">
+            <DriveIcon className="drive_icon" />
+            <span className="drive_path_text">{displayPath}</span>
+          </div>
+          <div className="drive_controls">
+            {canBack && (
+              <Button variant="gray" onClick={onBack}>
+                뒤로 가기
+              </Button>
+            )}
+
+            <Button variant="dark" onClick={onSelectDrive}>
+              드라이브 선택
+            </Button>
+          </div>
+        </div>
+
+        <div className="folder_wrapper scrollbar-area">
+          <div className="folder_list">
+            {entries.map((entry) => {
+              const isSelected = selectedFile?.path === entry.path;
+
+              return (
+                <React.Fragment key={entry.path}>
+                  <div
+                    className="folder_item"
+                    onClick={() =>
+                      entry.isDirectory
+                        ? onOpenDir(entry.path)
+                        : typeof onSelectFile === 'function' && onSelectFile(entry)
+                    }
+                  >
+                    <div className="folder_inner" style={{ fontWeight: entry.isDirectory ? 'bold' : 'normal', cursor: 'pointer' }}>
+                      {entry.isDirectory ? <FolderIcon className="folder_icon" /> : <FileIcon className="file_icon" />}
+                      <span>{entry.name}</span>
+                      {entry.isSupported && entry.size ? <span className="file_size">({formatBytes(entry.size)})</span> : null}
+                    </div>
+                  </div>
+                  {isSelected && (
+                    <div id="selected_file_info" className="selected_box">
+                      <h4>선택된 파일</h4>
+                      <p><strong>파일명:</strong> {selectedFile.name}</p>
+                      <p><strong>크기:</strong> {formatBytes(selectedFile.size)}</p>
+                      <p><strong>경로:</strong> {selectedFile.path}</p>
+                      <Button
+                        variant="dark"
+                        onClick={handleStart}
+                        disabled={!selectedFile || !selectedFile.path || !selectedFile.name}
+                      >
+                        복원 시작
+                      </Button>
+                    </div>
+                  )}
+                </React.Fragment>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DriveSection({ title, drives, onDriveClick }) {
+  if (!drives.length) return null;
+  return (
+    <div className="drive_wrapper">
+      <div className="drive_category">
+        <h2>{title}</h2>
+        <div className="drive_list">
+          {drives.map((drive) => (
+            <DriveCard key={drive.id} drive={drive} onClick={onDriveClick} />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DriveCardSkeleton() {
+  return (
+    <div className="skeleton drive_card">
+      <div className="info">
+        <div
+          className="drive_title skeleton-bar"
+          style={{ marginBottom: "8px", width: "60%", height: 24 }}
+        />
+        <div
+          className="skeleton-bar"
+          style={{ width: "40%", height: 16, marginBottom: 8 }}
+        />
+        <div className="bar">
+          <div
+            className="bar_fill skeleton-bar bar-thick"
+            style={{ width: "80%", height: "100%"  }}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const Home = ({ isDarkMode }) => {
+  const [drives, setDrives] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [currentPath, setCurrentPath] = useState('');
+  const [entries, setEntries] = useState([]);
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [mountPath, setMountPath] = useState('');
+
+  useEffect(() => {
+    setIsLoading(true);
+    window.api.getDrives().then((data) => {
+      setDrives(data);
+      setIsLoading(false);
+    });
+    const unsubscribe = window.api.onDrivesUpdated((data) => {
+      setDrives(data);
+      setIsLoading(false);
+    });
+    return () => typeof unsubscribe === 'function' && unsubscribe();
+  }, []);
+
+  const categorized = useMemo(() => {
+    return {
+      internal: drives.filter((d) => d.kind === 'internal'),
+      external: drives.filter((d) => d.kind === 'external'),
+      removable: drives.filter((d) => d.kind === 'removable'),
+    };
+  }, [drives]);
+
+  const loadFolder = useCallback(async (folderPath) => {
+    setCurrentPath(folderPath);
+    setSelectedFile(null);
+    const raw = await window.api.readFolder(folderPath);
+    raw.sort((a, b) => {
+      if (a.isDirectory && !b.isDirectory) return -1;
+      if (!a.isDirectory && b.isDirectory) return 1;
+      return a.name.localeCompare(b.name);
+    });
+    setEntries(raw.filter((e) => !e.isHidden && (e.isDirectory || e.isSupported)));
+  }, []);
+
+  const handleDriveClick = (mount) => {
+    setMountPath(mount);
+    loadFolder(mount);
+  };
+
+  const handleBack = () => {
+    if (!currentPath || currentPath === mountPath) return;
+    const cut = currentPath.substring(0, currentPath.lastIndexOf('\\'));
+    const parent = !cut || /^[A-Z]:$/i.test(cut) ? mountPath : cut;
+    loadFolder(parent);
+  };
+
+  const handleSelectDrive = () => {
+    setCurrentPath('');
+    setEntries([]);
+    setMountPath('');
+  };
+
+  const handleOpenDir = (p) => loadFolder(p);
+  const handleSelectFile = (entry) => setSelectedFile(entry);
+
+  return (
+    <div className={`main_content ${isDarkMode ? 'dark-mode' : ''}`}>
+      {!mountPath && (
+        <>
+          <h1 className={`home_title${isDarkMode ? ' dark-mode' : ''}`}>드라이브를 선택해 복원을 시작하세요</h1>
+
+          <div className={`drive_wrapper${isDarkMode ? ' dark-mode' : ''} scrollbar-area`}>
+            {isLoading ? (
+              <>
+                <div className="drive_category">
+                  <h2>내장 드라이브</h2>
+                  <div className="drive_list">
+                    <DriveCardSkeleton />
+                    <DriveCardSkeleton />
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                <DriveSection
+                  title="내장 드라이브"
+                  drives={categorized.internal}
+                  onDriveClick={handleDriveClick}
+                />
+                <DriveSection
+                  title="외장 드라이브"
+                  drives={categorized.external}
+                  onDriveClick={handleDriveClick}
+                />
+                <DriveSection
+                  title="이동식 드라이브"
+                  drives={categorized.removable}
+                  onDriveClick={handleDriveClick}
+                />
+              </>
+            )}
+          </div>
+        </>
+      )}
+
+      {mountPath && (
+        <ExplorerView
+          mountPath={mountPath}
+          currentPath={currentPath}
+          entries={entries}
+          selectedFile={selectedFile}
+          onBack={handleBack}
+          onSelectDrive={handleSelectDrive}
+          onOpenDir={handleOpenDir}
+          onSelectFile={handleSelectFile}
+          isDarkMode={isDarkMode}
+        />
+      )}
+    </div>
+  );
+};
+
+export default Home;

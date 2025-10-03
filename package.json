@@ -1,0 +1,84 @@
+{
+  "name": "virex-app",
+  "productName": "Virex",
+  "version": "2.0.0",
+  "description": "Forensic video recovery tool",
+  "author": "JUST",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "dev": "concurrently \"cross-env NODE_ENV=development vite\" \"cross-env NODE_ENV=development electron .\"",
+    "start": "electron .",
+    "build:web": "vite build",
+    "build:py": "pyinstaller --noconfirm --clean Virex.spec",
+    "build:app": "electron-builder",
+    "build:desktop": "npm run build:py && npm run build:web && npm run build:app",
+    "clean": "rimraf dist build release"
+  },
+  "build": {
+    "appId": "com.virex.app",
+    "productName": "Virex",
+    "directories": {
+      "buildResources": "assets",
+      "output": "release"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "dist/**",
+      "!dist/Virex/**"
+    ],
+    "extraResources": [
+      {
+        "from": "dist/Virex",
+        "to": "backend",
+        "filter": ["**/*"]
+      }
+    ],
+    "asarUnpack": [
+      "backend/**"
+    ],
+    "artifactName": "Virex-Setup-${version}.exe",
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "deleteAppDataOnUninstall": false
+    }
+  },
+  "dependencies": {
+    "@fortawesome/fontawesome-free": "^6.7.2",
+    "check-disk-space": "^3.4.0",
+    "drivelist": "^12.0.2",
+    "iconv-lite": "^0.7.0",
+    "lottie-react": "^2.4.1",
+    "nanoid": "^5.1.5",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "react-router-dom": "^7.6.3",
+    "winattr": "^3.0.0",
+    "zustand": "^5.0.8"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.30.1",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "@vitejs/plugin-react": "^4.6.0",
+    "concurrently": "^9.2.1",
+    "cross-env": "^10.0.0",
+    "electron": "^37.2.1",
+    "electron-builder": "^26.0.12",
+    "eslint": "^9.30.1",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "eslint-plugin-react-refresh": "^0.4.20",
+    "globals": "^16.3.0",
+    "vite": "^7.0.4",
+    "vite-plugin-svgr": "^4.5.0"
+  }
+}

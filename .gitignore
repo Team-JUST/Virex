@@ -1,0 +1,48 @@
+# General
+.DS_Store
+Thumbs.db
+*.log
+logs/
+
+# Node.js
+node_modules/
+dist/
+dist-ssr/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Python
+python_engine/__pycache__/
+python_engine/**/*.pyc
+python_engine/**/*.pyo
+python_engine/**/*.pyd
+python_engine/.Python
+.venv/
+env/
+.env
+python_engine/*.egg-info/
+python_engine/sample_video/
+python_engine/sample_output/
+
+# Electron
+app/*.asar
+
+# IDE & Editor
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+*.swo
+*.swn
+
+# External binaries
+bin/
+build/
+release/
+assets/

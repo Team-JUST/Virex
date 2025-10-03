@@ -1,0 +1,116 @@
+const { contextBridge, ipcRenderer } = require('electron');
+
+contextBridge.exposeInMainWorld('api', {
+  getDrives: () => ipcRenderer.invoke('get-drives'),
+  readFolder: (path) => ipcRenderer.invoke('read-folder', path),
+  sendFilePath: (path) => ipcRenderer.send('file-selected', path),
+  selectFolder: (opts) => ipcRenderer.invoke('select-folder', opts),        
+  openDirectory: (opts) => ipcRenderer.invoke('dialog:openDirectory', opts),
+  openE01File: () => ipcRenderer.invoke('dialog:openE01File'),
+  openSupportedFile: () => ipcRenderer.invoke('dialog:openSupportedFile'),
+  startRecovery: (e01Path) => ipcRenderer.invoke('start-recovery', e01Path),
+
+  cancelRecovery: () => ipcRenderer.invoke('cancel-recovery'),
+  clearCache: () => ipcRenderer.invoke('clear-cache'),
+
+  setNotifications: (enabled) => ipcRenderer.invoke('set-notifications', enabled),
+  
+  readCarvedIndex: (dir) => ipcRenderer.invoke('readCarvedIndex', dir),
+  listCarvedDir: (baseDir) => ipcRenderer.invoke('listCarvedDir', baseDir),
+
+  onDiskFull: (cb) => {
+    const channel = 'recovery-disk-full';
+    const handler = (_e, payload) => cb(payload);
+    ipcRenderer.on(channel, handler);
+    return () => ipcRenderer.removeListener(channel, handler);
+  },
+  checkDiskSpace: (targetPath, requiredBytes) =>
+    ipcRenderer.invoke('check-disk-space', targetPath, requiredBytes),
+
+  onDrivesUpdated: (callback) => {
+    const listener = (_event, data) => callback(data);
+    ipcRenderer.on('drives-updated', listener);
+    return () => ipcRenderer.removeListener('drives-updated', listener);
+  },
+
+  // 진행률 이벤트 핸들러 등록
+  onProgress: (callback) => {
+    const listener = (_event, data) => callback(data);
+    ipcRenderer.on('recovery-progress', listener);
+    return () => ipcRenderer.removeListener('recovery-progress', listener);
+  },
+
+  // 완료 이벤트 핸들러 등록
+  onDone: (callback) => {
+    const listener = () => callback();
+    ipcRenderer.on('recovery-done', listener);
+    return () => ipcRenderer.removeListener('recovery-done', listener);
+  },
+
+  // 취소 이벤트 핸들러 등록
+  onCancelled: (callback) => {
+    const listener = () => callback();
+    ipcRenderer.on(`recovery-cancelled`, listener);
+    return () => ipcRenderer.removeListener(`recovery-cancelled`, listener);
+  },
+
+  // 분석 완료 후 받은 temp 폴더 경로 구독
+  onAnalysisPath: (callback) => {
+    const listener = (_event, path) => callback(path);
+    ipcRenderer.on('analysis-path', listener);
+    return () => ipcRenderer.removeListener('analysis-path', listener);
+  },
+
+
+  onResults: (callback) => {
+    const listener = (_e, data) => callback(data);
+    ipcRenderer.on('recovery-results', listener);
+    return () => ipcRenderer.removeListener('recovery-results', listener);},
+
+  runDownload: (args) => ipcRenderer.invoke('run-download', args),
+  onDownloadLog: (cb) => {
+    const l = (_e, line) => cb(line);
+    ipcRenderer.on('download-log', l);
+    return () => ipcRenderer.removeListener('download-log', l);
+  },
+  onDownloadError: (cb) => {
+    const l = (_e, err) => cb(err);
+    ipcRenderer.on('download-error', l);
+    return () => ipcRenderer.removeListener('download-error', l);
+  },
+  onDownloadComplete: (cb) => {
+    const l = () => cb();
+    ipcRenderer.on('download-complete', l);
+    return () => ipcRenderer.removeListener('download-complete', l);
+  },
+
+  
+
+  
+  onRecoveryError: (cb) => {
+    const channel = 'recovery-error';
+    const handler = (_e, msg) => cb(msg);
+    ipcRenderer.on(channel, handler);
+    return () => ipcRenderer.removeListener(channel, handler);
+  },
+
+  startRecoverySafe: async (e01Path) => {
+    const res = await ipcRenderer.invoke('start-recovery', e01Path);
+    if (res && res.started === false && res.reason === 'disk_full') {
+      const err = new Error('disk_full_preflight');
+      err.code = 'DISK_FULL_PREFLIGHT';
+      throw err;
+    }
+    return res;
+  },
+
+  onceDiskFull: (cb) => {
+    const channel = 'recovery-disk-full';
+    const handler = (_e, payload) => {
+      ipcRenderer.removeListener(channel, handler);
+      cb(payload);
+    };
+    ipcRenderer.on(channel, handler);
+    return () => ipcRenderer.removeListener(channel, handler);
+  },
+});
