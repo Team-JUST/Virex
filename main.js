@@ -698,7 +698,7 @@ ipcMain.handle('run-download', async (_event, {
     let cmd, args, opts;
     if (be.mode === 'py') {
       cmd = be.exe;
-      args = [be.engineMain, e01FilePath];
+      args = [be.engineMain, e01Path, choice, effectiveOutRoot, selectedJsonPath];
       opts = {
         cwd: be.backendDir,
         shell: true,
@@ -706,7 +706,7 @@ ipcMain.handle('run-download', async (_event, {
       };
     } else {
       cmd = be.exe;
-      args = [e01FilePath];
+      args = [e01Path, choice, effectiveOutRoot, selectedJsonPath];
       opts = { cwd: be.backendDir, shell: false, env: process.env };
     }
     console.log('[spawn]', cmd, args, 'cwd=', opts.cwd);
@@ -723,7 +723,24 @@ ipcMain.handle('run-download', async (_event, {
     const rl = readline.createInterface({ input: python.stdout });
     rl.on('line', line => {
       console.log("[Debug] download line : ", line);
-      mainWindow?.webContents.send('download-log', line);
+
+      let parsed = null;
+      try {
+        parsed = JSON.parse(line);
+      } catch (e) { }
+
+      if (parsed && parsed.event) {
+        if (parsed.event === 'download_stats') {
+          mainWindow?.webContents.send('download-log', parsed);
+        } else if (parsed.event === 'download_complete') {
+          mainWindow?.webContents.send('download-log', parsed);
+          mainWindow?.webContents.send('download-complete');
+        } else {
+          mainWindow?.webContents.send('download-log', parsed);
+        }
+      } else {
+        mainWindow?.webContents.send('download-log', line);
+      }
     });
 
     python.stderr.on('data', buf => {
@@ -800,8 +817,6 @@ ipcMain.handle('run-download', async (_event, {
     });
   });
 });
-
-
 
 // carved_index.json 탐색 함수
 const tryRead = async (p) => {
