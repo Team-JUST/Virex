@@ -1,7 +1,7 @@
 {
   "name": "virex-app",
   "productName": "Virex",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Forensic video recovery tool",
   "author": "JUST",
   "private": true,
