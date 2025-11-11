@@ -37,7 +37,7 @@ Virex를 통해 `.e01`, `.001`, `.avi`, `.mp4`, `.jdr` 등 다양한 블랙박�
 ## 설치 및 실행 방법
 
 ### 릴리즈 버전 설치
-1. [Releases 페이지](https://github.com/Team-JUST/Virex/releases)에서 최신 버전(`v2.0.0`)의 설치 파일(`Virex-Setup-2.0.0.exe`)을 다운로드합니다.  
+1. [Releases 페이지](https://github.com/Team-JUST/Virex/releases)에서 최신 버전(`v2.0.1`)의 설치 파일(`Virex-Setup-2.0.1.exe`)을 다운로드합니다.  
 2. 다운로드한 `.exe` 파일을 실행하면 설치 마법사가 시작됩니다.  
 3. 설치 경로를 선택한 후 안내에 따라 설치를 완료하세요.  
 4. 바탕화면 또는 시작 메뉴에서 **Virex**를 실행할 수 있습니다.  
